@@ -347,6 +347,11 @@ export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
 
 export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
   if (isSupabaseConfigured() && supabase) {
+    console.log("KAIKU: Realtime DISABLED for debugging.");
+    return null;
+
+    /* 
+    // TEMPORARILY DISABLED FOR DEBUGGING
     console.log("KAIKU: Initializing Realtime Subscription...");
     return supabase
       .channel('public:kaiku_posts')
@@ -383,6 +388,7 @@ export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
       .subscribe((status) => {
         console.log("KAIKU: Subscription Status:", status);
       });
+    */
   }
   return null;
 };
