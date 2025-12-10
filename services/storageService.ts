@@ -1,6 +1,6 @@
 import { ChatMessage, RateLimitStatus } from '../types';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { MAX_DAILY_POSTS, RATE_LIMIT_WINDOW_MS, MESSAGE_LIFESPAN_MS, SCORE_THRESHOLD_HIDE } from '../constants';
+import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, MESSAGE_LIFESPAN_MS, SCORE_THRESHOLD_HIDE } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
 
 const STORAGE_KEY = 'global_local_talk_data';
@@ -334,9 +334,11 @@ export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
     }
   }
 
-  if (recentPostsCount >= MAX_DAILY_POSTS) {
+  if (recentPostsCount >= MAX_POSTS_PER_WINDOW) {
     return {
       isLimited: true,
+      // Cooldown until the window resets for the user. 
+      // Simple logic: Wait full window from last post to discourage spamming.
       cooldownUntil: lastPostTime + RATE_LIMIT_WINDOW_MS
     };
   }

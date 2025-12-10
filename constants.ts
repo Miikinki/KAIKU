@@ -3,8 +3,8 @@ import { DreamCategory } from './types';
 export const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 export const MAP_ATTRIBUTION = ''; // Hidden as per request
 
-export const MAX_DAILY_POSTS = 2;
-export const RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+export const MAX_POSTS_PER_WINDOW = 10;
+export const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 // Lifecycle & Scoring
 export const MESSAGE_LIFESPAN_MS = 48 * 60 * 60 * 1000; // 48 Hours

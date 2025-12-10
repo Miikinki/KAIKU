@@ -23,7 +23,13 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
       else {
         const h = Math.floor(diff / 3600000);
         const m = Math.floor((diff % 3600000) / 60000);
-        setTimeLeft(`${h}h ${m}m`);
+        const s = Math.floor((diff % 60000) / 1000);
+        
+        if (h > 0) {
+            setTimeLeft(`${h}h ${m}m`);
+        } else {
+            setTimeLeft(`${m}m ${s}s`);
+        }
       }
     }, 1000);
     return () => clearInterval(interval);
