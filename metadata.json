@@ -1,0 +1,7 @@
+{
+  "name": "KAIKU",
+  "description": "KAIKU: An anonymous, privacy-focused global local chat map. Features a dark sci-fi aesthetic, fuzzy location logic for privacy, and real-time local filtering.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
