@@ -13,15 +13,15 @@ import { AnimatePresence } from 'framer-motion';
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
+  // Used when a specific cluster/hub is clicked
+  const [filteredClusterMessages, setFilteredClusterMessages] = useState<ChatMessage[] | null>(null);
+  
   const [isInputOpen, setIsInputOpen] = useState(false);
-  const [isFeedOpen, setIsFeedOpen] = useState(false); // Default to CLOSED
+  const [isFeedOpen, setIsFeedOpen] = useState(false); 
   const [activeThread, setActiveThread] = useState<ChatMessage | null>(null);
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
   
-  // Track the most recent incoming message for map pulse animation
   const [lastNewMessage, setLastNewMessage] = useState<ChatMessage | null>(null);
-  
-  // Cache for GPS location to solve "Cold Start" issues on mobile
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
 
   const [rateLimit, setRateLimit] = useState<{ isLimited: boolean; cooldownUntil: number | null }>({
@@ -35,23 +35,15 @@ function App() {
       setRateLimit(await getRateLimitStatus());
   };
 
-  // GPS Warm-up Effect: Triggers immediately when Input Modal opens
   useEffect(() => {
     if (isInputOpen) {
       console.log("KAIKU: Warming up GPS...");
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          console.log("KAIKU: GPS Locked via Warm-up", pos.coords);
           locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         },
-        (err) => {
-          console.warn("KAIKU: GPS Warm-up failed (will try again on send)", err);
-        },
-        { 
-          timeout: 20000, 
-          maximumAge: 60000, // Accept cached locations up to 1 minute old
-          enableHighAccuracy: true 
-        }
+        (err) => console.warn("KAIKU: GPS Warm-up failed", err),
+        { timeout: 20000, maximumAge: 60000, enableHighAccuracy: true }
       );
     }
   }, [isInputOpen]);
@@ -59,27 +51,14 @@ function App() {
   useEffect(() => {
     loadData();
 
-    // Subscribe and handle different event types (INSERT, UPDATE, DELETE)
     const sub = subscribeToMessages(({ type, message, id }) => {
       setMessages(prev => {
-        // CASE 1: DELETE Event (e.g. score hits -5)
         if (type === 'DELETE') {
             return prev.filter(m => m.id !== id);
         }
-
-        // Check if message is valid for other types
         if (!message) return prev;
-
-        // CASE 2: Reply Handling
         if (message.parentId) {
-            // We do NOT add replies to the main message list, 
-            // but we MUST update the parent's replyCount.
-            
-            // Prevent double-counting if I just sent it (optimistic update in handleReply)
-            if (message.sessionId === getAnonymousID()) {
-                return prev;
-            }
-
+            if (message.sessionId === getAnonymousID()) return prev;
             return prev.map(m => {
                 if (m.id === message.parentId) {
                     return { ...m, replyCount: (m.replyCount || 0) + 1 };
@@ -87,22 +66,15 @@ function App() {
                 return m;
             });
         }
-
-        // CASE 3: INSERT or UPDATE for Root Post
         const exists = prev.findIndex(p => p.id === message.id);
         if (exists !== -1) {
-            // Update existing (e.g. score change)
             const updated = [...prev];
             updated[exists] = { ...updated[exists], ...message };
             return updated;
         }
-        
-        // NEW MESSAGE INSERTED
         if (type === 'INSERT') {
           setLastNewMessage(message);
         }
-        
-        // Insert new
         return [message, ...prev];
       });
     });
@@ -114,12 +86,10 @@ function App() {
       setMessages(currentMessages => {
         const now = Date.now();
         const cutoff = now - MESSAGE_LIFESPAN_MS;
-        
         const validMessages = currentMessages.filter(m => 
           m.timestamp > cutoff && 
           m.score > SCORE_THRESHOLD_HIDE
         );
-
         if (validMessages.length !== currentMessages.length) {
           return validMessages;
         }
@@ -131,6 +101,12 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // If we have a cluster selected, showing that overrides the viewport bounds
+    if (filteredClusterMessages) {
+        setVisibleMessages(filteredClusterMessages);
+        return;
+    }
+
     if (!currentBounds) return;
     
     const now = Date.now();
@@ -145,43 +121,49 @@ function App() {
       m.timestamp > cutoff
     );
     setVisibleMessages(visible);
-  }, [messages, currentBounds]);
+  }, [messages, currentBounds, filteredClusterMessages]);
 
   const handleViewportChange = (bounds: ViewportBounds) => {
     setCurrentBounds(bounds);
+    // If user moves map significantly, maybe we should clear the cluster selection?
+    // For now, let's keep it until they manually close it or select another.
+    // Actually, panning away implies leaving the "hub". 
+    // Let's clear it if the user zooms out significantly, but slight pans are ok.
+    // For simplicity: dragging the map clears the cluster filter to resume "Exploring".
+    setFilteredClusterMessages(null);
+  };
+
+  const handleClusterClick = (clusterMessages: ChatMessage[]) => {
+      setFilteredClusterMessages(clusterMessages);
+      setIsFeedOpen(true);
+  };
+
+  const handleClearCluster = () => {
+      setFilteredClusterMessages(null);
   };
 
   const handleSave = async (text: string) => {
     let lat = 0, lng = 0;
-    
     try {
-      // 1. Try to use warmed-up cache first
       if (locationCache.current) {
         lat = locationCache.current.lat;
         lng = locationCache.current.lng;
       } else {
-        // 2. Fallback to fresh fetch if cache is empty
         const pos = await new Promise<GeolocationPosition>((res, rej) => 
           navigator.geolocation.getCurrentPosition(res, rej, { 
-            timeout: 20000, // Increased timeout for mobile cold start
-            maximumAge: 60000, 
-            enableHighAccuracy: true 
+            timeout: 20000, maximumAge: 60000, enableHighAccuracy: true 
           })
         );
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
-        // Update cache for next time
         locationCache.current = { lat, lng };
       }
     } catch (e) {
-      console.warn("GPS Failed", e);
-      // STRICT REQUIREMENT: No random fallback.
       throw new Error("Location is required to place your broadcast on the map. Please enable location services.");
     }
 
     const newMsg = await saveMessage(text, lat, lng);
     setMessages(prev => [newMsg, ...prev]);
-    // Also trigger pulse for self
     setLastNewMessage(newMsg);
     setRateLimit(await getRateLimitStatus());
   };
@@ -190,22 +172,15 @@ function App() {
     let lat = 0, lng = 0;
     try {
         const pos = await new Promise<GeolocationPosition>((res, rej) => 
-          navigator.geolocation.getCurrentPosition(res, rej, { 
-              timeout: 10000, 
-              maximumAge: 60000 
-          })
+          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000, maximumAge: 60000 })
         );
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
     } catch (e) {
-        console.warn("GPS Failed for reply", e);
-        // STRICT REQUIREMENT: No fallback to thread location or random location.
         throw new Error("Location is required to reply. Please enable location services.");
     }
 
     await saveMessage(text, lat, lng, parentId);
-    
-    // Optimistic update for reply count
     setMessages(prev => prev.map(m => {
         if (m.id === parentId) {
             return { ...m, replyCount: (m.replyCount || 0) + 1 };
@@ -222,18 +197,14 @@ function App() {
         }
         return m;
     }));
-
     const updatedMsg = await castVote(msgId, direction);
-
     if (updatedMsg) {
         setMessages(prev => prev.map(m => m.id === msgId ? updatedMsg! : m));
     }
   };
 
   const handleDelete = async (msgId: string, parentId?: string | null) => {
-    // 1. Optimistic Update (Instant Feedback)
     if (parentId) {
-        // Reply deleted: Update parent's reply count
         setMessages(prev => prev.map(m => {
             if (m.id === parentId) {
                 return { ...m, replyCount: Math.max(0, (m.replyCount || 0) - 1) };
@@ -241,29 +212,28 @@ function App() {
             return m;
         }));
     } else {
-        // Root message deleted
         setMessages(prev => prev.filter(m => m.id !== msgId));
-        setVisibleMessages(prev => prev.filter(m => m.id !== msgId));
+        
+        // Also update the filtered lists
+        if (filteredClusterMessages) {
+             setFilteredClusterMessages(prev => prev ? prev.filter(m => m.id !== msgId) : null);
+        }
     }
-
-    // 2. Perform Delete
     const success = await deleteMessage(msgId);
-    
-    // 3. Revert if failed
     if (!success) {
-        alert("Could not delete message. You might not be the owner.");
-        loadData(); // Re-fetch to restore state
+        alert("Could not delete message.");
+        loadData();
     }
   };
 
   return (
-    // FIXED INSET-0 forces the app to fill the iframe/viewport completely
     <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
       
       <ChatMap 
         messages={messages} 
         onViewportChange={handleViewportChange}
         onMessageClick={(msg) => setActiveThread(msg)}
+        onClusterClick={handleClusterClick}
         lastNewMessage={lastNewMessage}
       />
 
@@ -276,6 +246,8 @@ function App() {
 
       <FeedPanel 
         visibleMessages={visibleMessages}
+        isFilteredByCluster={!!filteredClusterMessages}
+        onClearFilter={handleClearCluster}
         onMessageClick={(msg) => setActiveThread(msg)} 
         isOpen={isFeedOpen}
         toggleOpen={() => setIsFeedOpen(!isFeedOpen)}

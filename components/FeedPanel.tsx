@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, XCircle } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
 import { getUserVotes, getAnonymousID } from '../services/storageService';
@@ -14,9 +14,16 @@ interface FeedPanelProps {
   onVote: (msgId: string, direction: 'up' | 'down') => void;
   onDelete: (msgId: string, parentId?: string) => void;
   onRefresh?: () => void;
+  
+  // New props for cluster filtering
+  isFilteredByCluster?: boolean;
+  onClearFilter?: () => void;
 }
 
-const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh }) => {
+const FeedPanel: React.FC<FeedPanelProps> = ({ 
+    visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh,
+    isFilteredByCluster, onClearFilter 
+}) => {
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const currentSessionId = getAnonymousID();
@@ -75,13 +82,13 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
               <div>
                 <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: THEME_COLOR }} />
-                  LOCAL FEED
+                  {isFilteredByCluster ? 'CITY HUB' : 'LOCAL FEED'}
                 </h2>
                 <div className="flex items-center gap-2 mt-1">
                     <p className="text-xs text-gray-400 uppercase tracking-widest">
                     {visibleMessages.length} Signals
                     </p>
-                    {onRefresh && (
+                    {onRefresh && !isFilteredByCluster && (
                         <button 
                             onClick={handleRefresh} 
                             className={`p-1 hover:bg-white/10 rounded-full transition-all ${isRefreshing ? 'animate-spin' : ''}`}
@@ -97,6 +104,21 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
+
+            {/* Cluster Filter Indicator */}
+            {isFilteredByCluster && onClearFilter && (
+                <div className="bg-cyan-500/10 border-b border-cyan-500/20 px-4 py-2 flex justify-between items-center">
+                    <span className="text-xs text-cyan-200 font-mono flex items-center gap-2">
+                        <MapPin size={12} /> Viewing specific cluster
+                    </span>
+                    <button 
+                        onClick={onClearFilter} 
+                        className="text-xs flex items-center gap-1 text-cyan-300 hover:text-white transition-colors"
+                    >
+                        <XCircle size={12} /> View All
+                    </button>
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
               {visibleMessages.length === 0 ? (

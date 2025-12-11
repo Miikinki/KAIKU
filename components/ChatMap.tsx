@@ -10,6 +10,7 @@ interface ChatMapProps {
   messages: ChatMessage[];
   onViewportChange: (bounds: ViewportBounds) => void;
   onMessageClick: (msg: ChatMessage) => void;
+  onClusterClick?: (messages: ChatMessage[]) => void;
   lastNewMessage: ChatMessage | null;
 }
 
@@ -17,7 +18,6 @@ interface ChatMapProps {
 const createZoneDotIcon = (count: number) => {
   if (!L || !L.divIcon) return undefined;
 
-  // Tiny scale logic just to differentiate massive hubs from single posts
   const baseSize = 10; 
   const scale = Math.min(1 + Math.log(count) * 0.2, 1.5); 
   const size = baseSize * scale;
@@ -25,6 +25,20 @@ const createZoneDotIcon = (count: number) => {
   return L.divIcon({
     className: 'custom-div-icon',
     html: `<div class="zone-dot" style="width: ${size}px; height: ${size}px;"></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
+// ZOOMED IN ICON: Cluster Bubble with Count
+const createClusterIcon = (count: number) => {
+  if (!L || !L.divIcon) return undefined;
+
+  const size = 28;
+
+  return L.divIcon({
+    className: 'custom-div-icon',
+    html: `<div class="cluster-marker" style="width: ${size}px; height: ${size}px;">${count}</div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -97,8 +111,11 @@ const MapEvents: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = (
   return null;
 };
 
-// Component to render Hybrid Markers
-const ActivityZones: React.FC<{ messages: ChatMessage[] }> = ({ messages }) => {
+// Component to render Hybrid Markers / Clusters
+const ActivityZones: React.FC<{ 
+  messages: ChatMessage[]; 
+  onClusterClick?: (msgs: ChatMessage[]) => void; 
+}> = ({ messages, onClusterClick }) => {
   const map = useMap();
   const [zoom, setZoom] = useState(map.getZoom());
 
@@ -109,12 +126,11 @@ const ActivityZones: React.FC<{ messages: ChatMessage[] }> = ({ messages }) => {
   });
 
   const zones = useMemo(() => {
-    // PRIVACY UPDATE: Snapping to Grid
-    // Instead of grouping by city, we group by snapped coordinates (approx 1.1km grid).
-    // This ensures that even if you zoom in fully, the center point is a mathematical grid point,
-    // not the average of user locations.
+    // PRIVACY & CLUSTERING LOGIC:
+    // Group messages by snapped coordinates (approx 1.1km grid).
+    // This acts as both the "Hub" and the Privacy filter.
     
-    const groups: Record<string, { lat: number, lng: number, count: number, id: string }> = {};
+    const groups: Record<string, { lat: number, lng: number, messages: ChatMessage[], id: string }> = {};
 
     messages.forEach(msg => {
       // Round to 2 decimal places (approx 1.11km precision at equator)
@@ -127,57 +143,84 @@ const ActivityZones: React.FC<{ messages: ChatMessage[] }> = ({ messages }) => {
         groups[key] = { 
             lat: snappedLat, 
             lng: snappedLng, 
-            count: 0, 
+            messages: [], 
             id: key 
         };
       }
       
-      groups[key].count += 1;
+      groups[key].messages.push(msg);
     });
 
     return Object.values(groups).map(g => ({
       id: g.id,
       position: [g.lat, g.lng] as [number, number],
-      count: g.count
+      messages: g.messages,
+      count: g.messages.length
     }));
   }, [messages]);
 
   // Hybrid Rendering Strategy
   const RENDER_THRESHOLD = 11;
   
-  // UPDATED: Huge radius (2.5km) to cover entire districts/neighborhoods
+  // Huge radius (2.5km) to cover entire districts/neighborhoods for privacy
   const PRIVACY_RADIUS_METERS = 2500; 
 
   return (
     <>
       {zones.map(zone => {
         if (zoom < RENDER_THRESHOLD) {
-          // ZOOMED OUT: Render distinct dots
+          // ZOOMED OUT: Render simple dots
           return (
             <Marker 
               key={`dot-${zone.id}`}
               position={zone.position}
               icon={createZoneDotIcon(zone.count)}
-              interactive={false} 
+              interactive={true} 
+              eventHandlers={{
+                click: (e) => {
+                   L.DomEvent.stopPropagation(e);
+                   if (onClusterClick) onClusterClick(zone.messages);
+                }
+              }}
             />
           );
         } else {
-          // ZOOMED IN: Render Massive Privacy Circles
-          // The 2500m radius ensures that at street level zoom, the circle covers a huge area.
+          // ZOOMED IN: Render Hubs (Privacy Circle + Count Badge)
           return (
-             <Circle 
-                key={`circle-${zone.id}`}
-                center={zone.position}
-                radius={PRIVACY_RADIUS_METERS}
-                pathOptions={{
-                   color: THEME_COLOR,
-                   weight: 1,
-                   fillColor: THEME_COLOR,
-                   fillOpacity: 0.15,
-                   dashArray: '4 8'
-                }}
-                interactive={false}
-             />
+             <React.Fragment key={`hub-${zone.id}`}>
+               {/* Privacy Circle Area */}
+               <Circle 
+                  center={zone.position}
+                  radius={PRIVACY_RADIUS_METERS}
+                  pathOptions={{
+                     color: THEME_COLOR,
+                     weight: 1,
+                     fillColor: THEME_COLOR,
+                     fillOpacity: 0.15,
+                     dashArray: '4 8'
+                  }}
+                  interactive={true}
+                  eventHandlers={{
+                    click: (e) => {
+                      L.DomEvent.stopPropagation(e);
+                      if (onClusterClick) onClusterClick(zone.messages);
+                    }
+                  }}
+               />
+               
+               {/* Center Count Badge */}
+               <Marker 
+                 position={zone.position}
+                 icon={createClusterIcon(zone.count)}
+                 interactive={true}
+                 eventHandlers={{
+                    click: (e) => {
+                      L.DomEvent.stopPropagation(e);
+                      if (onClusterClick) onClusterClick(zone.messages);
+                    }
+                  }}
+               />
+             </React.Fragment>
           );
         }
       })}
@@ -185,20 +228,17 @@ const ActivityZones: React.FC<{ messages: ChatMessage[] }> = ({ messages }) => {
   );
 };
 
-const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick, lastNewMessage }) => {
-  // Lock the map to the "real" world coordinates to prevent scrolling into the void vertically,
-  // BUT allow horizontal scrolling (Infinity) to prevent blue bars on wide screens.
+const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick, onClusterClick, lastNewMessage }) => {
   const maxBounds = new L.LatLngBounds(
-    new L.LatLng(-85, -Infinity), // South West
-    new L.LatLng(85, Infinity)    // North East
+    new L.LatLng(-85, -Infinity), 
+    new L.LatLng(85, Infinity)    
   );
 
   return (
-    // Fixed positioning here guarantees the map container fills the window
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
-        center={[20, 0]} // Global view (Latitude 20, Longitude 0)
-        zoom={2.5} // Zoomed out to show the world
+        center={[20, 0]} 
+        zoom={2.5} 
         minZoom={2.5}
         scrollWheelZoom={true}
         zoomControl={false}
@@ -207,17 +247,17 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessage
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         maxBounds={maxBounds}
         maxBoundsViscosity={1.0}
-        worldCopyJump={true} // Ensures markers wrap around the world correctly
+        worldCopyJump={true} 
       >
         <TileLayer 
             url={MAP_TILE_URL} 
             attribution={MAP_ATTRIBUTION} 
-            noWrap={false} // Allow tiles to wrap horizontally to fill wide screens
+            noWrap={false} 
         />
         
         <MapEvents onViewportChange={onViewportChange} />
         <MapResizeHandler onViewportChange={onViewportChange} />
-        <ActivityZones messages={messages} />
+        <ActivityZones messages={messages} onClusterClick={onClusterClick} />
         <WebGLPulseLayer lastNewMessage={lastNewMessage} />
 
       </MapContainer>
