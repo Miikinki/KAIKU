@@ -145,14 +145,24 @@
         height: 100%;
         background: #00FFFF;
         border-radius: 50%;
-        box-shadow: 0 0 10px #00FFFF, 0 0 20px #00FFFF, 0 0 40px rgba(0, 255, 255, 0.5);
+        /* Base Glow */
+        box-shadow: 0 0 15px #00FFFF;
         border: 2px solid #ffffff;
-        animation: beacon-pulse 3s infinite ease-in-out;
+        /* Organic "Live" Pulse matching the Kaiku logo style */
+        animation: beacon-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
       }
 
       @keyframes beacon-pulse {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.3); opacity: 0.8; }
+        0%, 100% { 
+          opacity: 1; 
+          transform: scale(1);
+          box-shadow: 0 0 10px #00FFFF, 0 0 20px rgba(0, 255, 255, 0.6);
+        }
+        50% { 
+          opacity: .6; /* Dim slightly like a breathing light */
+          transform: scale(1.15); /* Subtle growth */
+          box-shadow: 0 0 25px #00FFFF, 0 0 50px #00FFFF; /* Intense glow expansion */
+        }
       }
 
       /* Data Label: Reactor Core Style */
