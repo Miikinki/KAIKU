@@ -4,43 +4,52 @@ import { ChatMessage } from '../types';
 export interface HexagonData {
   h3Index: string;
   boundary: [number, number][]; // Array of [lat, lng]
+  center: [number, number]; // [lat, lng]
   messages: ChatMessage[];
   count: number;
+  latestTimestamp: number;
 }
 
-// Resolution 7 is approx 5km edge length (City district size)
-// Resolution 8 is approx 2km edge length (Neighborhood size)
-const H3_RESOLUTION = 7; 
+export const getH3Resolution = (zoom: number): number => {
+    // PRIVACY CLAMP: Never go finer than Resolution 8 (~0.7km²)
+    // This prevents pinpointing users to specific blocks/streets.
+    if (zoom > 10) return 8; 
+    
+    if (zoom >= 7) return 7; // ~5km² (District/City view)
+    
+    return 5; // ~250km² (Regional/Global view)
+};
 
-export const getHexagonForLocation = (lat: number, lng: number): string => {
-  return h3.latLngToCell(lat, lng, H3_RESOLUTION);
+export const getHexagonForLocation = (lat: number, lng: number, resolution: number): string => {
+  return h3.latLngToCell(lat, lng, resolution);
 };
 
 export const getHexagonBoundary = (h3Index: string): [number, number][] => {
   return h3.cellToBoundary(h3Index);
 };
 
-export const aggregateMessagesByHexagon = (messages: ChatMessage[]): HexagonData[] => {
-  const map = new Map<string, ChatMessage[]>();
+export const aggregateMessagesByHexagon = (messages: ChatMessage[], resolution: number): HexagonData[] => {
+  const map = new Map<string, HexagonData>();
 
   messages.forEach(msg => {
-    const h3Index = getHexagonForLocation(msg.location.lat, msg.location.lng);
+    const h3Index = h3.latLngToCell(msg.location.lat, msg.location.lng, resolution);
     if (!map.has(h3Index)) {
-      map.set(h3Index, []);
+      map.set(h3Index, {
+        h3Index,
+        boundary: h3.cellToBoundary(h3Index),
+        center: h3.cellToLatLng(h3Index),
+        messages: [],
+        count: 0,
+        latestTimestamp: 0
+      });
     }
-    map.get(h3Index)?.push(msg);
+    const hex = map.get(h3Index)!;
+    hex.messages.push(msg);
+    hex.count++;
+    if (msg.timestamp > hex.latestTimestamp) {
+        hex.latestTimestamp = msg.timestamp;
+    }
   });
 
-  const results: HexagonData[] = [];
-  
-  for (const [h3Index, msgs] of map.entries()) {
-    results.push({
-      h3Index,
-      boundary: getHexagonBoundary(h3Index),
-      messages: msgs,
-      count: msgs.length
-    });
-  }
-
-  return results.sort((a, b) => b.count - a.count);
+  return Array.from(map.values()).sort((a, b) => b.count - a.count);
 };

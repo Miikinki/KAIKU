@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Polygon, Circle, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Circle, useMapEvents, useMap, Marker } from 'react-leaflet';
 import * as L from 'leaflet';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
-import { aggregateMessagesByHexagon, getHexagonForLocation, HexagonData } from '../services/h3Helpers';
+import { aggregateMessagesByHexagon, getHexagonForLocation, HexagonData, getH3Resolution } from '../services/h3Helpers';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -61,19 +61,23 @@ const MapDefs: React.FC = () => {
 const HeatCloudLayer: React.FC<{ hexagons: HexagonData[]; zoom: number }> = ({ hexagons, zoom }) => {
   if (zoom < 4) return null; // Hide at global view for performance
 
+  // Adjust radius based on zoom/res to prevent overlapping blobs being too huge
+  let baseRadius = 8000;
+  if (zoom > 11) baseRadius = 250;
+  else if (zoom >= 8) baseRadius = 2000;
+
   return (
     <>
       {hexagons.map(hex => {
         // Only significant clusters get atmosphere
         if (hex.count < 3) return null;
         
-        // Dynamic radius based on density
-        const radius = hex.count > 20 ? 8000 : 5000; 
+        const radius = hex.count > 20 ? baseRadius * 1.5 : baseRadius; 
 
         return (
           <Circle
             key={`cloud-${hex.h3Index}`}
-            center={hex.boundary[0]}
+            center={hex.center}
             radius={radius}
             pathOptions={{
               stroke: false,
@@ -95,17 +99,18 @@ const AuraLayer: React.FC<{
   hexagons: HexagonData[]; 
   zoom: number; 
   lastNewMessage: ChatMessage | null;
-}> = ({ hexagons, zoom, lastNewMessage }) => {
+  resolution: number;
+}> = ({ hexagons, zoom, lastNewMessage, resolution }) => {
   
   const [flashingHex, setFlashingHex] = useState<string | null>(null);
 
   useEffect(() => {
     if (!lastNewMessage) return;
-    const hexId = getHexagonForLocation(lastNewMessage.location.lat, lastNewMessage.location.lng);
+    const hexId = getHexagonForLocation(lastNewMessage.location.lat, lastNewMessage.location.lng, resolution);
     setFlashingHex(hexId);
     const timer = setTimeout(() => setFlashingHex(null), 500); // 500ms flash
     return () => clearTimeout(timer);
-  }, [lastNewMessage]);
+  }, [lastNewMessage, resolution]);
 
   if (zoom < 6) return null; // Simplified view at low zoom
 
@@ -144,38 +149,130 @@ const AuraLayer: React.FC<{
 };
 
 // ----------------------------------------------------------------------
-// 3. LAYER: INTERACTIVE GRID (Top Layer)
+// 3. LAYER: ACTIVE HEXAGON GRID (Top Layer)
 // ----------------------------------------------------------------------
-const InteractiveGridLayer: React.FC<{ 
+const ActiveHexagonLayer: React.FC<{ 
   hexagons: HexagonData[]; 
+  zoom: number;
   onHexClick: (messages: ChatMessage[]) => void 
-}> = ({ hexagons, onHexClick }) => {
+}> = ({ hexagons, zoom, onHexClick }) => {
   
+  const now = Date.now();
+  const isBeaconMode = zoom < 8; // Switch to Beacon Dots if zoomed out
+
   return (
     <>
       {hexagons.map(hex => {
-        // Simple clean styles for the clickable layer
-        // No heavy blurs or animations here
-        return (
-          <Polygon
-            key={`grid-${hex.h3Index}`}
-            positions={hex.boundary}
-            pathOptions={{
-              color: '#00FFFF',
-              weight: 1,
-              opacity: 0.8,
-              fillColor: '#00FFFF',
-              fillOpacity: 0.1, // Very subtle tint
-              className: 'kaiku-interactive' // Handles hover states
-            }}
-            eventHandlers={{
-              click: (e) => {
-                L.DomEvent.stopPropagation(e);
-                onHexClick(hex.messages);
-              }
-            }}
-          />
-        );
+        // Dynamic Styles based on Count
+        let color = '#06b6d4'; // Cyan (Low)
+        let fillOpacity = 0.1;
+        let weight = 1;
+        let className = 'kaiku-interactive'; // Base class for hover effects
+
+        if (hex.count > 20) {
+          color = '#ec4899'; // Pink/White (High)
+          fillOpacity = 0.3;
+          weight = 2;
+        } else if (hex.count > 5) {
+          color = '#22d3ee'; // Bright Cyan (Med)
+          fillOpacity = 0.2;
+          weight = 1.5;
+        }
+
+        // Live Logic (Last 60 seconds) or Hotspot
+        const isFresh = (now - hex.latestTimestamp) < 60000;
+        const isHot = hex.count > 10;
+        const showShockwave = isFresh || isHot;
+
+        // Shockwave Marker
+        const shockwaveIcon = L.divIcon({
+            className: '', // Inner HTML handles the class
+            html: `<div style="width: 100%; height: 100%;" class="kaiku-shockwave-marker"></div>`,
+            iconSize: [60, 60], 
+            iconAnchor: [30, 30] 
+        });
+
+        if (isBeaconMode) {
+             // BEACON MODE (Zoom < 8): Glowing Dots
+             const beaconIcon = L.divIcon({
+                className: '',
+                html: `<div class="kaiku-beacon-dot"></div>`,
+                iconSize: [12, 12],
+                iconAnchor: [6, 6]
+             });
+
+             return (
+                <React.Fragment key={`beacon-${hex.h3Index}`}>
+                   {/* Optional: Show shockwave behind beacon if active */}
+                   {showShockwave && (
+                     <Marker position={hex.center} icon={shockwaveIcon} zIndexOffset={-100} interactive={false} />
+                   )}
+                   
+                   {/* The Beacon Dot */}
+                   <Marker 
+                     position={hex.center}
+                     icon={beaconIcon}
+                     eventHandlers={{
+                         click: (e) => {
+                             L.DomEvent.stopPropagation(e);
+                             onHexClick(hex.messages);
+                         }
+                     }}
+                   />
+                </React.Fragment>
+             );
+
+        } else {
+            // HEXAGON MODE (Zoom >= 8): Polygons + Numbers
+            
+            // Label Icon (Reactor Core)
+            const icon = L.divIcon({
+                className: 'kaiku-hex-label-container',
+                html: `<div class="kaiku-hex-label" style="text-shadow: 0 0 5px ${color};">${hex.count}</div>`,
+                iconSize: [30, 30],
+                iconAnchor: [15, 15] // Center over center point
+            });
+
+            return (
+              <React.Fragment key={`active-hex-${hex.h3Index}`}>
+                 {/* Shockwave for activity */}
+                 {showShockwave && (
+                     <Marker position={hex.center} icon={shockwaveIcon} zIndexOffset={-100} interactive={false} />
+                 )}
+
+                 {/* The Hexagon Shape */}
+                 <Polygon
+                    positions={hex.boundary}
+                    pathOptions={{
+                      color: color,
+                      weight: weight,
+                      opacity: 0.8,
+                      fillColor: color,
+                      fillOpacity: fillOpacity,
+                      className: className
+                    }}
+                    eventHandlers={{
+                      click: (e) => {
+                        L.DomEvent.stopPropagation(e);
+                        onHexClick(hex.messages);
+                      }
+                    }}
+                 />
+                 
+                 {/* The Count Marker (Label) */}
+                 <Marker 
+                    position={hex.center} 
+                    icon={icon}
+                    eventHandlers={{
+                        click: (e) => {
+                            L.DomEvent.stopPropagation(e);
+                            onHexClick(hex.messages);
+                        }
+                    }}
+                 />
+              </React.Fragment>
+            );
+        }
       })}
     </>
   );
@@ -216,7 +313,6 @@ const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void
     const resizeObserver = new ResizeObserver(() => handleUpdate());
     if (mapContainerRef.current) resizeObserver.observe(mapContainerRef.current);
     
-    // Also attach to move events here for simplicity
     map.on('moveend', handleUpdate);
     map.on('zoomend', handleUpdate);
 
@@ -233,8 +329,11 @@ const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void
 const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onClusterClick, lastNewMessage }) => {
   const [zoom, setZoom] = useState(2.5);
   
-  // Memoize hexagon calculation to avoid expensive re-runs
-  const hexagons = useMemo(() => aggregateMessagesByHexagon(messages), [messages]);
+  // Calculate Dynamic Resolution
+  const resolution = useMemo(() => getH3Resolution(zoom), [zoom]);
+  
+  // Re-aggregate messages when messages OR zoom level (resolution) changes
+  const hexagons = useMemo(() => aggregateMessagesByHexagon(messages, resolution), [messages, resolution]);
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
@@ -260,14 +359,16 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onCluster
         <MapController onZoomChange={setZoom} />
         <MapResizeHandler onViewportChange={onViewportChange} />
 
-        {/* LAYER 1: ATMOSPHERE */}
+        {/* LAYER 1: ATMOSPHERE (Scaled by Zoom) */}
         <HeatCloudLayer hexagons={hexagons} zoom={zoom} />
 
-        {/* LAYER 2: AURA & ANIMATIONS */}
-        <AuraLayer hexagons={hexagons} zoom={zoom} lastNewMessage={lastNewMessage} />
+        {/* LAYER 2: AURA & ANIMATIONS - Only active in Hexagon mode or selectively in Beacon mode */}
+        {! (zoom < 8) && (
+            <AuraLayer hexagons={hexagons} zoom={zoom} lastNewMessage={lastNewMessage} resolution={resolution} />
+        )}
 
-        {/* LAYER 3: INTERACTIVE GRID */}
-        <InteractiveGridLayer hexagons={hexagons} onHexClick={(msgs) => onClusterClick && onClusterClick(msgs)} />
+        {/* LAYER 3: ACTIVE DATA REACTORS (Grid + Labels OR Beacons) */}
+        <ActiveHexagonLayer hexagons={hexagons} zoom={zoom} onHexClick={(msgs) => onClusterClick && onClusterClick(msgs)} />
         
       </MapContainer>
     </div>
