@@ -115,12 +115,12 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
     console.log("KAIKU: Fetching messages from Supabase...");
     // Supabase Fetch from 'kaiku_posts'
     // NOTE: We do NOT manually filter by created_at or score here.
-    // The RLS policy handles that. Adding it here can cause client/server clock mismatch issues.
+    // The RLS policy handles that.
     let query = supabase
       .from('kaiku_posts')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(500); // Increased limit to ensure recent posts are seen
 
     if (onlyRoot) {
         query = query.is('parent_post_id', null);
@@ -137,7 +137,7 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
         id: d.id,
         text: d.text,
         timestamp: new Date(d.created_at).getTime(), // Convert ISO to numeric
-        location: { lat: d.latitude, lng: d.longitude },
+        location: { lat: Number(d.latitude), lng: Number(d.longitude) }, // Explicit Number cast
         city: d.city_name,
         sessionId: d.session_id,
         score: d.score ?? 0,
@@ -167,7 +167,7 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
             id: d.id,
             text: d.text,
             timestamp: new Date(d.created_at).getTime(),
-            location: { lat: d.latitude, lng: d.longitude },
+            location: { lat: Number(d.latitude), lng: Number(d.longitude) },
             city: d.city_name,
             sessionId: d.session_id,
             score: d.score ?? 0,
@@ -337,8 +337,6 @@ export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
   if (recentPostsCount >= MAX_POSTS_PER_WINDOW) {
     return {
       isLimited: true,
-      // Cooldown until the window resets for the user. 
-      // Simple logic: Wait full window from last post to discourage spamming.
       cooldownUntil: lastPostTime + RATE_LIMIT_WINDOW_MS
     };
   }
@@ -347,11 +345,6 @@ export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
 
 export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
   if (isSupabaseConfigured() && supabase) {
-    console.log("KAIKU: Realtime DISABLED for debugging.");
-    return null;
-
-    /* 
-    // TEMPORARILY DISABLED FOR DEBUGGING
     console.log("KAIKU: Initializing Realtime Subscription...");
     return supabase
       .channel('public:kaiku_posts')
@@ -372,6 +365,8 @@ export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'kaiku_posts' }, (payload) => {
+        // Handle updates (votes)
+        console.log("KAIKU: Realtime UPDATE received", payload);
         const d = payload.new;
         if (!d) return;
         callback({
@@ -388,7 +383,6 @@ export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
       .subscribe((status) => {
         console.log("KAIKU: Subscription Status:", status);
       });
-    */
   }
   return null;
 };
