@@ -106,13 +106,14 @@ export const applyFuzzyLogic = (lat: number, lng: number) => {
 // --- DATA ACCESS ---
 
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
-  // Hardcoded check means this is always true
   console.log("KAIKU: Fetching messages from Supabase...");
   
   // Supabase Fetch from 'kaiku_posts'
+  // Fetch *, plus the count of children (replies)
+  // Syntax: replies:table!foreign_key(count)
   let query = supabase
     .from('kaiku_posts')
-    .select('*')
+    .select('*, replies:kaiku_posts!parent_post_id(count)')
     .order('created_at', { ascending: false })
     .limit(500); 
 
@@ -137,7 +138,8 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
       sessionId: d.session_id,
       score: d.score ?? 0,
       parentId: d.parent_post_id,
-      replyCount: 0 
+      // Map the aggregate count. Structure is [{ count: N }]
+      replyCount: d.replies?.[0]?.count || 0
     }));
   }
 };

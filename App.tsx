@@ -5,7 +5,7 @@ import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, getRandomLocation, castVote } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, getRandomLocation, castVote, getAnonymousID } from './services/storageService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence } from 'framer-motion';
 
@@ -32,15 +32,35 @@ function App() {
     loadData();
 
     const sub = subscribeToMessages((msg) => {
-      if (msg.parentId) return;
-
+      // Logic to handle incoming messages or replies
       setMessages(prev => {
+        // CASE 1: It is a Reply (has a parentId)
+        if (msg.parentId) {
+            // We do NOT add replies to the main message list, 
+            // but we MUST update the parent's replyCount.
+            
+            // Prevent double-counting if I just sent it (optimistic update in handleReply)
+            if (msg.sessionId === getAnonymousID()) {
+                return prev;
+            }
+
+            return prev.map(m => {
+                if (m.id === msg.parentId) {
+                    return { ...m, replyCount: (m.replyCount || 0) + 1 };
+                }
+                return m;
+            });
+        }
+
+        // CASE 2: It is a New Root Post (or an update to one)
         const exists = prev.findIndex(p => p.id === msg.id);
         if (exists !== -1) {
+            // Update existing (e.g. score change)
             const updated = [...prev];
-            updated[exists] = msg;
+            updated[exists] = { ...updated[exists], ...msg };
             return updated;
         }
+        // Insert new
         return [msg, ...prev];
       });
     });
@@ -128,6 +148,7 @@ function App() {
 
     await saveMessage(text, lat, lng, parentId);
     
+    // Optimistic update for reply count
     setMessages(prev => prev.map(m => {
         if (m.id === parentId) {
             return { ...m, replyCount: (m.replyCount || 0) + 1 };
