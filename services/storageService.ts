@@ -105,22 +105,19 @@ export const applyFuzzyLogic = (lat: number, lng: number) => {
 
 // --- DATA ACCESS ---
 
-/**
- * Fetch messages. 
- * If using Supabase, it queries the 'kaiku_posts' table.
- * It relies on Row Level Security (RLS) to enforce the 48h lifespan and -5 score.
- */
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
+  // Debug Log
+  console.log(`KAIKU: Fetch Init. Supabase Configured? ${isSupabaseConfigured()}`);
+
   if (isSupabaseConfigured() && supabase) {
     console.log("KAIKU: Fetching messages from Supabase...");
+    
     // Supabase Fetch from 'kaiku_posts'
-    // NOTE: We do NOT manually filter by created_at or score here.
-    // The RLS policy handles that.
     let query = supabase
       .from('kaiku_posts')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(500); // Increased limit to ensure recent posts are seen
+      .limit(500); 
 
     if (onlyRoot) {
         query = query.is('parent_post_id', null);
@@ -129,14 +126,15 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
     const { data, error } = await query;
 
     if (error) {
-      console.error('Supabase fetch error:', error);
+      console.error('KAIKU: Supabase fetch error:', error);
       return getLocalMessages(onlyRoot);
     } else {
       console.log(`KAIKU: Successfully fetched ${data?.length || 0} messages.`);
+      
       return data.map((d: any) => ({
         id: d.id,
         text: d.text,
-        timestamp: new Date(d.created_at).getTime(), // Convert ISO to numeric
+        timestamp: new Date(d.created_at).getTime(),
         location: { lat: Number(d.latitude), lng: Number(d.longitude) }, // Explicit Number cast
         city: d.city_name,
         sessionId: d.session_id,
@@ -146,13 +144,13 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
       }));
     }
   } else {
+    console.warn("KAIKU: Supabase not configured. Using local seed data.");
     return getLocalMessages(onlyRoot);
   }
 };
 
 export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => {
     if (isSupabaseConfigured() && supabase) {
-        // Rely on RLS for filtering (lifespan/score)
         const { data, error } = await supabase
             .from('kaiku_posts')
             .select('*')
@@ -190,7 +188,6 @@ const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
   }
   const parsed: ChatMessage[] = JSON.parse(stored);
   const cutoff = Date.now() - MESSAGE_LIFESPAN_MS;
-  // Apply filtering locally
   const valid = parsed.filter(m => m.timestamp > cutoff && m.score > SCORE_THRESHOLD_HIDE);
   
   return onlyRoot ? valid.filter(m => !m.parentId) : valid;
@@ -199,12 +196,10 @@ const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
 export const saveMessage = async (text: string, lat: number, lng: number, parentId?: string): Promise<ChatMessage> => {
   const userId = getAnonymousID();
 
-  // 1. Moderate
   if (!moderateContent(text)) {
     throw new Error("Message blocked by automated moderation.");
   }
 
-  // 2. Reverse Geocode
   const city = await getCityName(lat, lng);
 
   const newMessage: ChatMessage = {
@@ -218,12 +213,10 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
     parentId: parentId || null
   };
 
-  // 3. Save
   if (isSupabaseConfigured() && supabase) {
     const { error } = await supabase
       .from('kaiku_posts')
       .insert([{
-        // Explicitly passing ID to match local optimisitic update
         id: newMessage.id,
         text: newMessage.text,
         latitude: newMessage.location.lat,
@@ -236,7 +229,7 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
     
     if (error) {
       console.error("Supabase Save Error", error);
-      saveLocalMessage(newMessage); // Fallback
+      saveLocalMessage(newMessage); 
     }
   } else {
     saveLocalMessage(newMessage);
@@ -252,8 +245,6 @@ const saveLocalMessage = (msg: ChatMessage) => {
   const updated = [msg, ...filtered];
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 };
-
-// --- VOTING SYSTEM ---
 
 export const getUserVotes = (): Record<string, 'up' | 'down'> => {
   const stored = localStorage.getItem(USER_VOTES_KEY);
@@ -281,16 +272,13 @@ export const castVote = async (msgId: string, direction: 'up' | 'down'): Promise
   let updatedMessage: ChatMessage | null = null;
 
   if (isSupabaseConfigured() && supabase) {
-    // Fetch current score first to be safe
     const { data } = await supabase.from('kaiku_posts').select('score').eq('id', msgId).single();
     if (data) {
       const newScore = (data.score || 0) + scoreDelta;
       await supabase.from('kaiku_posts').update({ score: newScore }).eq('id', msgId);
-      // Return optimistic updated message struct if needed, though UI usually handles it
     }
   } 
   
-  // Local Fallback / Optimistic Logic
   const local = getLocalMessages(false);
   const index = local.findIndex(m => m.id === msgId);
   if (index !== -1) {
@@ -301,8 +289,6 @@ export const castVote = async (msgId: string, direction: 'up' | 'down'): Promise
 
   return updatedMessage;
 };
-
-// --- RATE LIMIT ---
 
 export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
   const userId = getAnonymousID();
@@ -357,7 +343,7 @@ export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
           id: d.id,
           text: d.text,
           timestamp: new Date(d.created_at).getTime(),
-          location: { lat: Number(d.latitude), lng: Number(d.longitude) }, // Ensure number type
+          location: { lat: Number(d.latitude), lng: Number(d.longitude) },
           city: d.city_name,
           sessionId: d.session_id,
           score: d.score ?? 0,
@@ -365,7 +351,6 @@ export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'kaiku_posts' }, (payload) => {
-        // Handle updates (votes)
         console.log("KAIKU: Realtime UPDATE received", payload);
         const d = payload.new;
         if (!d) return;
@@ -373,7 +358,7 @@ export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
             id: d.id,
             text: d.text,
             timestamp: new Date(d.created_at).getTime(),
-            location: { lat: Number(d.latitude), lng: Number(d.longitude) }, // Ensure number type
+            location: { lat: Number(d.latitude), lng: Number(d.longitude) },
             city: d.city_name,
             sessionId: d.session_id,
             score: d.score ?? 0,

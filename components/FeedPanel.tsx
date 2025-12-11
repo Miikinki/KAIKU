@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Radio, Clock, MessageSquare, Shield, MapPin, ChevronUp, ChevronDown } from 'lucide-react';
+import { Radio, Clock, MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
 import { getUserVotes } from '../services/storageService';
@@ -11,20 +11,20 @@ interface FeedPanelProps {
   isOpen: boolean;
   toggleOpen: () => void;
   onVote: (msgId: string, direction: 'up' | 'down') => void;
+  onRefresh?: () => void;
 }
 
-const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, isOpen, toggleOpen, onVote }) => {
+const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onRefresh }) => {
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Sync votes on load and when list changes (to ensure UI reflects fresh state)
   useEffect(() => {
     setUserVotes(getUserVotes());
   }, [visibleMessages, isOpen]);
 
   const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
-    e.stopPropagation(); // Prevent message click
+    e.stopPropagation();
     onVote(msgId, direction);
-    // Optimistic UI update for the button color (score update comes from parent prop)
     setUserVotes(prev => {
         const current = prev[msgId];
         const next = { ...prev };
@@ -34,9 +34,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
     });
   };
 
+  const handleRefresh = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (onRefresh) {
+          setIsRefreshing(true);
+          onRefresh();
+          setTimeout(() => setIsRefreshing(false), 1000);
+      }
+  };
+
   return (
     <>
-      {/* Toggle Button (Mobile/Desktop) */}
       <button
         onClick={toggleOpen}
         className="fixed top-24 right-4 z-[400] bg-black/60 backdrop-blur-md border border-white/10 p-3 rounded-full text-white shadow-lg hover:bg-white/10 transition-all"
@@ -53,16 +61,26 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             className="fixed top-0 right-0 h-full w-full sm:w-96 bg-[#0a0a12]/90 backdrop-blur-xl border-l border-white/10 z-[450] shadow-2xl flex flex-col"
           >
-            {/* Header */}
             <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
               <div>
                 <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: THEME_COLOR }} />
                   LOCAL FEED
                 </h2>
-                <p className="text-xs text-gray-400 mt-1 uppercase tracking-widest">
-                  {visibleMessages.length} Signals in View
-                </p>
+                <div className="flex items-center gap-2 mt-1">
+                    <p className="text-xs text-gray-400 uppercase tracking-widest">
+                    {visibleMessages.length} Signals
+                    </p>
+                    {onRefresh && (
+                        <button 
+                            onClick={handleRefresh} 
+                            className={`p-1 hover:bg-white/10 rounded-full transition-all ${isRefreshing ? 'animate-spin' : ''}`}
+                            title="Refresh Signals"
+                        >
+                            <RotateCcw size={12} className="text-gray-400" />
+                        </button>
+                    )}
+                </div>
               </div>
               <button onClick={toggleOpen} className="p-2 hover:bg-white/10 rounded-full">
                 <span className="sr-only">Close</span>
@@ -70,7 +88,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
               </button>
             </div>
 
-            {/* List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
               {visibleMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-gray-500 text-center">
@@ -86,7 +103,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
                     onClick={() => onMessageClick(msg)}
                     className="group bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 rounded-xl p-4 cursor-pointer transition-all flex gap-3"
                   >
-                    {/* Voting Column */}
                     <div className="flex flex-col items-center justify-center gap-1 min-w-[30px]">
                         <button 
                             onClick={(e) => handleVoteClick(e, msg.id, 'up')}
@@ -105,7 +121,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
                         </button>
                     </div>
 
-                    {/* Content Column */}
                     <div className="flex-1">
                         <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-1.5 text-[10px] text-gray-400 uppercase tracking-wider font-mono">

@@ -27,12 +27,12 @@ export interface RateLimitStatus {
 }
 
 export enum DreamCategory {
-  NIGHTMARE = 'Nightmare',
-  LUCID = 'Lucid',
-  RECURRING = 'Recurring',
-  MUNDANE = 'Mundane',
-  PROPHETIC = 'Prophetic',
-  ABSTRACT = 'Abstract'
+  NIGHTMARE = 'nightmare',
+  LUCID = 'lucid',
+  RECURRING = 'recurring',
+  MUNDANE = 'mundane',
+  PROPHETIC = 'prophetic',
+  ABSTRACT = 'abstract'
 }
 
 export interface Dream {
@@ -56,7 +56,7 @@ export interface TrendingSymbol {
 export interface CountryStats {
   countryName: string;
   totalDreams: number;
-  dominantTheme: string;
+  dominantTheme: DreamCategory | 'N/A';
   moodScore: number;
   trendingSymbols: TrendingSymbol[];
 }

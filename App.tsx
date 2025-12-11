@@ -22,19 +22,16 @@ function App() {
     cooldownUntil: null
   });
 
-  // Initial Data Load
-  useEffect(() => {
-    const init = async () => {
-      // Only fetch root messages (threads) for the map and feed
+  const loadData = async () => {
       const data = await fetchMessages(true);
       setMessages(data);
       setRateLimit(await getRateLimitStatus());
-    };
-    init();
+  };
+
+  useEffect(() => {
+    loadData();
 
     const sub = subscribeToMessages((msg) => {
-      // If it's a reply, we don't add it to the main map/feed list unless we want to indicate activity
-      // For now, only root messages go to main feed
       if (msg.parentId) return;
 
       setMessages(prev => {
@@ -50,7 +47,6 @@ function App() {
     return () => { if (sub) sub.unsubscribe(); };
   }, []);
 
-  // Live Lifecycle Pruning
   useEffect(() => {
     const interval = setInterval(() => {
       setMessages(currentMessages => {
@@ -67,12 +63,11 @@ function App() {
         }
         return currentMessages;
       });
-    }, 60000); // Check every 60 seconds
+    }, 60000); 
 
     return () => clearInterval(interval);
   }, []);
 
-  // Viewport Logic
   useEffect(() => {
     if (!currentBounds) return;
     
@@ -95,7 +90,6 @@ function App() {
   };
 
   const handleSave = async (text: string) => {
-    // Get location
     let lat = 0, lng = 0;
     try {
       const pos = await new Promise<GeolocationPosition>((res, rej) => 
@@ -115,9 +109,6 @@ function App() {
   };
 
   const handleReply = async (text: string, parentId: string) => {
-    // We use the parent's location for the reply (conceptually) or the user's current location?
-    // User's current location is usually best for "I was here when I replied", 
-    // but the visibility of the reply is tied to the parent thread in the UI.
     let lat = 0, lng = 0;
     try {
         const pos = await new Promise<GeolocationPosition>((res, rej) => 
@@ -126,7 +117,6 @@ function App() {
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
       } catch (e) {
-        // Fallback to parent location or random
         if (activeThread) {
             lat = activeThread.location.lat;
             lng = activeThread.location.lng;
@@ -138,7 +128,6 @@ function App() {
 
     await saveMessage(text, lat, lng, parentId);
     
-    // Update local reply count for the active thread immediately
     setMessages(prev => prev.map(m => {
         if (m.id === parentId) {
             return { ...m, replyCount: (m.replyCount || 0) + 1 };
@@ -148,7 +137,6 @@ function App() {
   };
 
   const handleVote = async (msgId: string, direction: 'up' | 'down') => {
-    // Optimistic Update
     setMessages(prev => prev.map(m => {
         if (m.id === msgId) {
             const delta = direction === 'up' ? 1 : -1; 
@@ -186,6 +174,7 @@ function App() {
         isOpen={isFeedOpen}
         toggleOpen={() => setIsFeedOpen(!isFeedOpen)}
         onVote={handleVote}
+        onRefresh={loadData}
       />
 
       <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[400]">

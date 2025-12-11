@@ -9,33 +9,29 @@ export const moderateContent = (text: string): boolean => {
   return true; // Approved
 };
 
-// 2. Reverse Geocoding (Nominatim Free API)
+// 2. Reverse Geocoding (BigDataCloud Free API - CORS Friendly)
 export const getCityName = async (lat: number, lng: number): Promise<string> => {
   try {
-    // Artificial delay to prevent spamming the free API
-    await new Promise(r => setTimeout(r, 500));
-    
+    // Using BigDataCloud's free client-side API which handles CORS much better than Nominatim
+    // and doesn't require a strict User-Agent header (which browsers block).
     const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`,
-      { headers: { 'User-Agent': 'Kaiku/1.0' } }
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
     );
     
     if (!response.ok) throw new Error('Geocoding failed');
     
     const data = await response.json();
-    const addr = data.address;
     
-    // Try to find the most relevant "City" name
-    return addr.city || 
-           addr.town || 
-           addr.village || 
-           addr.municipality || 
-           addr.county || 
-           addr.state || 
+    // Extract the most relevant location name
+    // API returns fields like: city, locality, principalSubdivision, countryName
+    return data.city || 
+           data.locality || 
+           data.principalSubdivision || 
+           data.countryName || 
            "Unknown Sector";
            
   } catch (error) {
     console.warn("Geocoding failed, falling back to coordinates", error);
-    return `${lat.toFixed(2)}, ${lng.toFixed(2)}`;
+    return `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`;
   }
 };
