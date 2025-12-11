@@ -34,11 +34,11 @@ const createZoneDotIcon = (count: number) => {
 const createClusterIcon = (count: number) => {
   if (!L || !L.divIcon) return undefined;
 
-  const size = 28;
+  const size = 32; // Slightly larger for better clickability
 
   return L.divIcon({
     className: 'custom-div-icon',
-    html: `<div class="cluster-marker" style="width: ${size}px; height: ${size}px;">${count}</div>`,
+    html: `<div class="cluster-marker" style="width: ${size}px; height: ${size}px; cursor: pointer;">${count}</div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -126,14 +126,10 @@ const ActivityZones: React.FC<{
   });
 
   const zones = useMemo(() => {
-    // PRIVACY & CLUSTERING LOGIC:
-    // Group messages by snapped coordinates (approx 1.1km grid).
-    // This acts as both the "Hub" and the Privacy filter.
-    
+    // 1. GRID SNAPPING (Privacy Pass)
     const groups: Record<string, { lat: number, lng: number, messages: ChatMessage[], id: string }> = {};
 
     messages.forEach(msg => {
-      // Round to 2 decimal places (approx 1.11km precision at equator)
       const snappedLat = Math.round(msg.location.lat * 100) / 100;
       const snappedLng = Math.round(msg.location.lng * 100) / 100;
       
@@ -151,25 +147,65 @@ const ActivityZones: React.FC<{
       groups[key].messages.push(msg);
     });
 
-    return Object.values(groups).map(g => ({
+    const initialGroups = Object.values(groups).sort((a, b) => b.messages.length - a.messages.length);
+
+    // 2. AGGRESSIVE DISTANCE MERGE (City Hub Pass)
+    const mergedClusters: typeof initialGroups = [];
+    
+    // Threshold in Meters.
+    // 2.5km visual radius * 2 = 5km diameter. 
+    // We use 10km to guarantee wide separation and "City Level" grouping.
+    const MERGE_THRESHOLD_METERS = 10000; 
+
+    initialGroups.forEach(group => {
+        let merged = false;
+        const groupLatLng = L.latLng(group.lat, group.lng);
+        
+        for (const cluster of mergedClusters) {
+            const clusterLatLng = L.latLng(cluster.lat, cluster.lng);
+            const dist = map.distance(groupLatLng, clusterLatLng);
+
+            if (dist < MERGE_THRESHOLD_METERS) {
+                // Merge this group into the existing cluster
+                cluster.messages.push(...group.messages);
+                // We keep the original cluster center to act as the "Hub" anchor
+                merged = true;
+                break;
+            }
+        }
+
+        if (!merged) {
+            mergedClusters.push({ ...group });
+        }
+    });
+
+    return mergedClusters.map(g => ({
       id: g.id,
       position: [g.lat, g.lng] as [number, number],
       messages: g.messages,
       count: g.messages.length
     }));
-  }, [messages]);
+  }, [messages, map]);
 
   // Hybrid Rendering Strategy
   const RENDER_THRESHOLD = 11;
-  
-  // Huge radius (2.5km) to cover entire districts/neighborhoods for privacy
   const PRIVACY_RADIUS_METERS = 2500; 
+
+  const handleZoneClick = (e: L.LeafletMouseEvent, msgs: ChatMessage[]) => {
+      if (e.originalEvent) {
+        L.DomEvent.preventDefault(e.originalEvent); // Prevent default map interaction
+        L.DomEvent.stopPropagation(e.originalEvent); // Stop bubbling
+      }
+      if (onClusterClick) {
+          onClusterClick(msgs);
+      }
+  };
 
   return (
     <>
       {zones.map(zone => {
         if (zoom < RENDER_THRESHOLD) {
-          // ZOOMED OUT: Render simple dots
+          // ZOOMED OUT: Render simple interactive dots
           return (
             <Marker 
               key={`dot-${zone.id}`}
@@ -177,18 +213,15 @@ const ActivityZones: React.FC<{
               icon={createZoneDotIcon(zone.count)}
               interactive={true} 
               eventHandlers={{
-                click: (e) => {
-                   L.DomEvent.stopPropagation(e);
-                   if (onClusterClick) onClusterClick(zone.messages);
-                }
+                click: (e) => handleZoneClick(e, zone.messages)
               }}
             />
           );
         } else {
-          // ZOOMED IN: Render Hubs (Privacy Circle + Count Badge)
+          // ZOOMED IN: Render City Hubs
           return (
              <React.Fragment key={`hub-${zone.id}`}>
-               {/* Privacy Circle Area */}
+               {/* Clickable Area Circle */}
                <Circle 
                   center={zone.position}
                   radius={PRIVACY_RADIUS_METERS}
@@ -201,23 +234,17 @@ const ActivityZones: React.FC<{
                   }}
                   interactive={true}
                   eventHandlers={{
-                    click: (e) => {
-                      L.DomEvent.stopPropagation(e);
-                      if (onClusterClick) onClusterClick(zone.messages);
-                    }
+                    click: (e) => handleZoneClick(e, zone.messages)
                   }}
                />
                
-               {/* Center Count Badge */}
+               {/* Clickable Count Badge */}
                <Marker 
                  position={zone.position}
                  icon={createClusterIcon(zone.count)}
                  interactive={true}
                  eventHandlers={{
-                    click: (e) => {
-                      L.DomEvent.stopPropagation(e);
-                      if (onClusterClick) onClusterClick(zone.messages);
-                    }
+                    click: (e) => handleZoneClick(e, zone.messages)
                   }}
                />
              </React.Fragment>
