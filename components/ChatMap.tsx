@@ -110,19 +110,32 @@ const ActivityZones: React.FC<{ messages: ChatMessage[] }> = ({ messages }) => {
 };
 
 const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick }) => {
+  // Lock the map to the "real" world coordinates to prevent scrolling into the void.
+  // Latitude is capped at +/- 85 because Web Mercator projection distorts infinitely at the poles.
+  const maxBounds = new L.LatLngBounds(
+    new L.LatLng(-85, -180), // South West
+    new L.LatLng(85, 180)    // North East
+  );
+
   return (
     <div className="fixed inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
         center={[20, 0]}
         zoom={3}
-        minZoom={2}
+        minZoom={2.5}
         scrollWheelZoom={true}
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
         style={{ background: '#0a0a12' }}
+        maxBounds={maxBounds}
+        maxBoundsViscosity={1.0} // Creates a "hard wall" effect
       >
-        <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} />
+        <TileLayer 
+            url={MAP_TILE_URL} 
+            attribution={MAP_ATTRIBUTION} 
+            noWrap={true} // Prevents the map from repeating horizontally
+        />
         
         <MapEvents onViewportChange={onViewportChange} />
 
