@@ -13,7 +13,7 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
   const [isInputOpen, setIsInputOpen] = useState(false);
-  const [isFeedOpen, setIsFeedOpen] = useState(true);
+  const [isFeedOpen, setIsFeedOpen] = useState(false); // Default to CLOSED
   const [activeThread, setActiveThread] = useState<ChatMessage | null>(null);
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
   
