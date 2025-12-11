@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Radio } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
@@ -17,6 +17,9 @@ function App() {
   const [activeThread, setActiveThread] = useState<ChatMessage | null>(null);
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
   
+  // Cache for GPS location to solve "Cold Start" issues on mobile
+  const locationCache = useRef<{lat: number, lng: number} | null>(null);
+
   const [rateLimit, setRateLimit] = useState<{ isLimited: boolean; cooldownUntil: number | null }>({
     isLimited: false,
     cooldownUntil: null
@@ -27,6 +30,27 @@ function App() {
       setMessages(data);
       setRateLimit(await getRateLimitStatus());
   };
+
+  // GPS Warm-up Effect: Triggers immediately when Input Modal opens
+  useEffect(() => {
+    if (isInputOpen) {
+      console.log("KAIKU: Warming up GPS...");
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          console.log("KAIKU: GPS Locked via Warm-up", pos.coords);
+          locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        },
+        (err) => {
+          console.warn("KAIKU: GPS Warm-up failed (will try again on send)", err);
+        },
+        { 
+          timeout: 20000, 
+          maximumAge: 60000, // Accept cached locations up to 1 minute old
+          enableHighAccuracy: true 
+        }
+      );
+    }
+  }, [isInputOpen]);
 
   useEffect(() => {
     loadData();
@@ -119,13 +143,28 @@ function App() {
 
   const handleSave = async (text: string) => {
     let lat = 0, lng = 0;
+    
     try {
-      const pos = await new Promise<GeolocationPosition>((res, rej) => 
-        navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 })
-      );
-      lat = pos.coords.latitude;
-      lng = pos.coords.longitude;
+      // 1. Try to use warmed-up cache first
+      if (locationCache.current) {
+        lat = locationCache.current.lat;
+        lng = locationCache.current.lng;
+      } else {
+        // 2. Fallback to fresh fetch if cache is empty
+        const pos = await new Promise<GeolocationPosition>((res, rej) => 
+          navigator.geolocation.getCurrentPosition(res, rej, { 
+            timeout: 20000, // Increased timeout for mobile cold start
+            maximumAge: 60000, 
+            enableHighAccuracy: true 
+          })
+        );
+        lat = pos.coords.latitude;
+        lng = pos.coords.longitude;
+        // Update cache for next time
+        locationCache.current = { lat, lng };
+      }
     } catch (e) {
+      console.warn("GPS Failed, falling back to random location");
       const r = getRandomLocation();
       lat = r.lat;
       lng = r.lng;
@@ -140,7 +179,10 @@ function App() {
     let lat = 0, lng = 0;
     try {
         const pos = await new Promise<GeolocationPosition>((res, rej) => 
-          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
+          navigator.geolocation.getCurrentPosition(res, rej, { 
+              timeout: 10000, 
+              maximumAge: 60000 
+          })
         );
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
