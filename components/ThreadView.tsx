@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, Clock, AlertCircle } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, AlertCircle, Trash2 } from 'lucide-react';
 import { ChatMessage } from '../types';
-import { THEME_COLOR } from '../constants';
-import { fetchReplies, getUserVotes } from '../services/storageService';
+import { fetchReplies, getUserVotes, getAnonymousID } from '../services/storageService';
 
 interface ThreadViewProps {
   parentMessage: ChatMessage;
   onClose: () => void;
   onReply: (text: string, parentId: string) => Promise<void>;
   onVote: (msgId: string, direction: 'up' | 'down') => void;
+  onDelete: (msgId: string) => void;
 }
 
-const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote }) => {
+const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete }) => {
   const [replies, setReplies] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [replyText, setReplyText] = useState('');
@@ -20,6 +20,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   const [error, setError] = useState<string | null>(null);
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
+  const currentSessionId = getAnonymousID();
 
   useEffect(() => {
     const loadReplies = async () => {
@@ -68,6 +69,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     });
   };
 
+  const handleDeleteClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
+    e.stopPropagation();
+    if (window.confirm("Are you sure you want to delete this signal?")) {
+        onDelete(msgId);
+        if (isParent) onClose();
+    }
+  };
+
   const renderMessageCard = (msg: ChatMessage, isParent: boolean) => (
     <div className={`p-4 ${isParent ? 'bg-white/10 border-b border-white/10' : 'bg-transparent border-l-2 border-white/10 ml-4 pl-4'}`}>
       <div className="flex gap-3">
@@ -98,11 +107,22 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     <span>•</span>
                     <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}</span>
                 </div>
-                {isParent && (
-                    <div className="flex items-center gap-1 text-[10px] text-gray-500 uppercase">
-                        <MapPin size={10} /> {msg.city}
-                    </div>
-                )}
+                <div className="flex items-center gap-2">
+                    {msg.sessionId === currentSessionId && (
+                         <button 
+                            onClick={(e) => handleDeleteClick(e, msg.id, isParent)}
+                            className="text-gray-600 hover:text-red-400 transition-colors p-1"
+                            title="Delete your signal"
+                        >
+                            <Trash2 size={12} />
+                        </button>
+                    )}
+                    {isParent && (
+                        <div className="flex items-center gap-1 text-[10px] text-gray-500 uppercase">
+                            <MapPin size={10} /> {msg.city}
+                        </div>
+                    )}
+                </div>
             </div>
             <p className={`text-sm text-gray-200 leading-relaxed whitespace-pre-wrap ${isParent ? 'font-medium text-base' : 'font-light'}`}>
                 {msg.text}

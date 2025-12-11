@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Radio } from 'lucide-react';
 import ChatMap from './components/ChatMap';
@@ -5,7 +6,7 @@ import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, getRandomLocation, castVote, getAnonymousID } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, getAnonymousID, deleteMessage } from './services/storageService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence } from 'framer-motion';
 
@@ -229,6 +230,21 @@ function App() {
     }
   };
 
+  const handleDelete = async (msgId: string) => {
+    // 1. Optimistic Update (Instant Feedback)
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+    setVisibleMessages(prev => prev.filter(m => m.id !== msgId));
+
+    // 2. Perform Delete
+    const success = await deleteMessage(msgId);
+    
+    // 3. Revert if failed
+    if (!success) {
+        alert("Could not delete message. You might not be the owner.");
+        loadData(); // Re-fetch to restore state
+    }
+  };
+
   return (
     // FIXED INSET-0 forces the app to fill the iframe/viewport completely
     <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
@@ -253,6 +269,7 @@ function App() {
         isOpen={isFeedOpen}
         toggleOpen={() => setIsFeedOpen(!isFeedOpen)}
         onVote={handleVote}
+        onDelete={handleDelete}
         onRefresh={loadData}
       />
 
@@ -280,6 +297,7 @@ function App() {
                 onClose={() => setActiveThread(null)}
                 onReply={handleReply}
                 onVote={handleVote}
+                onDelete={handleDelete}
             />
         )}
       </AnimatePresence>

@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Radio, Clock, MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
-import { getUserVotes } from '../services/storageService';
+import { getUserVotes, getAnonymousID } from '../services/storageService';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -11,12 +12,14 @@ interface FeedPanelProps {
   isOpen: boolean;
   toggleOpen: () => void;
   onVote: (msgId: string, direction: 'up' | 'down') => void;
+  onDelete: (msgId: string) => void;
   onRefresh?: () => void;
 }
 
-const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onRefresh }) => {
+const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh }) => {
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const currentSessionId = getAnonymousID();
 
   useEffect(() => {
     setUserVotes(getUserVotes());
@@ -32,6 +35,13 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
         else next[msgId] = direction;
         return next;
     });
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, msgId: string) => {
+      e.stopPropagation();
+      if (window.confirm("Are you sure you want to delete this signal?")) {
+          onDelete(msgId);
+      }
   };
 
   const handleRefresh = (e: React.MouseEvent) => {
@@ -123,16 +133,27 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
 
                     <div className="flex-1">
                         <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-1.5 text-[10px] text-gray-400 uppercase tracking-wider font-mono">
-                            <MapPin size={10} style={{ color: THEME_COLOR }} />
-                            <span className="font-bold text-gray-300 truncate max-w-[140px]">
-                            {msg.city || 'UNKNOWN LOCATION'}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                            <Clock size={10} />
-                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
-                        </div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-gray-400 uppercase tracking-wider font-mono">
+                                <MapPin size={10} style={{ color: THEME_COLOR }} />
+                                <span className="font-bold text-gray-300 truncate max-w-[140px]">
+                                {msg.city || 'UNKNOWN LOCATION'}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {msg.sessionId === currentSessionId && (
+                                    <button 
+                                        onClick={(e) => handleDeleteClick(e, msg.id)}
+                                        className="relative z-10 p-1.5 bg-red-500/10 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                                        title="Delete your signal"
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                )}
+                                <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                                    <Clock size={10} />
+                                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
+                                </div>
+                            </div>
                         </div>
                         
                         <p className="text-sm text-gray-200 leading-relaxed font-light break-words">
