@@ -230,10 +230,21 @@ function App() {
     }
   };
 
-  const handleDelete = async (msgId: string) => {
+  const handleDelete = async (msgId: string, parentId?: string | null) => {
     // 1. Optimistic Update (Instant Feedback)
-    setMessages(prev => prev.filter(m => m.id !== msgId));
-    setVisibleMessages(prev => prev.filter(m => m.id !== msgId));
+    if (parentId) {
+        // Reply deleted: Update parent's reply count
+        setMessages(prev => prev.map(m => {
+            if (m.id === parentId) {
+                return { ...m, replyCount: Math.max(0, (m.replyCount || 0) - 1) };
+            }
+            return m;
+        }));
+    } else {
+        // Root message deleted
+        setMessages(prev => prev.filter(m => m.id !== msgId));
+        setVisibleMessages(prev => prev.filter(m => m.id !== msgId));
+    }
 
     // 2. Perform Delete
     const success = await deleteMessage(msgId);

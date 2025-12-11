@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, AlertCircle, Trash2 } from 'lucide-react';
@@ -9,7 +10,7 @@ interface ThreadViewProps {
   onClose: () => void;
   onReply: (text: string, parentId: string) => Promise<void>;
   onVote: (msgId: string, direction: 'up' | 'down') => void;
-  onDelete: (msgId: string) => void;
+  onDelete: (msgId: string, parentId?: string) => void;
 }
 
 const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete }) => {
@@ -72,8 +73,15 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
     e.stopPropagation();
     if (window.confirm("Are you sure you want to delete this signal?")) {
-        onDelete(msgId);
-        if (isParent) onClose();
+        if (isParent) {
+            onDelete(msgId);
+            onClose();
+        } else {
+            // Optimistically remove from local view
+            setReplies(prev => prev.filter(r => r.id !== msgId));
+            // Update parent count in main app
+            onDelete(msgId, parentMessage.id);
+        }
     }
   };
 

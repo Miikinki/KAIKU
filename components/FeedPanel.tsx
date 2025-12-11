@@ -12,7 +12,7 @@ interface FeedPanelProps {
   isOpen: boolean;
   toggleOpen: () => void;
   onVote: (msgId: string, direction: 'up' | 'down') => void;
-  onDelete: (msgId: string) => void;
+  onDelete: (msgId: string, parentId?: string) => void;
   onRefresh?: () => void;
 }
 
@@ -37,10 +37,10 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
     });
   };
 
-  const handleDeleteClick = (e: React.MouseEvent, msgId: string) => {
+  const handleDeleteClick = (e: React.MouseEvent, msgId: string, parentId?: string | null) => {
       e.stopPropagation();
       if (window.confirm("Are you sure you want to delete this signal?")) {
-          onDelete(msgId);
+          onDelete(msgId, parentId || undefined);
       }
   };
 
@@ -142,7 +142,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({ visibleMessages, onMessageClick, 
                             <div className="flex items-center gap-2">
                                 {msg.sessionId === currentSessionId && (
                                     <button 
-                                        onClick={(e) => handleDeleteClick(e, msg.id)}
+                                        onClick={(e) => handleDeleteClick(e, msg.id, msg.parentId)}
                                         className="relative z-10 p-1.5 bg-red-500/10 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm"
                                         title="Delete your signal"
                                     >
