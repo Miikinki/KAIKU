@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Polygon, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, Circle, useMapEvents, useMap } from 'react-leaflet';
 import * as L from 'leaflet';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
-import { aggregateMessagesByHexagon, getHexagonForLocation } from '../services/h3Helpers';
+import { aggregateMessagesByHexagon, getHexagonForLocation, HexagonData } from '../services/h3Helpers';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -13,13 +13,191 @@ interface ChatMapProps {
   lastNewMessage: ChatMessage | null;
 }
 
-// Component to handle Map Resizing logic using ResizeObserver
+// ----------------------------------------------------------------------
+// 0. MAP DEFS (SVG Gradients)
+// ----------------------------------------------------------------------
+const MapDefs: React.FC = () => {
+  const map = useMap();
+  useEffect(() => {
+    const svg = map.getPanes().overlayPane.querySelector('svg');
+    if (!svg || svg.querySelector('#kaiku-defs')) return;
+
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    defs.id = 'kaiku-defs';
+
+    // Helper: Radial Gradient for Aura
+    const createRadial = (id: string, color: string, stop1: number, stop2: number) => {
+      const grad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+      grad.setAttribute('id', id);
+      grad.setAttribute('cx', '50%');
+      grad.setAttribute('cy', '50%');
+      grad.setAttribute('r', '50%');
+      const s1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+      s1.setAttribute('offset', '0%');
+      s1.setAttribute('stop-color', '#fff'); // Hot core
+      s1.setAttribute('stop-opacity', stop1.toString());
+      const s2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+      s2.setAttribute('offset', '100%');
+      s2.setAttribute('stop-color', color);
+      s2.setAttribute('stop-opacity', stop2.toString());
+      grad.appendChild(s1);
+      grad.appendChild(s2);
+      return grad;
+    };
+
+    defs.appendChild(createRadial('aura-grad-1', '#00C8D6', 0.4, 0.0));
+    defs.appendChild(createRadial('aura-grad-2', '#00C8D6', 0.6, 0.1));
+    defs.appendChild(createRadial('aura-grad-3', '#00FFFF', 0.8, 0.2));
+    defs.appendChild(createRadial('aura-grad-4', '#00FFFF', 1.0, 0.3));
+
+    svg.prepend(defs);
+  }, [map]);
+  return null;
+};
+
+// ----------------------------------------------------------------------
+// 1. LAYER: HEAT CLOUD (Atmosphere)
+// ----------------------------------------------------------------------
+const HeatCloudLayer: React.FC<{ hexagons: HexagonData[]; zoom: number }> = ({ hexagons, zoom }) => {
+  if (zoom < 4) return null; // Hide at global view for performance
+
+  return (
+    <>
+      {hexagons.map(hex => {
+        // Only significant clusters get atmosphere
+        if (hex.count < 3) return null;
+        
+        // Dynamic radius based on density
+        const radius = hex.count > 20 ? 8000 : 5000; 
+
+        return (
+          <Circle
+            key={`cloud-${hex.h3Index}`}
+            center={hex.boundary[0]}
+            radius={radius}
+            pathOptions={{
+              stroke: false,
+              fillColor: '#00FFFF',
+              fillOpacity: 0.15,
+              className: 'kaiku-cloud-blob' // Heavy blur applied via CSS
+            }}
+          />
+        );
+      })}
+    </>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 2. LAYER: AURA (Visuals & Animations)
+// ----------------------------------------------------------------------
+const AuraLayer: React.FC<{ 
+  hexagons: HexagonData[]; 
+  zoom: number; 
+  lastNewMessage: ChatMessage | null;
+}> = ({ hexagons, zoom, lastNewMessage }) => {
+  
+  const [flashingHex, setFlashingHex] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!lastNewMessage) return;
+    const hexId = getHexagonForLocation(lastNewMessage.location.lat, lastNewMessage.location.lng);
+    setFlashingHex(hexId);
+    const timer = setTimeout(() => setFlashingHex(null), 500); // 500ms flash
+    return () => clearTimeout(timer);
+  }, [lastNewMessage]);
+
+  if (zoom < 6) return null; // Simplified view at low zoom
+
+  const getLevel = (count: number) => {
+    if (count >= 25) return 4;
+    if (count >= 10) return 3;
+    if (count >= 3) return 2;
+    return 1;
+  };
+
+  return (
+    <>
+      {hexagons.map(hex => {
+        const level = getLevel(hex.count);
+        const isFlashing = hex.h3Index === flashingHex;
+        
+        // Construct CSS classes
+        let classes = `kaiku-aura aura-level-${level}`;
+        if (isFlashing) classes += ' aura-flash-active';
+
+        return (
+          <Polygon
+            key={`aura-${hex.h3Index}`}
+            positions={hex.boundary}
+            pathOptions={{
+              stroke: false,
+              fillColor: `url(#aura-grad-${level})`, // Use SVG Gradient
+              fillOpacity: 1, // Controlled by gradient
+              className: classes,
+            }}
+          />
+        );
+      })}
+    </>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 3. LAYER: INTERACTIVE GRID (Top Layer)
+// ----------------------------------------------------------------------
+const InteractiveGridLayer: React.FC<{ 
+  hexagons: HexagonData[]; 
+  onHexClick: (messages: ChatMessage[]) => void 
+}> = ({ hexagons, onHexClick }) => {
+  
+  return (
+    <>
+      {hexagons.map(hex => {
+        // Simple clean styles for the clickable layer
+        // No heavy blurs or animations here
+        return (
+          <Polygon
+            key={`grid-${hex.h3Index}`}
+            positions={hex.boundary}
+            pathOptions={{
+              color: '#00FFFF',
+              weight: 1,
+              opacity: 0.8,
+              fillColor: '#00FFFF',
+              fillOpacity: 0.1, // Very subtle tint
+              className: 'kaiku-interactive' // Handles hover states
+            }}
+            eventHandlers={{
+              click: (e) => {
+                L.DomEvent.stopPropagation(e);
+                onHexClick(hex.messages);
+              }
+            }}
+          />
+        );
+      })}
+    </>
+  );
+};
+
+// ----------------------------------------------------------------------
+// MAP COMPONENT
+// ----------------------------------------------------------------------
+
+const MapController: React.FC<{ onZoomChange: (z: number) => void }> = ({ onZoomChange }) => {
+  const map = useMapEvents({
+    zoomend: () => onZoomChange(map.getZoom())
+  });
+  return null;
+};
+
 const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = ({ onViewportChange }) => {
   const map = useMap();
   const mapContainerRef = useRef<HTMLElement | null>(map.getContainer());
 
   useEffect(() => {
-    const handleResize = () => {
+    const handleUpdate = () => {
       map.invalidateSize();
       const bounds = map.getBounds();
       onViewportChange({
@@ -30,121 +208,34 @@ const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void
         zoom: map.getZoom()
       });
     };
+    
+    // Initial warmup
+    setTimeout(handleUpdate, 100);
+    setTimeout(handleUpdate, 500);
 
-    setTimeout(handleResize, 100);
-    setTimeout(handleResize, 500);
-
-    const resizeObserver = new ResizeObserver(() => {
-      handleResize();
-    });
-
-    if (mapContainerRef.current) {
-      resizeObserver.observe(mapContainerRef.current);
-    }
+    const resizeObserver = new ResizeObserver(() => handleUpdate());
+    if (mapContainerRef.current) resizeObserver.observe(mapContainerRef.current);
+    
+    // Also attach to move events here for simplicity
+    map.on('moveend', handleUpdate);
+    map.on('zoomend', handleUpdate);
 
     return () => {
       resizeObserver.disconnect();
+      map.off('moveend', handleUpdate);
+      map.off('zoomend', handleUpdate);
     };
   }, [map, onViewportChange]);
-
-  return null;
-};
-
-const MapEvents: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = ({ onViewportChange }) => {
-  const map = useMapEvents({
-    moveend: () => {
-      const bounds = map.getBounds();
-      onViewportChange({
-        north: bounds.getNorth(),
-        south: bounds.getSouth(),
-        east: bounds.getEast(),
-        west: bounds.getWest(),
-        zoom: map.getZoom()
-      });
-    },
-    zoomend: () => {
-      const bounds = map.getBounds();
-      onViewportChange({
-        north: bounds.getNorth(),
-        south: bounds.getSouth(),
-        east: bounds.getEast(),
-        west: bounds.getWest(),
-        zoom: map.getZoom()
-      });
-    }
-  });
-  return null;
-};
-
-// H3 Hexagon Heatmap Layer
-const HexagonHeatmapLayer: React.FC<{
-  messages: ChatMessage[];
-  onHexClick: (messages: ChatMessage[]) => void;
-  lastNewMessage: ChatMessage | null;
-}> = ({ messages, onHexClick, lastNewMessage }) => {
   
-  const hexagons = useMemo(() => aggregateMessagesByHexagon(messages), [messages]);
-  const [flashingHex, setFlashingHex] = useState<string | null>(null);
-
-  // Pulse Logic: When a new message comes in, find its H3 cell and flash it
-  useEffect(() => {
-    if (!lastNewMessage) return;
-
-    const hexId = getHexagonForLocation(lastNewMessage.location.lat, lastNewMessage.location.lng);
-    setFlashingHex(hexId);
-
-    // Instant flash ON, then fade OUT
-    const timer = setTimeout(() => {
-        setFlashingHex(null); // Removes the 'flash' class, triggering CSS transition decay
-    }, 150); // Short duration for the "Hit"
-
-    return () => clearTimeout(timer);
-  }, [lastNewMessage]);
-
-  return (
-    <>
-      {hexagons.map((hex) => {
-        const isFlashing = hex.h3Index === flashingHex;
-        
-        // Calculate density-based fill opacity (0.1 to 0.4)
-        // Cap count effect at 20 messages for visual consistency
-        const density = Math.min(hex.count, 20) / 20;
-        const fillOpacity = 0.1 + (density * 0.3);
-
-        return (
-          <Polygon
-            key={hex.h3Index}
-            positions={hex.boundary}
-            pathOptions={{
-              color: '#00FFFF', // Neon Cyan Stroke
-              weight: 2,
-              opacity: 1,
-              fillColor: '#00FFFF', // Cyan Fill
-              fillOpacity: fillOpacity,
-              className: isFlashing ? 'neon-hex neon-hex-flash' : 'neon-hex', // CSS handles animation
-            }}
-            eventHandlers={{
-              click: (e) => {
-                L.DomEvent.stopPropagation(e);
-                onHexClick(hex.messages);
-              },
-              mouseover: (e) => {
-                const layer = e.target;
-                layer.setStyle({ fillOpacity: 0.5 }); // Hover highlight
-              },
-              mouseout: (e) => {
-                const layer = e.target;
-                layer.setStyle({ fillOpacity: fillOpacity }); // Reset
-              }
-            }}
-          />
-        );
-      })}
-    </>
-  );
+  return null;
 };
 
-const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick, onClusterClick, lastNewMessage }) => {
+const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onClusterClick, lastNewMessage }) => {
+  const [zoom, setZoom] = useState(2.5);
+  
+  // Memoize hexagon calculation to avoid expensive re-runs
+  const hexagons = useMemo(() => aggregateMessagesByHexagon(messages), [messages]);
+
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
@@ -154,10 +245,10 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessage
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
-        style={{ width: '100%', height: '100%', background: '#0a0a12' }}
+        style={{ width: '100vw', height: '100vh', background: '#0a0a12' }}
         minZoom={2}
-        worldCopyJump={true} // Infinite scrolling horizontally
-        maxBounds={[[-85, -Infinity], [85, Infinity]]} // Restrict vertical scrolling only
+        worldCopyJump={true}
+        maxBounds={[[-85, -Infinity], [85, Infinity]]}
       >
         <TileLayer
           attribution={MAP_ATTRIBUTION}
@@ -165,14 +256,18 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessage
           noWrap={false}
         />
 
+        <MapDefs />
+        <MapController onZoomChange={setZoom} />
         <MapResizeHandler onViewportChange={onViewportChange} />
-        <MapEvents onViewportChange={onViewportChange} />
 
-        <HexagonHeatmapLayer 
-            messages={messages} 
-            onHexClick={(msgs) => onClusterClick && onClusterClick(msgs)}
-            lastNewMessage={lastNewMessage}
-        />
+        {/* LAYER 1: ATMOSPHERE */}
+        <HeatCloudLayer hexagons={hexagons} zoom={zoom} />
+
+        {/* LAYER 2: AURA & ANIMATIONS */}
+        <AuraLayer hexagons={hexagons} zoom={zoom} lastNewMessage={lastNewMessage} />
+
+        {/* LAYER 3: INTERACTIVE GRID */}
+        <InteractiveGridLayer hexagons={hexagons} onHexClick={(msgs) => onClusterClick && onClusterClick(msgs)} />
         
       </MapContainer>
     </div>

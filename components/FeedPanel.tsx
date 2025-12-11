@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, XCircle, Satellite } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
-import { getUserVotes, getAnonymousID } from '../services/storageService';
+import { getUserVotes, getAnonymousID, getFlagEmoji } from '../services/storageService';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -165,6 +165,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                 {msg.isRemote && (
                                     <div className="text-amber-400 flex items-center gap-1" title="Posted remotely">
                                         <Satellite size={12} />
+                                        {msg.originCountry && <span className="text-[10px] grayscale-0">{getFlagEmoji(msg.originCountry)}</span>}
                                     </div>
                                 )}
                                 {msg.sessionId === currentSessionId && (

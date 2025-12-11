@@ -1,3 +1,4 @@
+
 import { BANNED_WORDS } from '../constants';
 
 // 1. Content Moderation (Basic)
@@ -10,7 +11,7 @@ export const moderateContent = (text: string): boolean => {
 };
 
 // 2. Reverse Geocoding (BigDataCloud Free API - CORS Friendly)
-export const getCityName = async (lat: number, lng: number): Promise<string> => {
+export const getCityName = async (lat: number, lng: number): Promise<{ city: string; countryCode: string }> => {
   try {
     // Using BigDataCloud's free client-side API which handles CORS much better than Nominatim
     // and doesn't require a strict User-Agent header (which browsers block).
@@ -24,14 +25,18 @@ export const getCityName = async (lat: number, lng: number): Promise<string> => 
     
     // Extract the most relevant location name
     // API returns fields like: city, locality, principalSubdivision, countryName
-    return data.city || 
+    const city = data.city || 
            data.locality || 
            data.principalSubdivision || 
            data.countryName || 
            "Unknown Sector";
+    
+    const countryCode = data.countryCode || "";
+
+    return { city, countryCode };
            
   } catch (error) {
     console.warn("Geocoding failed, falling back to coordinates", error);
-    return `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`;
+    return { city: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`, countryCode: "" };
   }
 };

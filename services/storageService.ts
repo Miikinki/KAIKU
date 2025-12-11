@@ -93,6 +93,15 @@ export const getAnonymousID = (): string => {
   return id;
 };
 
+export const getFlagEmoji = (countryCode?: string) => {
+  if (!countryCode) return '';
+  const codePoints = countryCode
+    .toUpperCase()
+    .split('')
+    .map(char =>  127397 + char.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+};
+
 // Haversine formula to calculate distance between two points in km
 export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
   const R = 6371; // Radius of the earth in km
@@ -160,7 +169,8 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
       score: d.score ?? 0,
       parentId: d.parent_post_id,
       replyCount: d.replies?.[0]?.count || 0,
-      isRemote: d.is_remote // Map database column to type
+      isRemote: d.is_remote,
+      originCountry: d.origin_country
     }));
   }
 };
@@ -185,7 +195,8 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
         sessionId: d.session_id,
         score: d.score ?? 0,
         parentId: d.parent_post_id,
-        isRemote: d.is_remote
+        isRemote: d.is_remote,
+        originCountry: d.origin_country
     }));
 };
 
@@ -220,7 +231,9 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
     throw new Error("Message blocked by automated moderation.");
   }
 
-  const city = await getCityName(lat, lng);
+  const locationData = await getCityName(lat, lng);
+  const city = locationData.city;
+  const countryCode = locationData.countryCode;
 
   const newMessage: ChatMessage = {
     id: generateUUID(),
@@ -231,7 +244,8 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
     sessionId: userId,
     score: 0,
     parentId: parentId || null,
-    isRemote: isRemote
+    isRemote: isRemote,
+    originCountry: countryCode
   };
 
   // Optimistically update Local Storage (for instant display/offline support)
@@ -251,7 +265,8 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
       session_id: newMessage.sessionId, // This is key for ownership
       parent_post_id: newMessage.parentId,
       score: 0,
-      is_remote: newMessage.isRemote // Save remote status
+      is_remote: newMessage.isRemote,
+      origin_country: newMessage.originCountry
     }]);
   
   if (error) {
@@ -281,18 +296,14 @@ export const deleteMessage = async (msgId: string): Promise<boolean> => {
     if (isSupabaseConfigured()) {
         console.log("KAIKU: Deleting message...", msgId);
 
-        // STRATEGY: Hard Delete via ID only. 
-        // We rely on Supabase RLS policies (which we set to Public) 
-        // and Foreign Key Cascades (which we set in SQL) to handle the rest.
-        // We do NOT check ownership here, because the UI hides the button for non-owners.
-        
+        // STRATEGY: Hard Delete First
         const { error, count } = await supabase
             .from('kaiku_posts')
             .delete({ count: 'exact' })
             .eq('id', msgId);
 
-        if (error) {
-            console.error("KAIKU: Delete failed", error);
+        if (error || count === 0) {
+            if (error) console.error("KAIKU: Hard Delete failed", error);
             
             // Fallback: Soft Delete (Hide)
             console.log("KAIKU: Attempting Soft Delete...");
@@ -385,7 +396,8 @@ export const subscribeToMessages = (callback: (event: RealtimeEvent) => void) =>
     sessionId: d.session_id,
     score: d.score ?? 0,
     parentId: d.parent_post_id,
-    isRemote: d.is_remote
+    isRemote: d.is_remote,
+    originCountry: d.origin_country
   });
 
   return supabase

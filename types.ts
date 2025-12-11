@@ -13,6 +13,7 @@ export interface ChatMessage {
   parentId?: string | null; // For threaded replies
   replyCount?: number; // Visual counter
   isRemote?: boolean; // Signal Origin Indicator
+  originCountry?: string; // ISO Country Code (e.g. "FI", "US")
 }
 
 export interface ViewportBounds {

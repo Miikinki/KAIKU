@@ -14,8 +14,8 @@
     <style>
       /* Fix for map loading: explicit container size */
       html, body, #root {
-        height: 100%;
-        width: 100%;
+        height: 100vh;
+        width: 100vw;
         margin: 0;
         padding: 0;
         background-color: #0a0a12;
@@ -42,23 +42,87 @@
         background: rgba(0, 255, 255, 0.4);
       }
 
-      /* Cyberpunk Neon Hexagon Styles */
-      /* Base state: Slow transition for the 'fade out' */
-      .neon-hex {
-        filter: drop-shadow(0 0 5px #00FFFF);
-        transition: stroke-width 1.5s ease-out, stroke 1.5s ease-out;
-      }
-      
-      /* Flash state: Instant transition for the 'hit' */
-      .neon-hex-flash {
-        stroke: #00FFFF !important;
-        stroke-width: 4px !important;
-        filter: drop-shadow(0 0 15px #00FFFF);
-        transition: none; /* Instant change */
+      /* --- KAIKU PREMIUM MAP 3-LAYER SYSTEM --- */
+
+      /* LAYER 1: HEAT CLOUD (ATMOSPHERE) */
+      .kaiku-cloud-blob {
+        filter: blur(60px); /* Heavy atmospheric blur */
+        mix-blend-mode: screen; /* Additive blending for light feel */
+        pointer-events: none !important;
+        transition: opacity 1s ease;
       }
 
+      /* LAYER 2: AURA (ANIMATIONS & GLOW) */
+      /* Base Aura Style */
+      .kaiku-aura {
+        pointer-events: none !important; /* Strictly non-interactive */
+        stroke: none;
+        transition: all 0.5s ease;
+      }
+
+      /* Animations */
+      @keyframes aura-breathe {
+        0%, 100% { opacity: 0.4; transform: scale(0.95); }
+        50% { opacity: 0.8; transform: scale(1.05); }
+      }
+
+      @keyframes aura-ripple {
+        0% { stroke-opacity: 0.8; stroke-width: 0px; }
+        100% { stroke-opacity: 0.0; stroke-width: 20px; }
+      }
+
+      @keyframes aura-flash {
+        0% { fill: #ffffff; filter: drop-shadow(0 0 20px #ffffff); opacity: 1; }
+        100% { fill: url(#aura-grad-3); filter: drop-shadow(0 0 5px #00FFFF); opacity: 0.6; }
+      }
+
+      /* Aura Levels */
+      .aura-level-1 {
+        opacity: 0.3;
+        filter: drop-shadow(0 0 5px rgba(0, 255, 255, 0.2));
+      }
+
+      .aura-level-2 {
+        opacity: 0.5;
+        animation: aura-breathe 4s infinite ease-in-out;
+        filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.3));
+      }
+
+      .aura-level-3 {
+        opacity: 0.7;
+        animation: aura-breathe 3s infinite ease-in-out;
+        filter: drop-shadow(0 0 15px rgba(0, 255, 255, 0.5));
+      }
+
+      .aura-level-4 {
+        opacity: 0.9;
+        animation: aura-breathe 2s infinite ease-in-out;
+        filter: drop-shadow(0 0 25px rgba(0, 255, 255, 0.8));
+      }
+      
+      /* New Message Flash State */
+      .aura-flash-active {
+        animation: aura-flash 0.5s ease-out forwards;
+      }
+
+      /* LAYER 3: INTERACTIVE GRID (CLEAN LINES) */
+      .kaiku-interactive {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+
+      .kaiku-interactive:hover {
+        fill-opacity: 0.6 !important;
+        stroke-width: 3px !important;
+        stroke: #ffffff !important;
+        filter: drop-shadow(0 0 5px #00FFFF);
+      }
+
+      /* CLUSTER MARKERS (Fallback for very low zoom if needed) */
       .cluster-marker {
-        background: rgba(10, 10, 18, 0.8);
+        background: rgba(10, 10, 18, 0.9);
         border: 2px solid #00FFFF;
         border-radius: 50%;
         color: #fff;
@@ -67,31 +131,26 @@
         justify-content: center;
         font-family: monospace;
         font-weight: bold;
-        box-shadow: 0 0 10px #00FFFF;
+        box-shadow: 0 0 15px #00FFFF;
         backdrop-filter: blur(4px);
-      }
-      
-      .zone-dot {
-        background: #00FFFF;
-        border-radius: 50%;
-        box-shadow: 0 0 8px #00FFFF;
       }
     </style>
   <script type="importmap">
 {
   "imports": {
-    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.1/client",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-    "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "react": "https://aistudiocdn.com/react@^19.2.1",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.559.0",
-    "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.26",
-    "clsx": "https://aistudiocdn.com/clsx@^2.1.1",
-    "react-leaflet": "https://aistudiocdn.com/react-leaflet@^5.0.0",
-    "leaflet": "https://aistudiocdn.com/leaflet@^1.9.4",
+    "react": "https://esm.sh/react@18.2.0",
+    "react/": "https://esm.sh/react@18.2.0/",
+    "react-dom": "https://esm.sh/react-dom@18.2.0",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+    "leaflet": "https://esm.sh/leaflet@1.9.4",
+    "react-leaflet": "https://esm.sh/react-leaflet@4.2.1?external=react,react-dom,leaflet",
+    "lucide-react": "https://esm.sh/lucide-react@0.292.0?external=react",
+    "framer-motion": "https://esm.sh/framer-motion@10.16.4?external=react,react-dom",
+    "clsx": "https://esm.sh/clsx@2.0.0",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.7",
     "h3-js": "https://esm.sh/h3-js@4.1.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.2/"
   }
 }
 </script>

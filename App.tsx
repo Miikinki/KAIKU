@@ -189,7 +189,18 @@ function App() {
         throw new Error("Location is required to reply. Please enable location services.");
     }
 
-    await saveMessage(text, lat, lng, parentId, false);
+    // Calculate IsRemote for replies
+    // Compare User GPS (lat/lng) vs Parent Post Location
+    let isRemote = false;
+    const parent = activeThread?.id === parentId ? activeThread : messages.find(m => m.id === parentId);
+    
+    if (parent) {
+      const dist = calculateDistance(lat, lng, parent.location.lat, parent.location.lng);
+      isRemote = dist > 25;
+    }
+
+    await saveMessage(text, lat, lng, parentId, isRemote);
+    
     setMessages(prev => prev.map(m => {
         if (m.id === parentId) {
             return { ...m, replyCount: (m.replyCount || 0) + 1 };
