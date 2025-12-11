@@ -1,8 +1,9 @@
+
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Polygon, useMapEvents, useMap, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, useMapEvents, useMap, Tooltip, GeoJSON } from 'react-leaflet';
 import * as L from 'leaflet';
 import { ChatMessage, ViewportBounds } from '../types';
-import { MAP_TILE_URL, MAP_ATTRIBUTION, THEME_COLOR } from '../constants';
+import { MAP_TILE_URL, MAP_ATTRIBUTION, THEME_COLOR, WORLD_GEOJSON_URL } from '../constants';
 import { aggregateMessagesByHexagon, getHexagonForLocation } from '../services/h3Helpers';
 
 interface ChatMapProps {
@@ -77,6 +78,80 @@ const MapEvents: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = (
   return null;
 };
 
+// --- WORLD BORDERS LAYER (Navigation) ---
+const WorldBordersLayer: React.FC = () => {
+  const [geoJsonData, setGeoJsonData] = useState<any>(null);
+  const map = useMap();
+  const [zoomLevel, setZoomLevel] = useState(map.getZoom());
+
+  useMapEvents({
+    zoomend: () => setZoomLevel(map.getZoom())
+  });
+
+  useEffect(() => {
+    fetch(WORLD_GEOJSON_URL)
+      .then(res => res.json())
+      .then(data => setGeoJsonData(data))
+      .catch(err => console.error("Failed to load world borders", err));
+  }, []);
+
+  // Only show borders when zoomed out (Global View)
+  if (zoomLevel >= 6 || !geoJsonData) return null;
+
+  return (
+    <GeoJSON 
+      data={geoJsonData}
+      style={() => ({
+        fillColor: '#000000',
+        fillOpacity: 0, // Transparent fill
+        color: '#444444', // Subtle gray border
+        weight: 0.5,
+        opacity: 0.6,
+      })}
+      onEachFeature={(feature, layer) => {
+        layer.on({
+          mouseover: (e) => {
+            const l = e.target;
+            l.setStyle({
+              color: '#00FFFF', // Neon Cyan
+              weight: 3,        // Thick glowing wire
+              opacity: 1
+            });
+            l.bringToFront(); // Ensure glow renders on top of neighbors
+            
+            if (l.getElement()) {
+              // STACKED DROP SHADOWS for Intense Neon Effect
+              // 1. Tight cyan shadow (hot core)
+              // 2. Wide cyan shadow (diffuse glow)
+              l.getElement().style.filter = "drop-shadow(0 0 8px #00FFFF) drop-shadow(0 0 15px #00FFFF)";
+              l.getElement().style.transition = "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"; // Smooth ease
+            }
+          },
+          mouseout: (e) => {
+            const l = e.target;
+            l.setStyle({
+              color: '#444444',
+              weight: 0.5,
+              opacity: 0.6
+            });
+            if (l.getElement()) {
+              l.getElement().style.filter = "";
+            }
+          },
+          click: (e) => {
+            L.DomEvent.stopPropagation(e.originalEvent);
+            L.DomEvent.preventDefault(e.originalEvent);
+            map.flyToBounds(e.target.getBounds(), {
+              padding: [50, 50],
+              duration: 1.5
+            });
+          }
+        });
+      }}
+    />
+  );
+};
+
 // --- H3 HEXAGON LAYER ---
 
 const HexagonHeatmapLayer: React.FC<{ 
@@ -90,7 +165,7 @@ const HexagonHeatmapLayer: React.FC<{
     return aggregateMessagesByHexagon(messages);
   }, [messages]);
 
-  // 2. Pulse Logic (Flash Effect)
+  // 2. Pulse Logic (Neon Border Glow)
   const [flashingHex, setFlashingHex] = useState<string | null>(null);
 
   useEffect(() => {
@@ -98,9 +173,11 @@ const HexagonHeatmapLayer: React.FC<{
       const h3Index = getHexagonForLocation(lastNewMessage.location.lat, lastNewMessage.location.lng);
       setFlashingHex(h3Index);
       
+      // We trigger a very short active state. 
+      // When this state clears, the CSS transition handles the slow fade out (decay).
       const timer = setTimeout(() => {
         setFlashingHex(null);
-      }, 2000); // 2 second flash
+      }, 100); // 100ms active flash
 
       return () => clearTimeout(timer);
     }
@@ -111,30 +188,37 @@ const HexagonHeatmapLayer: React.FC<{
     <>
       {hexagons.map(hex => {
         // Calculate Heatmap Intensity
-        // Simple logic: Cap opacity at 0.8 for high density
-        // Base opacity 0.2
+        // Cap opacity at 0.8 for high density. Base opacity 0.2.
         const density = Math.min(hex.count / 10, 1); 
         const baseOpacity = 0.2 + (density * 0.5);
         
         const isFlashing = hex.h3Index === flashingHex;
         
-        // Styles
-        // Normal: Theme Color (Cyan)
-        // Flash: Neon Pink (#ec4899)
-        const color = isFlashing ? '#ec4899' : THEME_COLOR;
-        const fillOpacity = isFlashing ? 0.8 : baseOpacity;
+        // Visual Styles
+        // Stroke: Neon Cyan (#00FFFF) when flashing, Theme Color (Cyan-500) normally
+        // Weight: 3px when flashing, 1px normally
+        // Fill: ALWAYS THEME_COLOR, Opacity ALWAYS based on density (do not flash fill)
+        
+        const strokeColor = isFlashing ? '#00FFFF' : THEME_COLOR;
         const weight = isFlashing ? 3 : 1;
+        const opacity = isFlashing ? 1 : 0.6; // Border opacity
+        
+        // CSS Transition:
+        // isFlashing (true) -> duration-0 (Instant on)
+        // isFlashing (false) -> duration-1500 (Slow fade off)
+        const transitionClass = isFlashing ? 'transition-all duration-0 ease-out' : 'transition-all duration-[1500ms] ease-out';
 
         return (
           <Polygon
             key={hex.h3Index}
             positions={hex.boundary}
             pathOptions={{
-              color: color,
+              color: strokeColor,
               weight: weight,
-              fillColor: color,
-              fillOpacity: fillOpacity,
-              className: isFlashing ? 'transition-all duration-300' : 'transition-all duration-1000'
+              opacity: opacity,
+              fillColor: THEME_COLOR,
+              fillOpacity: baseOpacity,
+              className: transitionClass 
             }}
             eventHandlers={{
               click: (e) => {
@@ -185,6 +269,8 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onCluster
         <MapEvents onViewportChange={onViewportChange} />
         <MapResizeHandler onViewportChange={onViewportChange} />
         
+        <WorldBordersLayer />
+
         <HexagonHeatmapLayer 
             messages={messages} 
             onHexClick={onClusterClick} 
