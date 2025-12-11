@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-lea
 import * as L from 'leaflet';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
+import WebGLPulseLayer from './WebGLPulseLayer';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -28,13 +29,6 @@ const createActivityZoneIcon = (count: number) => {
     iconAnchor: [size / 2, size / 2],
   });
 };
-
-const pulseIcon = L.divIcon({
-  className: 'pulse-ring-marker',
-  html: '<div class="pulse-ring"></div>',
-  iconSize: [20, 20], // Base size, visual size handled by CSS
-  iconAnchor: [10, 10], // Center it
-});
 
 // Component to handle Map Resizing logic using ResizeObserver
 const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = ({ onViewportChange }) => {
@@ -145,40 +139,6 @@ const ActivityZones: React.FC<{ messages: ChatMessage[] }> = ({ messages }) => {
   );
 };
 
-// Component to handle new message pulses
-const PulseLayer: React.FC<{ lastNewMessage: ChatMessage | null }> = ({ lastNewMessage }) => {
-  const [pulses, setPulses] = useState<{ id: string, pos: [number, number] }[]>([]);
-
-  useEffect(() => {
-    if (lastNewMessage) {
-      const pulseId = `${lastNewMessage.id}-${Date.now()}`;
-      setPulses(prev => [...prev, { 
-        id: pulseId, 
-        pos: [lastNewMessage.location.lat, lastNewMessage.location.lng] 
-      }]);
-
-      // Auto-remove pulse after animation duration (1.5s)
-      setTimeout(() => {
-        setPulses(prev => prev.filter(p => p.id !== pulseId));
-      }, 1500);
-    }
-  }, [lastNewMessage]);
-
-  return (
-    <>
-      {pulses.map(p => (
-        <Marker 
-          key={p.id}
-          position={p.pos}
-          icon={pulseIcon}
-          zIndexOffset={1000} // Ensure it appears on top
-          interactive={false}
-        />
-      ))}
-    </>
-  );
-};
-
 const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick, lastNewMessage }) => {
   // Lock the map to the "real" world coordinates to prevent scrolling into the void vertically,
   // BUT allow horizontal scrolling (Infinity) to prevent blue bars on wide screens.
@@ -191,8 +151,8 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessage
     // Fixed positioning here guarantees the map container fills the window
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
-        center={[60.16, 24.93]} // Center on Helsinki initially
-        zoom={10}
+        center={[20, 0]} // Global view (Latitude 20, Longitude 0)
+        zoom={2.5} // Zoomed out to show the world
         minZoom={2.5}
         scrollWheelZoom={true}
         zoomControl={false}
@@ -212,7 +172,7 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessage
         <MapEvents onViewportChange={onViewportChange} />
         <MapResizeHandler onViewportChange={onViewportChange} />
         <ActivityZones messages={messages} />
-        <PulseLayer lastNewMessage={lastNewMessage} />
+        <WebGLPulseLayer lastNewMessage={lastNewMessage} />
 
       </MapContainer>
     </div>

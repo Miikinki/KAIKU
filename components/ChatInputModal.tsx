@@ -98,7 +98,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
             
             <div className="mt-4 flex items-start gap-2 text-[10px] text-gray-500">
                <MapPin size={12} className="mt-0.5" />
-               <p>Your location will be fuzzed by 5-50km based on observer zoom level.</p>
+               <p>Your location will be scrambled by ~2-3km for privacy. If GPS is unavailable, a random nearby location is used.</p>
             </div>
           </motion.div>
         </div>

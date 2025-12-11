@@ -97,7 +97,9 @@ export const getRandomLocation = () => {
 };
 
 export const applyFuzzyLogic = (lat: number, lng: number) => {
-  const JITTER = 0.1; // ~10km
+  // FIXED STATIC JITTER for Privacy (~0.025 deg is approx 2.5km)
+  // This does NOT change based on zoom level. Privacy is constant.
+  const JITTER = 0.025; 
   return {
     lat: lat + (Math.random() - 0.5) * JITTER,
     lng: lng + (Math.random() - 0.5) * JITTER
