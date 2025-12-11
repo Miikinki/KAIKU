@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, Clock } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, Clock, AlertCircle } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
 import { fetchReplies, getUserVotes } from '../services/storageService';
@@ -17,6 +17,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   const [isLoading, setIsLoading] = useState(true);
   const [replyText, setReplyText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -41,12 +42,19 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   const handleSend = async () => {
     if (!replyText.trim()) return;
     setIsSending(true);
-    await onReply(replyText, parentMessage.id);
-    setReplyText('');
-    setIsSending(false);
-    // Refresh replies
-    const data = await fetchReplies(parentMessage.id);
-    setReplies(data);
+    setError(null);
+    try {
+      await onReply(replyText, parentMessage.id);
+      setReplyText('');
+      // Refresh replies
+      const data = await fetchReplies(parentMessage.id);
+      setReplies(data);
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || "Failed to send reply. Please try again.");
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
@@ -154,6 +162,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
 
         {/* Input Area */}
         <div className="p-4 bg-[#0a0a12] border-t border-white/10">
+          
+          {error && (
+             <div className="mb-2 p-2 bg-red-500/10 border border-red-500/20 rounded flex items-center gap-2 text-red-200 text-xs">
+                 <AlertCircle size={12} />
+                 {error}
+             </div>
+          )}
+
           <div className="flex gap-2">
             <input
               type="text"

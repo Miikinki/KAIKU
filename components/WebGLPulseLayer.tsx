@@ -71,7 +71,6 @@ const WebGLPulseLayer: React.FC<WebGLPulseLayerProps> = ({ lastNewMessage }) => 
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
   const pulsesRef = useRef<{ lat: number; lng: number; startTime: number; duration: number }[]>([]);
-  // Fix: Initialize useRef with null to avoid "Expected 1 arguments, but got 0"
   const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -194,24 +193,27 @@ const WebGLPulseLayer: React.FC<WebGLPulseLayerProps> = ({ lastNewMessage }) => 
 
       // --- DYNAMIC ZOOM RADIUS LOGIC (Pixel Based) ---
       const zoom = map.getZoom();
-      let targetRadius = 20.0;
+      let targetRadius = 12.0;
       
-      if (zoom >= 15) {
-        // Zoom 15-18 -> 180-220px
-        targetRadius = 180.0 + (Math.min(zoom, 18) - 15) * (40.0/3.0);
-      } else if (zoom >= 10) {
-        // Zoom 10-14 -> 120-160px
-        targetRadius = 120.0 + (zoom - 10) * (40.0/4.0);
-      } else if (zoom >= 5) {
-        // Zoom 5-9 -> 40-80px
-        targetRadius = 40.0 + (zoom - 5) * (40.0/4.0);
+      // We want pulses to be tiny dots when zoomed out, and large cinematic glows when zoomed in.
+      if (zoom < 5) {
+          // Zoom 0-4 (World View): Keep it tiny (12px - 20px)
+          // 12px at Zoom 0, 20px at Zoom 4
+          targetRadius = 12.0 + (zoom * 2.0); 
+      } else if (zoom < 10) {
+          // Zoom 5-9 (Continent/Country): Small but visible (20px - 50px)
+          targetRadius = 20.0 + ((zoom - 5.0) * 6.0);
+      } else if (zoom < 15) {
+          // Zoom 10-14 (Region/City): Medium glow (50px - 140px)
+          targetRadius = 50.0 + ((zoom - 10.0) * 18.0);
       } else {
-        // Zoom 1-4 -> 12-30px
-        targetRadius = 12.0 + (Math.max(zoom, 1) - 1) * (18.0/3.0);
+          // Zoom 15+ (Street): Cinematic Large (140px - 220px)
+          targetRadius = 140.0 + ((Math.min(zoom, 18.0) - 15.0) * 26.6);
       }
       
-      // Clamp just to be safe
+      // Clamp strictly between 12px and 220px
       targetRadius = Math.max(12.0, Math.min(220.0, targetRadius));
+      
       gl.uniform1f(uZoomRadiusLoc, targetRadius);
       // -----------------------------------------------
 
@@ -223,10 +225,7 @@ const WebGLPulseLayer: React.FC<WebGLPulseLayerProps> = ({ lastNewMessage }) => 
       const pulseData = new Float32Array(MAX_PULSES * 4);
       pulsesRef.current.forEach((p, i) => {
         // Project LatLng to Container Point (Pixels)
-        // We use map.latLngToContainerPoint to get x,y relative to the map container.
-        // Since our canvas is fixed top:0 left:0 matching the container, this works.
         const point = map.latLngToContainerPoint([p.lat, p.lng]);
-        // Adjust for devicePixelRatio because gl_FragCoord is in physical pixels
         const x = point.x * window.devicePixelRatio;
         const y = (canvas.clientHeight - point.y) * window.devicePixelRatio; // GL y is inverted
 

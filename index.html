@@ -42,47 +42,27 @@
         background: rgba(0, 255, 255, 0.4);
       }
 
-      /* Activity Zone Aura */
+      /* Activity Zone Aura (Legacy / unused) */
       .activity-zone {
         background: radial-gradient(circle, rgba(6,182,212,0.4) 0%, rgba(6,182,212,0.1) 60%, rgba(6,182,212,0) 100%);
         border-radius: 50%;
         mix-blend-mode: screen;
-        pointer-events: none; /* Let clicks pass through to map if needed, or handle click on center */
+        pointer-events: none; 
         animation: pulse-aura 4s ease-in-out infinite;
+      }
+
+      /* ZOOMED OUT: Small Dot */
+      .zone-dot {
+        background-color: #06b6d4; /* Cyan-500 */
+        border-radius: 50%;
+        box-shadow: 0 0 10px #22d3ee, 0 0 4px #fff;
+        border: 2px solid rgba(255,255,255,0.8);
       }
 
       @keyframes pulse-aura {
         0% { transform: scale(1); opacity: 0.8; }
         50% { transform: scale(1.1); opacity: 0.6; }
         100% { transform: scale(1); opacity: 0.8; }
-      }
-
-      /* New Message Pulse Animation */
-      .pulse-ring-marker {
-        pointer-events: none !important;
-      }
-      .pulse-ring {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(6,182,212,0.9) 0%, rgba(34,211,238,0.4) 40%, rgba(34,211,238,0) 70%);
-        box-shadow: 0 0 20px rgba(6,182,212,0.6);
-        animation: pulse-ring-anim 1.5s ease-out forwards;
-      }
-
-      @keyframes pulse-ring-anim {
-        0% {
-          width: 0px;
-          height: 0px;
-          opacity: 0.8;
-        }
-        100% {
-          width: 250px;
-          height: 250px;
-          opacity: 0;
-        }
       }
     </style>
   <script type="importmap">

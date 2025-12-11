@@ -173,10 +173,9 @@ function App() {
         locationCache.current = { lat, lng };
       }
     } catch (e) {
-      console.warn("GPS Failed, falling back to random location");
-      const r = getRandomLocation();
-      lat = r.lat;
-      lng = r.lng;
+      console.warn("GPS Failed", e);
+      // STRICT REQUIREMENT: No random fallback.
+      throw new Error("Location is required to place your broadcast on the map. Please enable location services.");
     }
 
     const newMsg = await saveMessage(text, lat, lng);
@@ -197,15 +196,11 @@ function App() {
         );
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
-      } catch (e) {
-        if (activeThread) {
-            lat = activeThread.location.lat;
-            lng = activeThread.location.lng;
-        } else {
-            const r = getRandomLocation();
-            lat = r.lat; lng = r.lng;
-        }
-      }
+    } catch (e) {
+        console.warn("GPS Failed for reply", e);
+        // STRICT REQUIREMENT: No fallback to thread location or random location.
+        throw new Error("Location is required to reply. Please enable location services.");
+    }
 
     await saveMessage(text, lat, lng, parentId);
     

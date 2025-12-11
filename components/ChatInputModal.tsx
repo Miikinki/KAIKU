@@ -14,6 +14,11 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) setError(null);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!cooldownUntil || !isOpen) return;
@@ -38,10 +43,17 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
   const handleSubmit = async () => {
     if (!text.trim()) return;
     setIsSubmitting(true);
-    await onSave(text);
-    setIsSubmitting(false);
-    setText('');
-    onClose();
+    setError(null);
+    try {
+      await onSave(text);
+      setText('');
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Transmission failed.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const isLocked = !!cooldownUntil && timeLeft !== '';
@@ -85,6 +97,14 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                   placeholder="What's happening nearby?"
                   className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-gray-200 focus:outline-none focus:border-cyan-500/50 resize-none mb-4"
                 />
+
+                {error && (
+                  <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2 text-red-200 text-xs">
+                    <AlertCircle size={16} className="shrink-0" />
+                    {error}
+                  </div>
+                )}
+
                 <button
                   onClick={handleSubmit}
                   disabled={isSubmitting || !text.trim()}
@@ -98,7 +118,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
             
             <div className="mt-4 flex items-start gap-2 text-[10px] text-gray-500">
                <MapPin size={12} className="mt-0.5" />
-               <p>Your location will be scrambled by ~2-3km for privacy. If GPS is unavailable, a random nearby location is used.</p>
+               <p>Your location will be scrambled by ~2-3km for privacy. Location services are required to broadcast.</p>
             </div>
           </motion.div>
         </div>
