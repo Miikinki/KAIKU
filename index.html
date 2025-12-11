@@ -134,6 +134,39 @@
         box-shadow: 0 0 15px #00FFFF;
         backdrop-filter: blur(4px);
       }
+      
+      /* Neon Hexagon Styles */
+      .neon-hex {
+        transition: stroke 1.5s ease-out, stroke-width 1.5s ease-out;
+      }
+      
+      .neon-hex-flash {
+        transition: stroke 0.1s ease-out, stroke-width 0.1s ease-out;
+        stroke: #00FFFF !important;
+        stroke-width: 3px !important;
+      }
+
+      /* Intensity Levels */
+      .hex-level-1 { stroke-opacity: 0.6; filter: drop-shadow(0 0 2px #00FFFF); }
+      .hex-level-2 { stroke-opacity: 0.8; filter: drop-shadow(0 0 4px #00FFFF); }
+      .hex-level-3 { stroke-opacity: 1.0; filter: drop-shadow(0 0 6px #00FFFF); }
+      .hex-level-4 { stroke-opacity: 1.0; filter: drop-shadow(0 0 10px #00FFFF); }
+
+      @keyframes hex-breathe {
+        0%, 100% { filter: drop-shadow(0 0 4px #00FFFF); }
+        50% { filter: drop-shadow(0 0 8px #00FFFF); }
+      }
+      
+      .hex-breathe {
+        animation: hex-breathe 4s infinite ease-in-out;
+      }
+
+      .heat-cloud-blob {
+        filter: blur(80px);
+        opacity: 0.15;
+        mix-blend-mode: screen;
+        pointer-events: none;
+      }
     </style>
   <script type="importmap">
 {
