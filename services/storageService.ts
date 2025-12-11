@@ -106,78 +106,63 @@ export const applyFuzzyLogic = (lat: number, lng: number) => {
 // --- DATA ACCESS ---
 
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
-  // Debug Log
-  console.log(`KAIKU: Fetch Init. Supabase Configured? ${isSupabaseConfigured()}`);
+  // Hardcoded check means this is always true
+  console.log("KAIKU: Fetching messages from Supabase...");
+  
+  // Supabase Fetch from 'kaiku_posts'
+  let query = supabase
+    .from('kaiku_posts')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(500); 
 
-  if (isSupabaseConfigured() && supabase) {
-    console.log("KAIKU: Fetching messages from Supabase...");
-    
-    // Supabase Fetch from 'kaiku_posts'
-    let query = supabase
-      .from('kaiku_posts')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(500); 
+  if (onlyRoot) {
+      query = query.is('parent_post_id', null);
+  }
 
-    if (onlyRoot) {
-        query = query.is('parent_post_id', null);
-    }
+  const { data, error } = await query;
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('KAIKU: Supabase fetch error:', error);
-      return getLocalMessages(onlyRoot);
-    } else {
-      console.log(`KAIKU: Successfully fetched ${data?.length || 0} messages.`);
-      
-      return data.map((d: any) => ({
-        id: d.id,
-        text: d.text,
-        timestamp: new Date(d.created_at).getTime(),
-        location: { lat: Number(d.latitude), lng: Number(d.longitude) }, // Explicit Number cast
-        city: d.city_name,
-        sessionId: d.session_id,
-        score: d.score ?? 0,
-        parentId: d.parent_post_id,
-        replyCount: 0 
-      }));
-    }
-  } else {
-    console.warn("KAIKU: Supabase not configured. Using local seed data.");
+  if (error) {
+    console.error('KAIKU: Supabase fetch error:', error);
     return getLocalMessages(onlyRoot);
+  } else {
+    console.log(`KAIKU: Successfully fetched ${data?.length || 0} messages.`);
+    
+    return data.map((d: any) => ({
+      id: d.id,
+      text: d.text,
+      timestamp: new Date(d.created_at).getTime(),
+      location: { lat: Number(d.latitude), lng: Number(d.longitude) }, // Explicit Number cast
+      city: d.city_name,
+      sessionId: d.session_id,
+      score: d.score ?? 0,
+      parentId: d.parent_post_id,
+      replyCount: 0 
+    }));
   }
 };
 
 export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => {
-    if (isSupabaseConfigured() && supabase) {
-        const { data, error } = await supabase
-            .from('kaiku_posts')
-            .select('*')
-            .eq('parent_post_id', parentId)
-            .order('created_at', { ascending: true });
+    const { data, error } = await supabase
+        .from('kaiku_posts')
+        .select('*')
+        .eq('parent_post_id', parentId)
+        .order('created_at', { ascending: true });
 
-        if (error) {
-            console.error("Fetch replies error:", error);
-            return [];
-        }
-        return data.map((d: any) => ({
-            id: d.id,
-            text: d.text,
-            timestamp: new Date(d.created_at).getTime(),
-            location: { lat: Number(d.latitude), lng: Number(d.longitude) },
-            city: d.city_name,
-            sessionId: d.session_id,
-            score: d.score ?? 0,
-            parentId: d.parent_post_id
-        }));
-    } else {
-        const cutoff = Date.now() - MESSAGE_LIFESPAN_MS;
-        const all = getLocalMessages(false);
-        return all
-            .filter(m => m.parentId === parentId && m.timestamp > cutoff && m.score > SCORE_THRESHOLD_HIDE)
-            .sort((a, b) => a.timestamp - b.timestamp);
+    if (error) {
+        console.error("Fetch replies error:", error);
+        return [];
     }
+    return data.map((d: any) => ({
+        id: d.id,
+        text: d.text,
+        timestamp: new Date(d.created_at).getTime(),
+        location: { lat: Number(d.latitude), lng: Number(d.longitude) },
+        city: d.city_name,
+        sessionId: d.session_id,
+        score: d.score ?? 0,
+        parentId: d.parent_post_id
+    }));
 };
 
 const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
@@ -213,37 +198,25 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
     parentId: parentId || null
   };
 
-  if (isSupabaseConfigured() && supabase) {
-    const { error } = await supabase
-      .from('kaiku_posts')
-      .insert([{
-        id: newMessage.id,
-        text: newMessage.text,
-        latitude: newMessage.location.lat,
-        longitude: newMessage.location.lng,
-        city_name: newMessage.city,
-        session_id: newMessage.sessionId,
-        parent_post_id: newMessage.parentId,
-        score: 0
-      }]);
-    
-    if (error) {
-      console.error("Supabase Save Error", error);
-      saveLocalMessage(newMessage); 
-    }
-  } else {
-    saveLocalMessage(newMessage);
+  const { error } = await supabase
+    .from('kaiku_posts')
+    .insert([{
+      id: newMessage.id,
+      text: newMessage.text,
+      latitude: newMessage.location.lat,
+      longitude: newMessage.location.lng,
+      city_name: newMessage.city,
+      session_id: newMessage.sessionId,
+      parent_post_id: newMessage.parentId,
+      score: 0
+    }]);
+  
+  if (error) {
+    console.error("Supabase Save Error", error);
+    // Fallback?
   }
 
   return newMessage;
-};
-
-const saveLocalMessage = (msg: ChatMessage) => {
-  const current = getLocalMessages(false);
-  const cutoff = Date.now() - MESSAGE_LIFESPAN_MS;
-  const filtered = current.filter(m => m.timestamp > cutoff && m.score > SCORE_THRESHOLD_HIDE);
-  const updated = [msg, ...filtered];
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
 };
 
 export const getUserVotes = (): Record<string, 'up' | 'down'> => {
@@ -271,52 +244,32 @@ export const castVote = async (msgId: string, direction: 'up' | 'down'): Promise
 
   let updatedMessage: ChatMessage | null = null;
 
-  if (isSupabaseConfigured() && supabase) {
-    const { data } = await supabase.from('kaiku_posts').select('score').eq('id', msgId).single();
-    if (data) {
-      const newScore = (data.score || 0) + scoreDelta;
-      await supabase.from('kaiku_posts').update({ score: newScore }).eq('id', msgId);
-    }
-  } 
-  
-  const local = getLocalMessages(false);
-  const index = local.findIndex(m => m.id === msgId);
-  if (index !== -1) {
-    local[index].score += scoreDelta;
-    updatedMessage = local[index];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
+  const { data } = await supabase.from('kaiku_posts').select('score').eq('id', msgId).single();
+  if (data) {
+    const newScore = (data.score || 0) + scoreDelta;
+    await supabase.from('kaiku_posts').update({ score: newScore }).eq('id', msgId);
   }
-
+  
   return updatedMessage;
 };
 
 export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
   const userId = getAnonymousID();
   const cutoffTime = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
-  const cutoffTs = Date.now() - RATE_LIMIT_WINDOW_MS;
   
   let recentPostsCount = 0;
   let lastPostTime = 0;
 
-  if (isSupabaseConfigured() && supabase) {
-    const { data } = await supabase
-      .from('kaiku_posts')
-      .select('created_at')
-      .eq('session_id', userId)
-      .gt('created_at', cutoffTime);
-      
-    if (data) {
-      recentPostsCount = data.length;
-      if (data.length > 0) {
-          lastPostTime = new Date(data[data.length-1].created_at).getTime();
-      }
-    }
-  } else {
-    const local = getLocalMessages(false);
-    const userPosts = local.filter(m => m.sessionId === userId && m.timestamp > cutoffTs);
-    recentPostsCount = userPosts.length;
-    if (userPosts.length > 0) {
-        lastPostTime = Math.max(...userPosts.map(m => m.timestamp));
+  const { data } = await supabase
+    .from('kaiku_posts')
+    .select('created_at')
+    .eq('session_id', userId)
+    .gt('created_at', cutoffTime);
+    
+  if (data) {
+    recentPostsCount = data.length;
+    if (data.length > 0) {
+        lastPostTime = new Date(data[data.length-1].created_at).getTime();
     }
   }
 
@@ -330,16 +283,30 @@ export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
 };
 
 export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
-  if (isSupabaseConfigured() && supabase) {
-    console.log("KAIKU: Initializing Realtime Subscription...");
-    return supabase
-      .channel('public:kaiku_posts')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'kaiku_posts' }, (payload) => {
-        console.log("KAIKU: Realtime INSERT received", payload);
-        const d = payload.new;
-        if (!d || !d.created_at) return;
+  console.log("KAIKU: Initializing Realtime Subscription...");
+  return supabase
+    .channel('public:kaiku_posts')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'kaiku_posts' }, (payload) => {
+      console.log("KAIKU: Realtime INSERT received", payload);
+      const d = payload.new;
+      if (!d || !d.created_at) return;
 
-        callback({
+      callback({
+        id: d.id,
+        text: d.text,
+        timestamp: new Date(d.created_at).getTime(),
+        location: { lat: Number(d.latitude), lng: Number(d.longitude) },
+        city: d.city_name,
+        sessionId: d.session_id,
+        score: d.score ?? 0,
+        parentId: d.parent_post_id
+      });
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'kaiku_posts' }, (payload) => {
+      console.log("KAIKU: Realtime UPDATE received", payload);
+      const d = payload.new;
+      if (!d) return;
+      callback({
           id: d.id,
           text: d.text,
           timestamp: new Date(d.created_at).getTime(),
@@ -348,28 +315,11 @@ export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
           sessionId: d.session_id,
           score: d.score ?? 0,
           parentId: d.parent_post_id
-        });
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'kaiku_posts' }, (payload) => {
-        console.log("KAIKU: Realtime UPDATE received", payload);
-        const d = payload.new;
-        if (!d) return;
-        callback({
-            id: d.id,
-            text: d.text,
-            timestamp: new Date(d.created_at).getTime(),
-            location: { lat: Number(d.latitude), lng: Number(d.longitude) },
-            city: d.city_name,
-            sessionId: d.session_id,
-            score: d.score ?? 0,
-            parentId: d.parent_post_id
-        });
-      })
-      .subscribe((status) => {
-        console.log("KAIKU: Subscription Status:", status);
       });
-  }
-  return null;
+    })
+    .subscribe((status) => {
+      console.log("KAIKU: Subscription Status:", status);
+    });
 };
 
 export const clearLocalData = () => {
