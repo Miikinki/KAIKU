@@ -1,9 +1,8 @@
-
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Polygon, useMapEvents, useMap, Tooltip } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, useMapEvents, useMap } from 'react-leaflet';
 import * as L from 'leaflet';
 import { ChatMessage, ViewportBounds } from '../types';
-import { MAP_TILE_URL, MAP_ATTRIBUTION, THEME_COLOR } from '../constants';
+import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import { aggregateMessagesByHexagon, getHexagonForLocation } from '../services/h3Helpers';
 
 interface ChatMapProps {
@@ -64,8 +63,8 @@ const MapEvents: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = (
       });
     },
     zoomend: () => {
-       const bounds = map.getBounds();
-       onViewportChange({
+      const bounds = map.getBounds();
+      onViewportChange({
         north: bounds.getNorth(),
         south: bounds.getSouth(),
         east: bounds.getEast(),
@@ -74,133 +73,107 @@ const MapEvents: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = (
       });
     }
   });
-
   return null;
 };
 
-// --- H3 HEXAGON LAYER ---
-
-const HexagonHeatmapLayer: React.FC<{ 
-  messages: ChatMessage[]; 
-  onHexClick?: (msgs: ChatMessage[]) => void; 
+// H3 Hexagon Heatmap Layer
+const HexagonHeatmapLayer: React.FC<{
+  messages: ChatMessage[];
+  onHexClick: (messages: ChatMessage[]) => void;
   lastNewMessage: ChatMessage | null;
 }> = ({ messages, onHexClick, lastNewMessage }) => {
   
-  // 1. Aggregate Messages into Hexagons
-  const hexagons = useMemo(() => {
-    return aggregateMessagesByHexagon(messages);
-  }, [messages]);
-
-  // 2. Pulse Logic (Neon Border Glow)
+  const hexagons = useMemo(() => aggregateMessagesByHexagon(messages), [messages]);
   const [flashingHex, setFlashingHex] = useState<string | null>(null);
 
+  // Pulse Logic: When a new message comes in, find its H3 cell and flash it
   useEffect(() => {
-    if (lastNewMessage) {
-      const h3Index = getHexagonForLocation(lastNewMessage.location.lat, lastNewMessage.location.lng);
-      setFlashingHex(h3Index);
-      
-      // We trigger a very short active state. 
-      // When this state clears, the CSS transition handles the slow fade out (decay).
-      const timer = setTimeout(() => {
-        setFlashingHex(null);
-      }, 100); // 100ms active flash
+    if (!lastNewMessage) return;
 
-      return () => clearTimeout(timer);
-    }
+    const hexId = getHexagonForLocation(lastNewMessage.location.lat, lastNewMessage.location.lng);
+    setFlashingHex(hexId);
+
+    // Instant flash ON, then fade OUT
+    const timer = setTimeout(() => {
+        setFlashingHex(null); // Removes the 'flash' class, triggering CSS transition decay
+    }, 150); // Short duration for the "Hit"
+
+    return () => clearTimeout(timer);
   }, [lastNewMessage]);
 
-  // 3. Render Polygons
   return (
     <>
-      {hexagons.map(hex => {
-        // Calculate Heatmap Intensity
-        // Cap opacity at 0.8 for high density. Base opacity 0.2.
-        const density = Math.min(hex.count / 10, 1); 
-        const baseOpacity = 0.2 + (density * 0.5);
-        
+      {hexagons.map((hex) => {
         const isFlashing = hex.h3Index === flashingHex;
         
-        // Visual Styles
-        // Stroke: Neon Cyan (#00FFFF) when flashing, Theme Color (Cyan-500) normally
-        // Weight: 3px when flashing, 1px normally
-        // Fill: ALWAYS THEME_COLOR, Opacity ALWAYS based on density (do not flash fill)
-        
-        const strokeColor = isFlashing ? '#00FFFF' : THEME_COLOR;
-        const weight = isFlashing ? 3 : 1;
-        const opacity = isFlashing ? 1 : 0.6; // Border opacity
-        
-        // CSS Transition:
-        // isFlashing (true) -> duration-0 (Instant on)
-        // isFlashing (false) -> duration-1500 (Slow fade off)
-        const transitionClass = isFlashing ? 'transition-all duration-0 ease-out' : 'transition-all duration-[1500ms] ease-out';
+        // Calculate density-based fill opacity (0.1 to 0.4)
+        // Cap count effect at 20 messages for visual consistency
+        const density = Math.min(hex.count, 20) / 20;
+        const fillOpacity = 0.1 + (density * 0.3);
 
         return (
           <Polygon
             key={hex.h3Index}
             positions={hex.boundary}
             pathOptions={{
-              color: strokeColor,
-              weight: weight,
-              opacity: opacity,
-              fillColor: THEME_COLOR,
-              fillOpacity: baseOpacity,
-              className: transitionClass 
+              color: '#00FFFF', // Neon Cyan Stroke
+              weight: 2,
+              opacity: 1,
+              fillColor: '#00FFFF', // Cyan Fill
+              fillOpacity: fillOpacity,
+              className: isFlashing ? 'neon-hex neon-hex-flash' : 'neon-hex', // CSS handles animation
             }}
             eventHandlers={{
               click: (e) => {
-                L.DomEvent.preventDefault(e.originalEvent);
-                L.DomEvent.stopPropagation(e.originalEvent);
-                if (onHexClick) onHexClick(hex.messages);
+                L.DomEvent.stopPropagation(e);
+                onHexClick(hex.messages);
+              },
+              mouseover: (e) => {
+                const layer = e.target;
+                layer.setStyle({ fillOpacity: 0.5 }); // Hover highlight
+              },
+              mouseout: (e) => {
+                const layer = e.target;
+                layer.setStyle({ fillOpacity: fillOpacity }); // Reset
               }
             }}
-          >
-            {/* Optional Tooltip for count on hover */}
-            <Tooltip direction="center" permanent={false} className="bg-transparent border-0 text-white font-bold shadow-none">
-              {hex.count}
-            </Tooltip>
-          </Polygon>
+          />
         );
       })}
     </>
   );
 };
 
-const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onClusterClick, lastNewMessage }) => {
-  const maxBounds = new L.LatLngBounds(
-    new L.LatLng(-85, -Infinity), 
-    new L.LatLng(85, Infinity)    
-  );
-
+const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick, onClusterClick, lastNewMessage }) => {
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
-        center={[20, 0]} 
-        zoom={2.5} 
-        minZoom={2.5}
+        center={[20, 0]}
+        zoom={2.5}
         scrollWheelZoom={true}
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
-        maxBounds={maxBounds}
-        maxBoundsViscosity={1.0}
-        worldCopyJump={true} 
+        minZoom={2}
+        worldCopyJump={true} // Infinite scrolling horizontally
+        maxBounds={[[-85, -Infinity], [85, Infinity]]} // Restrict vertical scrolling only
       >
-        <TileLayer 
-            url={MAP_TILE_URL} 
-            attribution={MAP_ATTRIBUTION} 
-            noWrap={false} 
-        />
-        
-        <MapEvents onViewportChange={onViewportChange} />
-        <MapResizeHandler onViewportChange={onViewportChange} />
-        
-        <HexagonHeatmapLayer 
-            messages={messages} 
-            onHexClick={onClusterClick} 
-            lastNewMessage={lastNewMessage}
+        <TileLayer
+          attribution={MAP_ATTRIBUTION}
+          url={MAP_TILE_URL}
+          noWrap={false}
         />
 
+        <MapResizeHandler onViewportChange={onViewportChange} />
+        <MapEvents onViewportChange={onViewportChange} />
+
+        <HexagonHeatmapLayer 
+            messages={messages} 
+            onHexClick={(msgs) => onClusterClick && onClusterClick(msgs)}
+            lastNewMessage={lastNewMessage}
+        />
+        
       </MapContainer>
     </div>
   );

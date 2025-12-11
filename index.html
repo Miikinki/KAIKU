@@ -41,6 +41,41 @@
       ::-webkit-scrollbar-thumb:hover {
         background: rgba(0, 255, 255, 0.4);
       }
+
+      /* Cyberpunk Neon Hexagon Styles */
+      /* Base state: Slow transition for the 'fade out' */
+      .neon-hex {
+        filter: drop-shadow(0 0 5px #00FFFF);
+        transition: stroke-width 1.5s ease-out, stroke 1.5s ease-out;
+      }
+      
+      /* Flash state: Instant transition for the 'hit' */
+      .neon-hex-flash {
+        stroke: #00FFFF !important;
+        stroke-width: 4px !important;
+        filter: drop-shadow(0 0 15px #00FFFF);
+        transition: none; /* Instant change */
+      }
+
+      .cluster-marker {
+        background: rgba(10, 10, 18, 0.8);
+        border: 2px solid #00FFFF;
+        border-radius: 50%;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: monospace;
+        font-weight: bold;
+        box-shadow: 0 0 10px #00FFFF;
+        backdrop-filter: blur(4px);
+      }
+      
+      .zone-dot {
+        background: #00FFFF;
+        border-radius: 50%;
+        box-shadow: 0 0 8px #00FFFF;
+      }
     </style>
   <script type="importmap">
 {
