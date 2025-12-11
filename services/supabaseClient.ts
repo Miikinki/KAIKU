@@ -2,11 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getEnvVar } from './env';
 
 // VITE PROJECT CONFIGURATION
-// Since this project uses index.html as an entry point, it is a Vite app.
-// You must set these variables in Vercel:
-// 1. VITE_SUPABASE_URL
-// 2. VITE_SUPABASE_ANON_KEY
-
+// We use the helper to check for VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 const supabaseUrl = getEnvVar('SUPABASE_URL');
 const supabaseKey = getEnvVar('SUPABASE_ANON_KEY');
 

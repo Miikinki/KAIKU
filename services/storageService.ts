@@ -284,40 +284,45 @@ export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
   return { isLimited: false, cooldownUntil: null };
 };
 
-export const subscribeToMessages = (callback: (msg: ChatMessage) => void) => {
+export type RealtimeEvent = 
+    | { type: 'INSERT'; message: ChatMessage; id: string }
+    | { type: 'UPDATE'; message: ChatMessage; id: string }
+    | { type: 'DELETE'; message: null; id: string };
+
+export const subscribeToMessages = (callback: (event: RealtimeEvent) => void) => {
   console.log("KAIKU: Initializing Realtime Subscription...");
+  
+  const mapPayloadToMessage = (d: any): ChatMessage => ({
+    id: d.id,
+    text: d.text,
+    timestamp: new Date(d.created_at).getTime(),
+    location: { lat: Number(d.latitude), lng: Number(d.longitude) },
+    city: d.city_name,
+    sessionId: d.session_id,
+    score: d.score ?? 0,
+    parentId: d.parent_post_id
+  });
+
   return supabase
     .channel('public:kaiku_posts')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'kaiku_posts' }, (payload) => {
       console.log("KAIKU: Realtime INSERT received", payload);
       const d = payload.new;
       if (!d || !d.created_at) return;
-
-      callback({
-        id: d.id,
-        text: d.text,
-        timestamp: new Date(d.created_at).getTime(),
-        location: { lat: Number(d.latitude), lng: Number(d.longitude) },
-        city: d.city_name,
-        sessionId: d.session_id,
-        score: d.score ?? 0,
-        parentId: d.parent_post_id
-      });
+      callback({ type: 'INSERT', message: mapPayloadToMessage(d), id: d.id });
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'kaiku_posts' }, (payload) => {
       console.log("KAIKU: Realtime UPDATE received", payload);
       const d = payload.new;
       if (!d) return;
-      callback({
-          id: d.id,
-          text: d.text,
-          timestamp: new Date(d.created_at).getTime(),
-          location: { lat: Number(d.latitude), lng: Number(d.longitude) },
-          city: d.city_name,
-          sessionId: d.session_id,
-          score: d.score ?? 0,
-          parentId: d.parent_post_id
-      });
+      callback({ type: 'UPDATE', message: mapPayloadToMessage(d), id: d.id });
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'kaiku_posts' }, (payload) => {
+        console.log("KAIKU: Realtime DELETE received", payload);
+        // Payload.old contains the ID of the deleted record
+        if (payload.old && payload.old.id) {
+            callback({ type: 'DELETE', message: null, id: payload.old.id });
+        }
     })
     .subscribe((status) => {
       console.log("KAIKU: Subscription Status:", status);

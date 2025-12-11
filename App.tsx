@@ -31,37 +31,45 @@ function App() {
   useEffect(() => {
     loadData();
 
-    const sub = subscribeToMessages((msg) => {
-      // Logic to handle incoming messages or replies
+    // Subscribe and handle different event types (INSERT, UPDATE, DELETE)
+    const sub = subscribeToMessages(({ type, message, id }) => {
       setMessages(prev => {
-        // CASE 1: It is a Reply (has a parentId)
-        if (msg.parentId) {
+        // CASE 1: DELETE Event (e.g. score hits -5)
+        if (type === 'DELETE') {
+            return prev.filter(m => m.id !== id);
+        }
+
+        // Check if message is valid for other types
+        if (!message) return prev;
+
+        // CASE 2: Reply Handling
+        if (message.parentId) {
             // We do NOT add replies to the main message list, 
             // but we MUST update the parent's replyCount.
             
             // Prevent double-counting if I just sent it (optimistic update in handleReply)
-            if (msg.sessionId === getAnonymousID()) {
+            if (message.sessionId === getAnonymousID()) {
                 return prev;
             }
 
             return prev.map(m => {
-                if (m.id === msg.parentId) {
+                if (m.id === message.parentId) {
                     return { ...m, replyCount: (m.replyCount || 0) + 1 };
                 }
                 return m;
             });
         }
 
-        // CASE 2: It is a New Root Post (or an update to one)
-        const exists = prev.findIndex(p => p.id === msg.id);
+        // CASE 3: INSERT or UPDATE for Root Post
+        const exists = prev.findIndex(p => p.id === message.id);
         if (exists !== -1) {
             // Update existing (e.g. score change)
             const updated = [...prev];
-            updated[exists] = { ...updated[exists], ...msg };
+            updated[exists] = { ...updated[exists], ...message };
             return updated;
         }
         // Insert new
-        return [msg, ...prev];
+        return [message, ...prev];
       });
     });
     return () => { if (sub) sub.unsubscribe(); };
