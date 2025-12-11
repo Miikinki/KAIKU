@@ -1,11 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
+import { getEnvVar } from './env';
 
-// HARDCODED CONFIGURATION TO BYPASS VERCEL/VITE ENV VAR ISSUES
-const supabaseUrl = "https://njaujopcvyuqtnsjslxi.supabase.co";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYXVqb3Bjdnl1cXRuc2pzbHhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzOTEzNjgsImV4cCI6MjA4MDk2NzM2OH0.xVEtbHoiZMpWgzI21IpZrWHKEAcUIGimT-tJ_14N6c4";
+// VITE PROJECT CONFIGURATION
+// Since this project uses index.html as an entry point, it is a Vite app.
+// You must set these variables in Vercel:
+// 1. VITE_SUPABASE_URL
+// 2. VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseUrl = getEnvVar('SUPABASE_URL');
+const supabaseKey = getEnvVar('SUPABASE_ANON_KEY');
+
+if (!supabaseUrl || !supabaseKey) {
+  console.warn("KAIKU: Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Check Vercel Environment Variables.");
+}
+
+export const supabase = createClient(supabaseUrl || '', supabaseKey || '');
 
 export const isSupabaseConfigured = () => {
-    return true;
+    return !!supabaseUrl && !!supabaseKey;
 };
