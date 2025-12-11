@@ -1,9 +1,9 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Polygon, useMapEvents, useMap, Tooltip, GeoJSON } from 'react-leaflet';
+import { MapContainer, TileLayer, Polygon, useMapEvents, useMap, Tooltip } from 'react-leaflet';
 import * as L from 'leaflet';
 import { ChatMessage, ViewportBounds } from '../types';
-import { MAP_TILE_URL, MAP_ATTRIBUTION, THEME_COLOR, WORLD_GEOJSON_URL } from '../constants';
+import { MAP_TILE_URL, MAP_ATTRIBUTION, THEME_COLOR } from '../constants';
 import { aggregateMessagesByHexagon, getHexagonForLocation } from '../services/h3Helpers';
 
 interface ChatMapProps {
@@ -76,80 +76,6 @@ const MapEvents: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = (
   });
 
   return null;
-};
-
-// --- WORLD BORDERS LAYER (Navigation) ---
-const WorldBordersLayer: React.FC = () => {
-  const [geoJsonData, setGeoJsonData] = useState<any>(null);
-  const map = useMap();
-  const [zoomLevel, setZoomLevel] = useState(map.getZoom());
-
-  useMapEvents({
-    zoomend: () => setZoomLevel(map.getZoom())
-  });
-
-  useEffect(() => {
-    fetch(WORLD_GEOJSON_URL)
-      .then(res => res.json())
-      .then(data => setGeoJsonData(data))
-      .catch(err => console.error("Failed to load world borders", err));
-  }, []);
-
-  // Only show borders when zoomed out (Global View)
-  if (zoomLevel >= 6 || !geoJsonData) return null;
-
-  return (
-    <GeoJSON 
-      data={geoJsonData}
-      style={() => ({
-        fillColor: '#000000',
-        fillOpacity: 0, // Transparent fill
-        color: '#444444', // Subtle gray border
-        weight: 0.5,
-        opacity: 0.6,
-      })}
-      onEachFeature={(feature, layer) => {
-        layer.on({
-          mouseover: (e) => {
-            const l = e.target;
-            l.setStyle({
-              color: '#00FFFF', // Neon Cyan
-              weight: 3,        // Thick glowing wire
-              opacity: 1
-            });
-            l.bringToFront(); // Ensure glow renders on top of neighbors
-            
-            if (l.getElement()) {
-              // STACKED DROP SHADOWS for Intense Neon Effect
-              // 1. Tight cyan shadow (hot core)
-              // 2. Wide cyan shadow (diffuse glow)
-              l.getElement().style.filter = "drop-shadow(0 0 8px #00FFFF) drop-shadow(0 0 15px #00FFFF)";
-              l.getElement().style.transition = "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"; // Smooth ease
-            }
-          },
-          mouseout: (e) => {
-            const l = e.target;
-            l.setStyle({
-              color: '#444444',
-              weight: 0.5,
-              opacity: 0.6
-            });
-            if (l.getElement()) {
-              l.getElement().style.filter = "";
-            }
-          },
-          click: (e) => {
-            L.DomEvent.stopPropagation(e.originalEvent);
-            L.DomEvent.preventDefault(e.originalEvent);
-            map.flyToBounds(e.target.getBounds(), {
-              padding: [50, 50],
-              duration: 1.5
-            });
-          }
-        });
-      }}
-    />
-  );
 };
 
 // --- H3 HEXAGON LAYER ---
@@ -269,8 +195,6 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onCluster
         <MapEvents onViewportChange={onViewportChange} />
         <MapResizeHandler onViewportChange={onViewportChange} />
         
-        <WorldBordersLayer />
-
         <HexagonHeatmapLayer 
             messages={messages} 
             onHexClick={onClusterClick} 
