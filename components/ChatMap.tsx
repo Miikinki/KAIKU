@@ -162,7 +162,7 @@ const ActiveHexagonLayer: React.FC<{
 
   return (
     <>
-      {hexagons.map(hex => {
+      {hexagons.map((hex, i) => {
         // Dynamic Styles based on Count
         let color = '#06b6d4'; // Cyan (Low)
         let fillOpacity = 0.1;
@@ -186,7 +186,7 @@ const ActiveHexagonLayer: React.FC<{
 
         // Shockwave Marker
         const shockwaveIcon = L.divIcon({
-            className: '', // Inner HTML handles the class
+            className: 'kaiku-beacon-wrapper', // Ensure overflow visible
             html: `<div style="width: 100%; height: 100%;" class="kaiku-shockwave-marker"></div>`,
             iconSize: [60, 60], 
             iconAnchor: [30, 30] 
@@ -194,9 +194,12 @@ const ActiveHexagonLayer: React.FC<{
 
         if (isBeaconMode) {
              // BEACON MODE (Zoom < 8): Glowing Dots
+             // Add random delay so they don't pulse in unison (looks more organic/live)
+             const delay = (i % 5) * -0.5; // Simple deterministic delay based on index to avoid re-render jitter
+             
              const beaconIcon = L.divIcon({
-                className: '',
-                html: `<div class="kaiku-beacon-dot"></div>`,
+                className: 'kaiku-beacon-wrapper', // Override Leaflet defaults
+                html: `<div class="kaiku-beacon-dot" style="animation-delay: ${delay}s"></div>`,
                 iconSize: [12, 12],
                 iconAnchor: [6, 6]
              });
