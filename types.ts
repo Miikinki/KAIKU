@@ -1,3 +1,4 @@
+
 export interface ChatMessage {
   id: string;
   text: string;
@@ -11,6 +12,7 @@ export interface ChatMessage {
   score: number; // Jodel-style score (Upvotes - Downvotes)
   parentId?: string | null; // For threaded replies
   replyCount?: number; // Visual counter
+  isRemote?: boolean; // Signal Origin Indicator
 }
 
 export interface ViewportBounds {

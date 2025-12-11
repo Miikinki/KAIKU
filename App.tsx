@@ -6,7 +6,7 @@ import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, getAnonymousID, deleteMessage } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, getAnonymousID, deleteMessage, calculateDistance } from './services/storageService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence } from 'framer-motion';
 
@@ -162,7 +162,16 @@ function App() {
       throw new Error("Location is required to place your broadcast on the map. Please enable location services.");
     }
 
-    const newMsg = await saveMessage(text, lat, lng);
+    // Determine if remote: Distance between Real GPS (lat/lng) and Target Location
+    // Currently, Target Location IS the Real GPS, so distance is 0. 
+    // But this logic allows future expansion (e.g. "Post to Map Center").
+    const targetLat = lat; // Placeholder for future feature
+    const targetLng = lng; // Placeholder for future feature
+    
+    const dist = calculateDistance(lat, lng, targetLat, targetLng);
+    const isRemote = dist > 25; // Threshold 25km
+
+    const newMsg = await saveMessage(text, targetLat, targetLng, undefined, isRemote);
     setMessages(prev => [newMsg, ...prev]);
     setLastNewMessage(newMsg);
     setRateLimit(await getRateLimitStatus());
@@ -180,7 +189,7 @@ function App() {
         throw new Error("Location is required to reply. Please enable location services.");
     }
 
-    await saveMessage(text, lat, lng, parentId);
+    await saveMessage(text, lat, lng, parentId, false);
     setMessages(prev => prev.map(m => {
         if (m.id === parentId) {
             return { ...m, replyCount: (m.replyCount || 0) + 1 };

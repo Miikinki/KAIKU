@@ -17,7 +17,8 @@
     "react-leaflet": "^5.0.0",
     "leaflet": "^1.9.4",
     "@supabase/supabase-js": "2.39.7",
-    "@google/genai": "^1.32.0"
+    "h3-js": "4.1.0",
+    "@google/genai": "^1.33.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

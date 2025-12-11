@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, AlertCircle, Trash2 } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, AlertCircle, Trash2, Satellite } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID } from '../services/storageService';
 
@@ -116,6 +116,11 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}</span>
                 </div>
                 <div className="flex items-center gap-2">
+                    {msg.isRemote && (
+                        <div className="text-amber-400 flex items-center gap-1" title="Posted remotely">
+                            <Satellite size={12} />
+                        </div>
+                    )}
                     {msg.sessionId === currentSessionId && (
                          <button 
                             onClick={(e) => handleDeleteClick(e, msg.id, isParent)}

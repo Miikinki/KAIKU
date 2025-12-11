@@ -41,50 +41,6 @@
       ::-webkit-scrollbar-thumb:hover {
         background: rgba(0, 255, 255, 0.4);
       }
-
-      /* Activity Zone Aura (Legacy / unused) */
-      .activity-zone {
-        background: radial-gradient(circle, rgba(6,182,212,0.4) 0%, rgba(6,182,212,0.1) 60%, rgba(6,182,212,0) 100%);
-        border-radius: 50%;
-        mix-blend-mode: screen;
-        pointer-events: none; 
-        animation: pulse-aura 4s ease-in-out infinite;
-      }
-
-      /* ZOOMED OUT: Small Dot */
-      .zone-dot {
-        background-color: #06b6d4; /* Cyan-500 */
-        border-radius: 50%;
-        box-shadow: 0 0 10px #22d3ee, 0 0 4px #fff;
-        border: 2px solid rgba(255,255,255,0.8);
-      }
-
-      /* ZOOMED IN: Cluster Count Marker */
-      .cluster-marker {
-        background-color: rgba(6, 182, 212, 0.9); /* Cyan-500 */
-        border: 2px solid rgba(255, 255, 255, 0.9);
-        color: white;
-        border-radius: 50%;
-        text-align: center;
-        font-weight: bold;
-        font-family: monospace;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 0 15px rgba(34, 211, 238, 0.6);
-        font-size: 12px;
-        transition: transform 0.2s;
-      }
-      .cluster-marker:hover {
-        transform: scale(1.1);
-        background-color: #22d3ee;
-      }
-
-      @keyframes pulse-aura {
-        0% { transform: scale(1); opacity: 0.8; }
-        50% { transform: scale(1.1); opacity: 0.6; }
-        100% { transform: scale(1); opacity: 0.8; }
-      }
     </style>
   <script type="importmap">
 {
@@ -99,7 +55,8 @@
     "react-leaflet": "https://aistudiocdn.com/react-leaflet@^5.0.0",
     "leaflet": "https://aistudiocdn.com/leaflet@^1.9.4",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.7",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.32.0"
+    "h3-js": "https://esm.sh/h3-js@4.1.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
   }
 }
 </script>

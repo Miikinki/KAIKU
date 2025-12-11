@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, XCircle } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, XCircle, Satellite } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
 import { getUserVotes, getAnonymousID } from '../services/storageService';
@@ -162,6 +162,11 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                 </span>
                             </div>
                             <div className="flex items-center gap-2">
+                                {msg.isRemote && (
+                                    <div className="text-amber-400 flex items-center gap-1" title="Posted remotely">
+                                        <Satellite size={12} />
+                                    </div>
+                                )}
                                 {msg.sessionId === currentSessionId && (
                                     <button 
                                         onClick={(e) => handleDeleteClick(e, msg.id, msg.parentId)}

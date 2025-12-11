@@ -59,7 +59,8 @@ const generateSeedData = (): ChatMessage[] => {
         city: city.name,
         sessionId: `seed-user-${Math.floor(Math.random() * 100)}`,
         score: Math.floor(Math.random() * 10) - 2,
-        replyCount: Math.random() > 0.7 ? Math.floor(Math.random() * 5) : 0
+        replyCount: Math.random() > 0.7 ? Math.floor(Math.random() * 5) : 0,
+        isRemote: Math.random() > 0.9 // Randomly mark some seeds as remote
       });
       count++;
     }
@@ -90,6 +91,24 @@ export const getAnonymousID = (): string => {
     localStorage.setItem(USER_ID_KEY, id);
   }
   return id;
+};
+
+// Haversine formula to calculate distance between two points in km
+export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  const R = 6371; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLng = deg2rad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; // Distance in km
+  return d;
+};
+
+const deg2rad = (deg: number): number => {
+  return deg * (Math.PI / 180);
 };
 
 export const getRandomLocation = () => {
@@ -140,8 +159,8 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
       sessionId: d.session_id,
       score: d.score ?? 0,
       parentId: d.parent_post_id,
-      // Map the aggregate count. Structure is [{ count: N }]
-      replyCount: d.replies?.[0]?.count || 0
+      replyCount: d.replies?.[0]?.count || 0,
+      isRemote: d.is_remote // Map database column to type
     }));
   }
 };
@@ -165,7 +184,8 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
         city: d.city_name,
         sessionId: d.session_id,
         score: d.score ?? 0,
-        parentId: d.parent_post_id
+        parentId: d.parent_post_id,
+        isRemote: d.is_remote
     }));
 };
 
@@ -182,7 +202,7 @@ const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
   return onlyRoot ? valid.filter(m => !m.parentId) : valid;
 };
 
-export const saveMessage = async (text: string, lat: number, lng: number, parentId?: string): Promise<ChatMessage> => {
+export const saveMessage = async (text: string, lat: number, lng: number, parentId?: string, isRemote: boolean = false): Promise<ChatMessage> => {
   // 1. RATE LIMIT CHECK (SPAM PROTECTION)
   const lastPostTimeStr = localStorage.getItem(LAST_POST_TIMESTAMP_KEY);
   if (lastPostTimeStr) {
@@ -210,7 +230,8 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
     city,
     sessionId: userId,
     score: 0,
-    parentId: parentId || null
+    parentId: parentId || null,
+    isRemote: isRemote
   };
 
   // Optimistically update Local Storage (for instant display/offline support)
@@ -229,7 +250,8 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
       city_name: newMessage.city,
       session_id: newMessage.sessionId, // This is key for ownership
       parent_post_id: newMessage.parentId,
-      score: 0
+      score: 0,
+      is_remote: newMessage.isRemote // Save remote status
     }]);
   
   if (error) {
@@ -243,8 +265,6 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
 };
 
 export const deleteMessage = async (msgId: string): Promise<boolean> => {
-    console.log("KAIKU: Deleting message...", msgId);
-    
     // 1. Local Storage Removal (Immediate success locally)
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
@@ -257,35 +277,28 @@ export const deleteMessage = async (msgId: string): Promise<boolean> => {
         console.warn("Local delete error", e);
     }
 
-    // 2. Supabase Removal (Hybrid Strategy)
+    // 2. Supabase Removal
     if (isSupabaseConfigured()) {
-        // STRATEGY A: Hard Delete
-        // Removes strict session check to rely on RLS policies and UI gating.
-        // This is robust against session ID mismatches (e.g. testing data).
-        const { error: hardError } = await supabase
+        console.log("KAIKU: Deleting message...", msgId);
+
+        // STRATEGY: Hard Delete via ID only. 
+        // We rely on Supabase RLS policies (which we set to Public) 
+        // and Foreign Key Cascades (which we set in SQL) to handle the rest.
+        // We do NOT check ownership here, because the UI hides the button for non-owners.
+        
+        const { error, count } = await supabase
             .from('kaiku_posts')
-            .delete()
+            .delete({ count: 'exact' })
             .eq('id', msgId);
 
-        if (hardError) {
-            console.warn("KAIKU: Hard Delete failed, trying Soft Delete...", hardError);
+        if (error) {
+            console.error("KAIKU: Delete failed", error);
             
-            // STRATEGY B: Soft Delete (Fallback)
-            // If hard delete fails (e.g. FK constraints if SQL fix wasn't perfect), we hide the post.
-            const { error: softError } = await supabase
-                .from('kaiku_posts')
-                .update({ score: -1000 })
-                .eq('id', msgId);
-            
-            if (softError) {
-                console.error("KAIKU: All delete strategies failed.", softError);
-                // Return TRUE anyway to keep UI optimistic. 
-                // The user wants it gone, and we've hidden it locally.
-                return true;
-            }
+            // Fallback: Soft Delete (Hide)
+            console.log("KAIKU: Attempting Soft Delete...");
+            await supabase.from('kaiku_posts').update({ score: -1000 }).eq('id', msgId);
         }
 
-        console.log("KAIKU: Delete operation successful (Hard or Soft).");
         return true; 
     }
 
@@ -371,7 +384,8 @@ export const subscribeToMessages = (callback: (event: RealtimeEvent) => void) =>
     city: d.city_name,
     sessionId: d.session_id,
     score: d.score ?? 0,
-    parentId: d.parent_post_id
+    parentId: d.parent_post_id,
+    isRemote: d.is_remote
   });
 
   return supabase
