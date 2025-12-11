@@ -9,6 +9,7 @@ interface ChatMapProps {
   messages: ChatMessage[];
   onViewportChange: (bounds: ViewportBounds) => void;
   onMessageClick: (msg: ChatMessage) => void;
+  lastNewMessage: ChatMessage | null;
 }
 
 // Function to create Activity Zone Aura Icon
@@ -27,6 +28,13 @@ const createActivityZoneIcon = (count: number) => {
     iconAnchor: [size / 2, size / 2],
   });
 };
+
+const pulseIcon = L.divIcon({
+  className: 'pulse-ring-marker',
+  html: '<div class="pulse-ring"></div>',
+  iconSize: [20, 20], // Base size, visual size handled by CSS
+  iconAnchor: [10, 10], // Center it
+});
 
 // Component to handle Map Resizing logic using ResizeObserver
 const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = ({ onViewportChange }) => {
@@ -137,7 +145,41 @@ const ActivityZones: React.FC<{ messages: ChatMessage[] }> = ({ messages }) => {
   );
 };
 
-const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick }) => {
+// Component to handle new message pulses
+const PulseLayer: React.FC<{ lastNewMessage: ChatMessage | null }> = ({ lastNewMessage }) => {
+  const [pulses, setPulses] = useState<{ id: string, pos: [number, number] }[]>([]);
+
+  useEffect(() => {
+    if (lastNewMessage) {
+      const pulseId = `${lastNewMessage.id}-${Date.now()}`;
+      setPulses(prev => [...prev, { 
+        id: pulseId, 
+        pos: [lastNewMessage.location.lat, lastNewMessage.location.lng] 
+      }]);
+
+      // Auto-remove pulse after animation duration (1.5s)
+      setTimeout(() => {
+        setPulses(prev => prev.filter(p => p.id !== pulseId));
+      }, 1500);
+    }
+  }, [lastNewMessage]);
+
+  return (
+    <>
+      {pulses.map(p => (
+        <Marker 
+          key={p.id}
+          position={p.pos}
+          icon={pulseIcon}
+          zIndexOffset={1000} // Ensure it appears on top
+          interactive={false}
+        />
+      ))}
+    </>
+  );
+};
+
+const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick, lastNewMessage }) => {
   // Lock the map to the "real" world coordinates to prevent scrolling into the void vertically,
   // BUT allow horizontal scrolling (Infinity) to prevent blue bars on wide screens.
   const maxBounds = new L.LatLngBounds(
@@ -170,6 +212,7 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessage
         <MapEvents onViewportChange={onViewportChange} />
         <MapResizeHandler onViewportChange={onViewportChange} />
         <ActivityZones messages={messages} />
+        <PulseLayer lastNewMessage={lastNewMessage} />
 
       </MapContainer>
     </div>

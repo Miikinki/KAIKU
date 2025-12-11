@@ -17,6 +17,9 @@ function App() {
   const [activeThread, setActiveThread] = useState<ChatMessage | null>(null);
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
   
+  // Track the most recent incoming message for map pulse animation
+  const [lastNewMessage, setLastNewMessage] = useState<ChatMessage | null>(null);
+  
   // Cache for GPS location to solve "Cold Start" issues on mobile
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
 
@@ -92,6 +95,12 @@ function App() {
             updated[exists] = { ...updated[exists], ...message };
             return updated;
         }
+        
+        // NEW MESSAGE INSERTED
+        if (type === 'INSERT') {
+          setLastNewMessage(message);
+        }
+        
         // Insert new
         return [message, ...prev];
       });
@@ -172,6 +181,8 @@ function App() {
 
     const newMsg = await saveMessage(text, lat, lng);
     setMessages(prev => [newMsg, ...prev]);
+    // Also trigger pulse for self
+    setLastNewMessage(newMsg);
     setRateLimit(await getRateLimitStatus());
   };
 
@@ -231,6 +242,7 @@ function App() {
         messages={messages} 
         onViewportChange={handleViewportChange}
         onMessageClick={(msg) => setActiveThread(msg)}
+        lastNewMessage={lastNewMessage}
       />
 
       <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none">
