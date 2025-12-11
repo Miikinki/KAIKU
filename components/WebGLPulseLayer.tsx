@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef } from 'react';
 import { useMap } from 'react-leaflet';
 import { ChatMessage } from '../types';
@@ -43,23 +44,34 @@ const FRAGMENT_SHADER_SOURCE = `
          float dist = distance(st, center);
          
          // Soft ring logic
-         float edge = maxRadius * 0.4; 
-         float ring = smoothstep(currentRadius, currentRadius - edge, dist);
+         // Make the ring thickness proportional to radius but capped
+         // Decreased factor to 0.2 for slightly sharper rings at size
+         float edge = max(2.0, maxRadius * 0.2); 
          
-         // Cut out inner to make it a ring
-         float inner = smoothstep(currentRadius - edge * 0.5, currentRadius, dist);
+         // Outer Fade: 1.0 at (radius - edge) -> 0.0 at (radius)
+         // Correct GLSL: smoothstep(min, max, value)
+         float outer = 1.0 - smoothstep(currentRadius - edge, currentRadius, dist);
          
-         float alpha = 1.0 - t; // Fade out
+         // Inner Fade: 0.0 at (radius - edge*2) -> 1.0 at (radius - edge)
+         // Creates the hole in the center
+         float inner = smoothstep(currentRadius - edge * 2.5, currentRadius - edge * 0.5, dist);
+         
+         // Fade out over time
+         float alpha = 1.0 - t;
+         // Non-linear fade for punchier start
+         alpha = pow(alpha, 0.5);
          
          // Kaiku Blue: 0.3, 0.65, 1.0
          // Accumulate color
-         color += vec3(0.3, 0.65, 1.0) * ring * inner * alpha; 
+         // Increased intensity to 1.0
+         color += vec3(0.2, 0.8, 1.0) * outer * inner * alpha * 1.0; 
       }
     }
     
     // Simple transparency handling: if color is black, alpha is 0
     float alpha = max(color.r, max(color.g, color.b));
-    gl_FragColor = vec4(color, alpha);
+    // Clamp alpha to prevent weird blending artifacts
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
   }
 `;
 
@@ -70,31 +82,37 @@ const WebGLPulseLayer: React.FC<WebGLPulseLayerProps> = ({ lastNewMessage }) => 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
+  // Initialize with empty array, but type it correctly
   const pulsesRef = useRef<{ lat: number; lng: number; startTime: number; duration: number }[]>([]);
   const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     // 1. Setup Canvas
     const canvas = document.createElement('canvas');
-    canvas.style.position = 'fixed'; // Fixed over the map container
+    canvas.style.position = 'absolute'; // Absolute within the map pane
     canvas.style.top = '0';
     canvas.style.left = '0';
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     canvas.style.pointerEvents = 'none';
-    canvas.style.zIndex = '900'; // Above map, below UI
+    canvas.style.zIndex = '900'; // Above map tiles/overlay pane
     
     const mapContainer = map.getContainer();
     mapContainer.appendChild(canvas);
     canvasRef.current = canvas;
 
     // 2. Setup WebGL
-    const gl = canvas.getContext('webgl', { alpha: true, depth: false, antialias: true });
+    // PremultipliedAlpha: false allows manual alpha control in shader
+    const gl = canvas.getContext('webgl', { alpha: true, depth: false, antialias: true, premultipliedAlpha: false });
     if (!gl) {
         console.error("WebGL 1 not supported");
         return;
     }
     glRef.current = gl;
+
+    // Enable Blending for transparency
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
     // 3. Compile Shaders
     const createShader = (type: number, source: string) => {
@@ -152,11 +170,17 @@ const WebGLPulseLayer: React.FC<WebGLPulseLayerProps> = ({ lastNewMessage }) => 
       if (pulsesRef.current.length >= MAX_PULSES) {
         pulsesRef.current.shift(); // Remove oldest
       }
+
+      // PRIVACY ENFORCEMENT: Snap to Grid (approx 1.1km precision)
+      // This ensures the pulse appears at the general area center, not exact user location.
+      const snappedLat = Math.round(lastNewMessage.location.lat * 100) / 100;
+      const snappedLng = Math.round(lastNewMessage.location.lng * 100) / 100;
+
       pulsesRef.current.push({
-        lat: lastNewMessage.location.lat,
-        lng: lastNewMessage.location.lng,
+        lat: snappedLat,
+        lng: snappedLng,
         startTime: performance.now() / 1000,
-        duration: 1.4 // 1.4 seconds duration
+        duration: 2.5 // Increased duration for smoother ripple
       });
     }
   }, [lastNewMessage]);
@@ -183,6 +207,13 @@ const WebGLPulseLayer: React.FC<WebGLPulseLayerProps> = ({ lastNewMessage }) => 
       // Resize Canvas if needed
       const displayWidth = canvas.clientWidth * window.devicePixelRatio;
       const displayHeight = canvas.clientHeight * window.devicePixelRatio;
+      
+      // Safety check for 0 dimensions (iframe init issue)
+      if (displayWidth === 0 || displayHeight === 0) {
+          animationFrameRef.current = requestAnimationFrame(render);
+          return;
+      }
+
       if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
         canvas.width = displayWidth;
         canvas.height = displayHeight;
@@ -190,31 +221,33 @@ const WebGLPulseLayer: React.FC<WebGLPulseLayerProps> = ({ lastNewMessage }) => 
       }
 
       gl.useProgram(program);
+      // Clear the canvas to transparent before drawing
+      gl.clearColor(0, 0, 0, 0); 
+      gl.clear(gl.COLOR_BUFFER_BIT);
 
       // --- DYNAMIC ZOOM RADIUS LOGIC (Pixel Based) ---
       const zoom = map.getZoom();
-      let targetRadius = 12.0;
+      let targetRadius = 30.0;
       
       // We want pulses to be tiny dots when zoomed out, and large cinematic glows when zoomed in.
       if (zoom < 5) {
-          // Zoom 0-4 (World View): Keep it tiny (12px - 20px)
-          // 12px at Zoom 0, 20px at Zoom 4
-          targetRadius = 12.0 + (zoom * 2.0); 
+          // Zoom 0-4 (World View): Start bigger (30px - 50px)
+          targetRadius = 30.0 + (zoom * 5.0); 
       } else if (zoom < 10) {
-          // Zoom 5-9 (Continent/Country): Small but visible (20px - 50px)
-          targetRadius = 20.0 + ((zoom - 5.0) * 6.0);
+          // Zoom 5-9 (Continent/Country): Clearly visible (50px - 100px)
+          targetRadius = 50.0 + ((zoom - 5.0) * 10.0);
       } else if (zoom < 15) {
-          // Zoom 10-14 (Region/City): Medium glow (50px - 140px)
-          targetRadius = 50.0 + ((zoom - 10.0) * 18.0);
+          // Zoom 10-14 (Region/City): Significant glow (100px - 200px)
+          targetRadius = 100.0 + ((zoom - 10.0) * 20.0);
       } else {
-          // Zoom 15+ (Street): Cinematic Large (140px - 220px)
-          targetRadius = 140.0 + ((Math.min(zoom, 18.0) - 15.0) * 26.6);
+          // Zoom 15+ (Street): Cinematic Large (200px - 350px)
+          targetRadius = 200.0 + ((Math.min(zoom, 18.0) - 15.0) * 50.0);
       }
       
-      // Clamp strictly between 12px and 220px
-      targetRadius = Math.max(12.0, Math.min(220.0, targetRadius));
+      // Clamp strictly between 30px and 350px
+      targetRadius = Math.max(30.0, Math.min(350.0, targetRadius));
       
-      gl.uniform1f(uZoomRadiusLoc, targetRadius);
+      gl.uniform1f(uZoomRadiusLoc, targetRadius * window.devicePixelRatio); // Scale radius for DPI
       // -----------------------------------------------
 
       gl.uniform2f(uResolutionLoc, canvas.width, canvas.height);
