@@ -224,7 +224,8 @@ function App() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-[#0a0a12] overflow-hidden">
+    // FIXED INSET-0 forces the app to fill the iframe/viewport completely
+    <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
       
       <ChatMap 
         messages={messages} 

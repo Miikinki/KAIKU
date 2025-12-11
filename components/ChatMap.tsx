@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import * as L from 'leaflet';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
@@ -27,6 +28,46 @@ const createActivityZoneIcon = (count: number) => {
   });
 };
 
+// Component to handle Map Resizing logic using ResizeObserver
+const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = ({ onViewportChange }) => {
+  const map = useMap();
+  const mapContainerRef = useRef<HTMLElement | null>(map.getContainer());
+
+  useEffect(() => {
+    const handleResize = () => {
+      map.invalidateSize();
+      const bounds = map.getBounds();
+      onViewportChange({
+        north: bounds.getNorth(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        west: bounds.getWest(),
+        zoom: map.getZoom()
+      });
+    };
+
+    // 1. Initial invalidation (timeout fallback)
+    setTimeout(handleResize, 100);
+    setTimeout(handleResize, 500); // Secondary safety check
+    setTimeout(handleResize, 2000); // Late check for slow loads
+
+    // 2. ResizeObserver for robust detection of container changes (e.g. iframe resize)
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+
+    if (mapContainerRef.current) {
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [map, onViewportChange]);
+
+  return null;
+};
+
 const MapEvents: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = ({ onViewportChange }) => {
   const map = useMapEvents({
     moveend: () => {
@@ -50,19 +91,6 @@ const MapEvents: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = (
       });
     }
   });
-
-  // Initial load
-  useEffect(() => {
-    map.invalidateSize();
-    const bounds = map.getBounds();
-    onViewportChange({
-        north: bounds.getNorth(),
-        south: bounds.getSouth(),
-        east: bounds.getEast(),
-        west: bounds.getWest(),
-        zoom: map.getZoom()
-    });
-  }, [map, onViewportChange]);
 
   return null;
 };
@@ -110,35 +138,37 @@ const ActivityZones: React.FC<{ messages: ChatMessage[] }> = ({ messages }) => {
 };
 
 const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMessageClick }) => {
-  // Lock the map to the "real" world coordinates to prevent scrolling into the void.
-  // Latitude is capped at +/- 85 because Web Mercator projection distorts infinitely at the poles.
+  // Lock the map to the "real" world coordinates to prevent scrolling into the void vertically,
+  // BUT allow horizontal scrolling (Infinity) to prevent blue bars on wide screens.
   const maxBounds = new L.LatLngBounds(
-    new L.LatLng(-85, -180), // South West
-    new L.LatLng(85, 180)    // North East
+    new L.LatLng(-85, -Infinity), // South West
+    new L.LatLng(85, Infinity)    // North East
   );
 
   return (
-    <div className="fixed inset-0 z-0 bg-[#0a0a12]">
+    // Fixed positioning here guarantees the map container fills the window
+    <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
-        center={[20, 0]}
-        zoom={3}
+        center={[60.16, 24.93]} // Center on Helsinki initially
+        zoom={10}
         minZoom={2.5}
         scrollWheelZoom={true}
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
-        style={{ background: '#0a0a12' }}
+        style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         maxBounds={maxBounds}
-        maxBoundsViscosity={1.0} // Creates a "hard wall" effect
+        maxBoundsViscosity={1.0}
+        worldCopyJump={true} // Ensures markers wrap around the world correctly
       >
         <TileLayer 
             url={MAP_TILE_URL} 
             attribution={MAP_ATTRIBUTION} 
-            noWrap={true} // Prevents the map from repeating horizontally
+            noWrap={false} // Allow tiles to wrap horizontally to fill wide screens
         />
         
         <MapEvents onViewportChange={onViewportChange} />
-
+        <MapResizeHandler onViewportChange={onViewportChange} />
         <ActivityZones messages={messages} />
 
       </MapContainer>
