@@ -1,23 +1,56 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Access environment variables explicitly so bundlers (Vite/Next.js) can replace them at build time.
-// Dynamic access (process.env[key]) often fails in client-side builds.
+// CRITICAL FIX: Explicitly access the environment variables so bundlers (Vite/Webpack)
+// can statically analyze and replace them at build time.
+// Do NOT use dynamic access like process.env[key] or import.meta.env[key].
 
-const getEnv = (key: string) => {
+const getSupabaseUrl = () => {
+  // 1. Try Vite / ESM (import.meta.env)
   // @ts-ignore
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
     // @ts-ignore
-    return import.meta.env[key];
+    if (import.meta.env.NEXT_PUBLIC_SUPABASE_URL) return import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+    // @ts-ignore
+    if (import.meta.env.VITE_SUPABASE_URL) return import.meta.env.VITE_SUPABASE_URL;
   }
-  if (typeof process !== 'undefined' && process.env && process.env[key]) {
-    return process.env[key];
+
+  // 2. Try Node / Next.js / Webpack (process.env)
+  if (typeof process !== 'undefined' && process.env) {
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (process.env.VITE_SUPABASE_URL) return process.env.VITE_SUPABASE_URL;
   }
+  
   return '';
 };
 
-// Explicitly list the keys we expect
-const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('VITE_SUPABASE_URL');
-const supabaseKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('VITE_SUPABASE_ANON_KEY');
+const getSupabaseKey = () => {
+  // 1. Try Vite / ESM (import.meta.env)
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env) {
+    // @ts-ignore
+    if (import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // @ts-ignore
+    if (import.meta.env.VITE_SUPABASE_ANON_KEY) return import.meta.env.VITE_SUPABASE_ANON_KEY;
+  }
+
+  // 2. Try Node / Next.js / Webpack (process.env)
+  if (typeof process !== 'undefined' && process.env) {
+    if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (process.env.VITE_SUPABASE_ANON_KEY) return process.env.VITE_SUPABASE_ANON_KEY;
+  }
+
+  return '';
+};
+
+const supabaseUrl = getSupabaseUrl();
+const supabaseKey = getSupabaseKey();
+
+// Debug logs to help identify issues in console (Masked for security)
+if (!supabaseUrl || !supabaseKey) {
+    console.warn("KAIKU: Missing Supabase Env Vars.");
+    console.log("URL Found:", !!supabaseUrl);
+    console.log("Key Found:", !!supabaseKey);
+}
 
 // Create client only if keys exist
 export const supabase = (supabaseUrl && supabaseKey) 
@@ -25,7 +58,5 @@ export const supabase = (supabaseUrl && supabaseKey)
   : null;
 
 export const isSupabaseConfigured = () => {
-    if (!!supabase) return true;
-    console.warn("KAIKU: Supabase is NOT configured. Checked keys: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY");
-    return false;
+    return !!supabase;
 };
