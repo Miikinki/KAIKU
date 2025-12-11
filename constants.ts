@@ -5,6 +5,7 @@ export const MAP_ATTRIBUTION = ''; // Hidden as per request
 
 export const MAX_POSTS_PER_WINDOW = 10;
 export const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+export const SPAM_RATE_LIMIT_MS = 4000; // 4 seconds between posts
 
 // Lifecycle & Scoring
 export const MESSAGE_LIFESPAN_MS = 48 * 60 * 60 * 1000; // 48 Hours

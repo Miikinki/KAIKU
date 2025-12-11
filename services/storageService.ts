@@ -1,11 +1,12 @@
 import { ChatMessage, RateLimitStatus } from '../types';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, MESSAGE_LIFESPAN_MS, SCORE_THRESHOLD_HIDE } from '../constants';
+import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, MESSAGE_LIFESPAN_MS, SCORE_THRESHOLD_HIDE, SPAM_RATE_LIMIT_MS } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
 
 const STORAGE_KEY = 'global_local_talk_data';
 const USER_ID_KEY = 'global_local_talk_user_id';
 const USER_VOTES_KEY = 'global_local_talk_user_votes';
+const LAST_POST_TIMESTAMP_KEY = 'kaiku_last_post_ts';
 
 // --- MASSIVE SEED DATA GENERATOR (For Local Mode) ---
 
@@ -181,6 +182,16 @@ const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
 };
 
 export const saveMessage = async (text: string, lat: number, lng: number, parentId?: string): Promise<ChatMessage> => {
+  // 1. RATE LIMIT CHECK (SPAM PROTECTION)
+  const lastPostTimeStr = localStorage.getItem(LAST_POST_TIMESTAMP_KEY);
+  if (lastPostTimeStr) {
+      const lastPostTime = parseInt(lastPostTimeStr, 10);
+      const diff = Date.now() - lastPostTime;
+      if (diff < SPAM_RATE_LIMIT_MS) {
+          throw new Error("You are sending messages too fast. Please wait a moment.");
+      }
+  }
+
   const userId = getAnonymousID();
 
   if (!moderateContent(text)) {
@@ -215,8 +226,11 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
   
   if (error) {
     console.error("Supabase Save Error", error);
-    // Fallback?
+    // Continue even on error to support offline/demo mode, or throw if strict
   }
+
+  // Update spam rate limit timestamp
+  localStorage.setItem(LAST_POST_TIMESTAMP_KEY, Date.now().toString());
 
   return newMessage;
 };
@@ -333,4 +347,5 @@ export const clearLocalData = () => {
     localStorage.removeItem(USER_ID_KEY);
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(USER_VOTES_KEY);
+    localStorage.removeItem(LAST_POST_TIMESTAMP_KEY);
 };
