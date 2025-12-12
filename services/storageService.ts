@@ -139,6 +139,19 @@ export const applyFuzzyLogic = (lat: number, lng: number) => {
 
 // --- DATA ACCESS ---
 
+export const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (!stored) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_MESSAGES));
+    return onlyRoot ? SEED_MESSAGES.filter(m => !m.parentId) : SEED_MESSAGES;
+  }
+  const parsed: ChatMessage[] = JSON.parse(stored);
+  const cutoff = Date.now() - MESSAGE_LIFESPAN_MS;
+  const valid = parsed.filter(m => m.timestamp > cutoff && m.score > SCORE_THRESHOLD_HIDE);
+  
+  return onlyRoot ? valid.filter(m => !m.parentId) : valid;
+};
+
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
   // Supabase Fetch from 'kaiku_posts'
   // Fetch *, plus the count of children (replies)
@@ -198,19 +211,6 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
         isRemote: d.is_remote,
         originCountry: d.origin_country
     }));
-};
-
-const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_MESSAGES));
-    return onlyRoot ? SEED_MESSAGES.filter(m => !m.parentId) : SEED_MESSAGES;
-  }
-  const parsed: ChatMessage[] = JSON.parse(stored);
-  const cutoff = Date.now() - MESSAGE_LIFESPAN_MS;
-  const valid = parsed.filter(m => m.timestamp > cutoff && m.score > SCORE_THRESHOLD_HIDE);
-  
-  return onlyRoot ? valid.filter(m => !m.parentId) : valid;
 };
 
 export const saveMessage = async (text: string, lat: number, lng: number, parentId?: string, isRemote: boolean = false): Promise<ChatMessage> => {
@@ -385,50 +385,43 @@ export type RealtimeEvent =
     | { type: 'DELETE'; message: null; id: string };
 
 export const subscribeToMessages = (callback: (event: RealtimeEvent) => void) => {
-  // console.log("KAIKU: Initializing Realtime Subscription...");
   
-  const mapPayloadToMessage = (d: any): ChatMessage => ({
-    id: d.id,
-    text: d.text,
-    timestamp: new Date(d.created_at).getTime(),
-    location: { lat: Number(d.latitude), lng: Number(d.longitude) },
-    city: d.city_name,
-    sessionId: d.session_id,
-    score: d.score ?? 0,
-    parentId: d.parent_post_id,
-    isRemote: d.is_remote,
-    originCountry: d.origin_country
+  const mapPayload = (payload: any): ChatMessage => ({
+      id: payload.id,
+      text: payload.text,
+      timestamp: new Date(payload.created_at).getTime(),
+      location: { lat: Number(payload.latitude), lng: Number(payload.longitude) },
+      city: payload.city_name,
+      sessionId: payload.session_id,
+      score: payload.score ?? 0,
+      parentId: payload.parent_post_id,
+      replyCount: 0, // Realtime count tricky without join, defer or set 0
+      isRemote: payload.is_remote,
+      originCountry: payload.origin_country
   });
 
-  return supabase
-    .channel('public:kaiku_posts')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'kaiku_posts' }, (payload) => {
-      // console.log("KAIKU: Realtime INSERT received", payload);
-      const d = payload.new;
-      if (!d || !d.created_at) return;
-      callback({ type: 'INSERT', message: mapPayloadToMessage(d), id: d.id });
-    })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'kaiku_posts' }, (payload) => {
-      // console.log("KAIKU: Realtime UPDATE received", payload);
-      const d = payload.new;
-      if (!d) return;
-      callback({ type: 'UPDATE', message: mapPayloadToMessage(d), id: d.id });
-    })
-    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'kaiku_posts' }, (payload) => {
-        // console.log("KAIKU: Realtime DELETE received", payload);
-        // Payload.old contains the ID of the deleted record
-        if (payload.old && payload.old.id) {
-            callback({ type: 'DELETE', message: null, id: payload.old.id });
+  const channel = supabase
+    .channel('kaiku_realtime')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'kaiku_posts' },
+      (payload) => {
+        if (payload.eventType === 'INSERT') {
+           const msg = mapPayload(payload.new);
+           callback({ type: 'INSERT', message: msg, id: msg.id });
+        } else if (payload.eventType === 'UPDATE') {
+           const msg = mapPayload(payload.new);
+           callback({ type: 'UPDATE', message: msg, id: msg.id });
+        } else if (payload.eventType === 'DELETE') {
+           callback({ type: 'DELETE', message: null as any, id: payload.old.id });
         }
-    })
-    .subscribe((status) => {
-      // console.log("KAIKU: Subscription Status:", status);
-    });
-};
+      }
+    )
+    .subscribe();
 
-export const clearLocalData = () => {
-    localStorage.removeItem(USER_ID_KEY);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(USER_VOTES_KEY);
-    localStorage.removeItem(LAST_POST_TIMESTAMP_KEY);
+  return {
+    unsubscribe: () => {
+      supabase.removeChannel(channel);
+    }
+  };
 };

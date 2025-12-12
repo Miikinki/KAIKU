@@ -5,12 +5,13 @@ import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, getAnonymousID, deleteMessage, calculateDistance } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, getAnonymousID, deleteMessage, calculateDistance, getLocalMessages } from './services/storageService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence } from 'framer-motion';
 
 function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Initialize with local data immediately to prevent "loading stuck" blank screen
+  const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
   // Used when a specific cluster/hub is clicked
   const [filteredClusterMessages, setFilteredClusterMessages] = useState<ChatMessage[] | null>(null);
@@ -29,6 +30,7 @@ function App() {
   });
 
   const loadData = async () => {
+      // Fetch fresh data in background
       const data = await fetchMessages(true);
       setMessages(data);
       setRateLimit(await getRateLimitStatus());
