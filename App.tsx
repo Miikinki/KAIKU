@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Radio } from 'lucide-react';
 import ChatMap from './components/ChatMap';
@@ -163,13 +162,11 @@ function App() {
     }
 
     // Determine if remote: Distance between Real GPS (lat/lng) and Target Location
-    // Currently, Target Location IS the Real GPS, so distance is 0. 
-    // But this logic allows future expansion (e.g. "Post to Map Center").
-    const targetLat = lat; // Placeholder for future feature
-    const targetLng = lng; // Placeholder for future feature
+    const targetLat = lat; 
+    const targetLng = lng; 
     
     const dist = calculateDistance(lat, lng, targetLat, targetLng);
-    const isRemote = dist > 25; // Threshold 25km
+    const isRemote = dist > 25; 
 
     const newMsg = await saveMessage(text, targetLat, targetLng, undefined, isRemote);
     setMessages(prev => [newMsg, ...prev]);
@@ -189,8 +186,6 @@ function App() {
         throw new Error("Location is required to reply. Please enable location services.");
     }
 
-    // Calculate IsRemote for replies
-    // Compare User GPS (lat/lng) vs Parent Post Location
     let isRemote = false;
     const parent = activeThread?.id === parentId ? activeThread : messages.find(m => m.id === parentId);
     
@@ -234,7 +229,6 @@ function App() {
     } else {
         setMessages(prev => prev.filter(m => m.id !== msgId));
         
-        // Also update the filtered lists
         if (filteredClusterMessages) {
              setFilteredClusterMessages(prev => prev ? prev.filter(m => m.id !== msgId) : null);
         }

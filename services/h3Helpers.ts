@@ -1,55 +1,51 @@
-import * as h3 from 'h3-js';
 import { ChatMessage } from '../types';
 
-export interface HexagonData {
-  h3Index: string;
-  boundary: [number, number][]; // Array of [lat, lng]
-  center: [number, number]; // [lat, lng]
-  messages: ChatMessage[];
+export interface CityHubData {
+  id: string; // Use city name as ID
+  name: string;
+  center: { lat: number, lng: number };
   count: number;
+  messages: ChatMessage[];
   latestTimestamp: number;
 }
 
-export const getH3Resolution = (zoom: number): number => {
-    // PRIVACY CLAMP: Never go finer than Resolution 8 (~0.7km²)
-    // This prevents pinpointing users to specific blocks/streets.
-    if (zoom > 10) return 8; 
-    
-    if (zoom >= 7) return 7; // ~5km² (District/City view)
-    
-    return 5; // ~250km² (Regional/Global view)
-};
-
-export const getHexagonForLocation = (lat: number, lng: number, resolution: number): string => {
-  return h3.latLngToCell(lat, lng, resolution);
-};
-
-export const getHexagonBoundary = (h3Index: string): [number, number][] => {
-  return h3.cellToBoundary(h3Index);
-};
-
-export const aggregateMessagesByHexagon = (messages: ChatMessage[], resolution: number): HexagonData[] => {
-  const map = new Map<string, HexagonData>();
+export const aggregateMessagesByCity = (messages: ChatMessage[]): CityHubData[] => {
+  const cityMap = new Map<string, CityHubData>();
 
   messages.forEach(msg => {
-    const h3Index = h3.latLngToCell(msg.location.lat, msg.location.lng, resolution);
-    if (!map.has(h3Index)) {
-      map.set(h3Index, {
-        h3Index,
-        boundary: h3.cellToBoundary(h3Index),
-        center: h3.cellToLatLng(h3Index),
-        messages: [],
+    // Normalize city name
+    const cityName = msg.city || 'Unknown Sector';
+    
+    if (!cityMap.has(cityName)) {
+      cityMap.set(cityName, {
+        id: cityName,
+        name: cityName,
+        center: { lat: 0, lng: 0 },
         count: 0,
+        messages: [],
         latestTimestamp: 0
       });
     }
-    const hex = map.get(h3Index)!;
-    hex.messages.push(msg);
-    hex.count++;
-    if (msg.timestamp > hex.latestTimestamp) {
-        hex.latestTimestamp = msg.timestamp;
+    
+    const hub = cityMap.get(cityName)!;
+    hub.messages.push(msg);
+    hub.count++;
+    if (msg.timestamp > hub.latestTimestamp) {
+      hub.latestTimestamp = msg.timestamp;
     }
   });
 
-  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  // Calculate averages for center point and return array
+  return Array.from(cityMap.values()).map(hub => {
+    const totalLat = hub.messages.reduce((sum, m) => sum + m.location.lat, 0);
+    const totalLng = hub.messages.reduce((sum, m) => sum + m.location.lng, 0);
+    
+    return {
+      ...hub,
+      center: {
+        lat: totalLat / hub.count,
+        lng: totalLng / hub.count
+      }
+    };
+  }).sort((a, b) => b.count - a.count);
 };
