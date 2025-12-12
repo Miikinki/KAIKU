@@ -55,6 +55,20 @@
         display: none !important;
       }
 
+      /* KAIKU GLOW EFFECT for Leaflet CircleMarkers */
+      /* This makes standard SVG circles look like heatmap blobs */
+      .heatmap-marker {
+        filter: blur(8px); /* Soft glow */
+        mix-blend-mode: screen; /* Additive blending for intensity */
+        transition: r 0.3s ease;
+      }
+      
+      /* Sharper dots when zoomed in deep */
+      .heatmap-marker-sharp {
+        filter: blur(4px);
+        mix-blend-mode: screen;
+      }
+
     </style>
   <script type="importmap">
 {

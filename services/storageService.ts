@@ -41,8 +41,9 @@ const generateSeedData = (): ChatMessage[] => {
 
   HUB_CITIES.forEach(city => {
     for (let i = 0; i < city.weight; i++) {
-      const latJitter = (Math.random() - 0.5) * 0.1;
-      const lngJitter = (Math.random() - 0.5) * 0.1;
+      // Reduced jitter for seed data too, so they cluster better
+      const latJitter = (Math.random() - 0.5) * 0.04;
+      const lngJitter = (Math.random() - 0.5) * 0.04;
       const maxAge = MESSAGE_LIFESPAN_MS - 10000;
       const timeOffset = Math.floor(Math.random() * maxAge);
       const parentId = `seed-msg-${count}`;
@@ -126,8 +127,9 @@ export const getRandomLocation = () => {
 };
 
 export const applyFuzzyLogic = (lat: number, lng: number) => {
-  // FIXED STATIC JITTER for Privacy (~0.025 deg is approx 2.5km)
-  const JITTER = 0.025; 
+  // REDUCED JITTER for cleaner maps.
+  // 0.008 deg is approx 800m. Enough for privacy, but tight enough for city-level distinction.
+  const JITTER = 0.008; 
   return {
     lat: lat + (Math.random() - 0.5) * JITTER,
     lng: lng + (Math.random() - 0.5) * JITTER
@@ -308,24 +310,15 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
 };
 
 export const deleteMessage = async (msgId: string) => {
-    // 1. Mark as deleted locally (Blocklist) - This ensures it disappears for the user immediately
     markAsDeleted(msgId);
-
-    // 2. Try Supabase Delete
     try {
         const { error } = await supabase
             .from('kaiku_posts')
             .delete()
             .eq('id', msgId);
-            
-        if (error) {
-            console.warn("Supabase delete failed (permission/network), keeping local block.", error);
-        }
-    } catch (err) {
-        console.warn("Supabase delete exception", err);
-    }
+        if (error) console.warn("Supabase delete failed, local block active.", error);
+    } catch (err) { console.warn("Delete exception", err); }
     
-    // 3. Remove from Local Storage fallback if it exists there
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
         let localData = JSON.parse(stored);
@@ -335,17 +328,9 @@ export const deleteMessage = async (msgId: string) => {
 };
 
 export const castVote = async (msgId: string, direction: 'up' | 'down') => {
-    // Save to local state
     const votes = getUserVotes();
     votes[msgId] = direction;
     localStorage.setItem(USER_VOTES_KEY, JSON.stringify(votes));
-    
-    // RPC Call to Supabase (assuming a stored procedure exists, or just client side update for now)
-    // For simplicity/permissions, we might just rely on local state or simple update if allowed.
-    // Ideally: await supabase.rpc('vote_message', { message_id: msgId, value: direction === 'up' ? 1 : -1 });
-    
-    // For now, we attempt a direct increment if RLS allows, otherwise it's just local
-    // (Real implementation would require a separate votes table or RPC)
 };
 
 export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {

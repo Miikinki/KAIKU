@@ -68,22 +68,22 @@ const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void
 };
 
 const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClick, lastNewMessage }) => {
-  const [zoom, setZoom] = useState(2.5);
+  const [zoom, setZoom] = useState(5); // Default start zoom
 
   // --- PRIVACY-FIRST DATA PREPARATION ---
   const heatmapData = useMemo(() => {
-      const SNAPPING_PRECISION = 0.01; // Approx 1.1km
+      // Snapping ~600-700m. 
+      const SNAPPING_PRECISION = 0.006; 
       
       const points = messages.map(msg => {
           const snappedLat = Math.round(msg.location.lat / SNAPPING_PRECISION) * SNAPPING_PRECISION;
           const snappedLng = Math.round(msg.location.lng / SNAPPING_PRECISION) * SNAPPING_PRECISION;
           
-          // Use Score to weight intensity.
-          // Base intensity must be high enough to be seen with new settings.
-          // Range: 0.8 (base) to 5.0 (highly upvoted)
-          const baseIntensity = 0.8;
-          const scoreBonus = Math.max(msg.score, 0) * 0.2; 
-          const intensity = Math.min(baseIntensity + scoreBonus, 5.0);
+          // Intensity Logic:
+          // Range: 0.5 - 3.0
+          const baseIntensity = 0.6;
+          const scoreBonus = Math.max(msg.score, 0) * 0.1; 
+          const intensity = Math.min(baseIntensity + scoreBonus, 3.0);
 
           return [snappedLat, snappedLng, intensity] as [number, number, number];
       });
@@ -91,40 +91,61 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
       return points;
   }, [messages]);
 
-  // --- VISUAL TUNING: "NORTHERN LIGHTS" FIXED ---
+  // --- DYNAMIC VISUAL TUNING ---
+  
+  // VISIBILITY FIX:
+  // When zoomed out, we prevent the points from fading away by setting maxZoom = currentZoom.
+  // This effectively disables the intensity reduction formula in the heatmap engine.
+  const dynamicMaxZoom = zoom;
+
+  // Size of the dots
+  const getRadius = (z: number) => {
+      if (z < 6) return 8;    // World view: small, distinct dots
+      if (z < 10) return 18;  // Country view
+      if (z < 13) return 30;  // City view
+      return 45;              // Street view: ambient glow
+  };
+
+  // Visibility floor
+  const getMinOpacity = (z: number) => {
+       if (z < 8) return 0.35; // High floor when zoomed out -> dots are ALWAYS visible
+       return 0.05;            // Low floor when zoomed in -> allows transparency
+  };
+
   const heatOptions = useMemo(() => ({
-      radius: 30,         // Slightly larger for better connectivity
-      blur: 25,           // Soft edges
-      max: 2.0,           // CRITICAL FIX: Lower max means points reach full brightness easier.
-      minOpacity: 0.15,   // CRITICAL FIX: Ensure background glow is visible (not 0.0)
+      radius: getRadius(zoom),
+      blur: 15,           // Standard blur
+      max: 2.0,           // Intensity saturation point
+      minOpacity: getMinOpacity(zoom),
+      maxZoom: dynamicMaxZoom, // Keeps dots bright at all levels
       gradient: {
-          0.0: 'rgba(6, 182, 212, 0)',    // Fully Transparent
-          0.2: 'rgba(6, 182, 212, 0.3)',  // Cyan Mist (Visible now)
-          0.5: 'rgba(34, 211, 238, 0.7)', // Cyan Signal
-          0.8: 'rgba(165, 243, 252, 0.9)', // Ice Blue
-          1.0: '#ffffff'                  // White Hot Core
+          0.0: 'rgba(6, 182, 212, 0)',    // Transparent
+          0.1: 'rgba(6, 182, 212, 0.4)',  // Cyan Mist (Starts early!)
+          0.5: 'rgba(34, 211, 238, 0.7)', // Visible Cyan
+          0.8: 'rgba(200, 255, 255, 0.9)', // Bright
+          1.0: '#ffffff'                  // Core White
       }
-  }), [zoom]);
+  }), [zoom, dynamicMaxZoom]); 
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
-        center={[60.16, 24.93]} // Default to Helsinki coords roughly for better initial UX if Geo fails
+        center={[60.16, 24.93]} // Helsinki
         zoom={5}
         scrollWheelZoom={true}
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
         style={{ width: '100vw', height: '100vh', background: '#0a0a12' }}
-        minZoom={2}
-        worldCopyJump={true}
-        maxBounds={[[-85, -Infinity], [85, Infinity]]}
+        minZoom={3} // FIX: Raised to 3 to prevent extreme zoom-out drift
+        worldCopyJump={false} // DISABLED to fix drift
+        maxBounds={[[-85, -180], [85, 180]]} // Strict bounds
       >
         <TileLayer
           attribution={MAP_ATTRIBUTION}
           url={MAP_TILE_URL}
-          noWrap={false}
-          opacity={0.5} // Keep background map dark
+          noWrap={true} // Don't repeat tiles
+          opacity={0.7} // Background map visibility
         />
 
         <MapController onZoomChange={setZoom} onMapClick={onMapClick} />
