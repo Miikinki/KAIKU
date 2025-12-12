@@ -28,38 +28,3 @@ export interface RateLimitStatus {
   isLimited: boolean;
   cooldownUntil: number | null;
 }
-
-export enum DreamCategory {
-  NIGHTMARE = 'nightmare',
-  LUCID = 'lucid',
-  RECURRING = 'recurring',
-  MUNDANE = 'mundane',
-  PROPHETIC = 'prophetic',
-  ABSTRACT = 'abstract'
-}
-
-export interface Dream {
-  id: string;
-  text: string;
-  category: DreamCategory;
-  summary: string;
-  interpretation: string;
-  timestamp: number;
-  location: {
-    lat: number;
-    lng: number;
-  };
-}
-
-export interface TrendingSymbol {
-  word: string;
-  count: number;
-}
-
-export interface CountryStats {
-  countryName: string;
-  totalDreams: number;
-  dominantTheme: DreamCategory | 'N/A';
-  moodScore: number;
-  trendingSymbols: TrendingSymbol[];
-}

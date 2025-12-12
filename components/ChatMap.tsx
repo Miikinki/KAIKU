@@ -1,114 +1,31 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, useMapEvents, useMap, Marker } from 'react-leaflet';
+import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
 import * as L from 'leaflet';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
-import { aggregateMessagesByCity, aggregateMessagesByDistrict, HubData } from '../services/h3Helpers';
+import HeatmapLayer from './HeatmapLayer';
 
 interface ChatMapProps {
   messages: ChatMessage[];
   onViewportChange: (bounds: ViewportBounds) => void;
-  onMessageClick: (msg: ChatMessage) => void;
-  onClusterClick?: (messages: ChatMessage[]) => void;
+  onMapClick: () => void;
   lastNewMessage: ChatMessage | null;
 }
 
 // ----------------------------------------------------------------------
-// LAYER 1: CITY HUBS (Zoom < 10)
-// Large, pulsing orbs aggregating entire cities.
-// ----------------------------------------------------------------------
-const CityHubLayer: React.FC<{ 
-  hubs: HubData[]; 
-  onClusterClick?: (messages: ChatMessage[]) => void 
-}> = ({ hubs, onClusterClick }) => {
-  return (
-    <>
-      {hubs.map((hub) => {
-        const size = Math.min(100, Math.max(40, 40 + Math.log(hub.count) * 10));
-        
-        const hubIcon = L.divIcon({
-            className: 'kaiku-city-hub-marker',
-            html: `
-              <div class="kaiku-hub-pulse"></div>
-              <div class="kaiku-hub-core"></div>
-              <div class="kaiku-hub-label">
-                <span class="city-name">${hub.name}</span>
-                <span class="count">${hub.count}</span>
-              </div>
-            `,
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2]
-        });
-
-        return (
-           <Marker 
-             key={`city-${hub.id}`}
-             position={[hub.center.lat, hub.center.lng]}
-             icon={hubIcon}
-             eventHandlers={{
-                click: (e) => {
-                    L.DomEvent.stopPropagation(e);
-                    if(onClusterClick) onClusterClick(hub.messages);
-                }
-             }}
-           />
-        );
-      })}
-    </>
-  );
-};
-
-// ----------------------------------------------------------------------
-// LAYER 2: DISTRICT BEACONS (Zoom >= 10)
-// Tech-Halo style. Fixed grid points.
-// ----------------------------------------------------------------------
-const DistrictBeaconLayer: React.FC<{ 
-  beacons: HubData[]; 
-  onClusterClick?: (messages: ChatMessage[]) => void 
-}> = ({ beacons, onClusterClick }) => {
-  return (
-    <>
-      {beacons.map((beacon) => {
-        // Fixed visual size for the "Radar" zone representation
-        // It creates a "territory" feel around the snap point
-        const size = 120; 
-        
-        const beaconIcon = L.divIcon({
-            className: 'kaiku-beacon-marker',
-            html: `
-              <div class="beacon-radar"></div>
-              <div class="beacon-core"></div>
-              <div class="beacon-label">${beacon.count}</div>
-            `,
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2]
-        });
-
-        return (
-           <Marker 
-             key={`beacon-${beacon.id}`}
-             position={[beacon.center.lat, beacon.center.lng]}
-             icon={beaconIcon}
-             eventHandlers={{
-                click: (e) => {
-                    L.DomEvent.stopPropagation(e);
-                    if(onClusterClick) onClusterClick(beacon.messages);
-                }
-             }}
-           />
-        );
-      })}
-    </>
-  );
-};
-
-// ----------------------------------------------------------------------
-// MAP LOGIC
+// MAP CONTROLLERS
 // ----------------------------------------------------------------------
 
-const MapController: React.FC<{ onZoomChange: (z: number) => void }> = ({ onZoomChange }) => {
+const MapController: React.FC<{ 
+    onZoomChange: (z: number) => void;
+    onMapClick: () => void;
+}> = ({ onZoomChange, onMapClick }) => {
   const map = useMapEvents({
-    zoomend: () => onZoomChange(map.getZoom())
+    zoomend: () => onZoomChange(map.getZoom()),
+    click: () => {
+        // Global Map Click Handler -> Opens Feed
+        onMapClick();
+    }
   });
   return null;
 };
@@ -150,24 +67,50 @@ const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void
   return null;
 };
 
-const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onClusterClick, lastNewMessage }) => {
+const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClick, lastNewMessage }) => {
   const [zoom, setZoom] = useState(2.5);
-  
-  // Calculate Aggregations
-  // 1. City Level (Zoom Out)
-  const cityHubs = useMemo(() => aggregateMessagesByCity(messages), [messages]);
-  // 2. District Level (Zoom In) - Snapped Grid
-  const districtBeacons = useMemo(() => aggregateMessagesByDistrict(messages), [messages]);
 
-  // Threshold for switching views
-  const ZOOM_THRESHOLD = 10;
-  const isCityView = zoom < ZOOM_THRESHOLD;
+  // --- PRIVACY-FIRST DATA PREPARATION ---
+  const heatmapData = useMemo(() => {
+      const SNAPPING_PRECISION = 0.01; // Approx 1.1km
+      
+      const points = messages.map(msg => {
+          const snappedLat = Math.round(msg.location.lat / SNAPPING_PRECISION) * SNAPPING_PRECISION;
+          const snappedLng = Math.round(msg.location.lng / SNAPPING_PRECISION) * SNAPPING_PRECISION;
+          
+          // Use Score to weight intensity.
+          // Base intensity must be high enough to be seen with new settings.
+          // Range: 0.8 (base) to 5.0 (highly upvoted)
+          const baseIntensity = 0.8;
+          const scoreBonus = Math.max(msg.score, 0) * 0.2; 
+          const intensity = Math.min(baseIntensity + scoreBonus, 5.0);
+
+          return [snappedLat, snappedLng, intensity] as [number, number, number];
+      });
+
+      return points;
+  }, [messages]);
+
+  // --- VISUAL TUNING: "NORTHERN LIGHTS" FIXED ---
+  const heatOptions = useMemo(() => ({
+      radius: 30,         // Slightly larger for better connectivity
+      blur: 25,           // Soft edges
+      max: 2.0,           // CRITICAL FIX: Lower max means points reach full brightness easier.
+      minOpacity: 0.15,   // CRITICAL FIX: Ensure background glow is visible (not 0.0)
+      gradient: {
+          0.0: 'rgba(6, 182, 212, 0)',    // Fully Transparent
+          0.2: 'rgba(6, 182, 212, 0.3)',  // Cyan Mist (Visible now)
+          0.5: 'rgba(34, 211, 238, 0.7)', // Cyan Signal
+          0.8: 'rgba(165, 243, 252, 0.9)', // Ice Blue
+          1.0: '#ffffff'                  // White Hot Core
+      }
+  }), [zoom]);
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
-        center={[20, 0]}
-        zoom={2.5}
+        center={[60.16, 24.93]} // Default to Helsinki coords roughly for better initial UX if Geo fails
+        zoom={5}
         scrollWheelZoom={true}
         zoomControl={false}
         attributionControl={false}
@@ -181,22 +124,17 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onCluster
           attribution={MAP_ATTRIBUTION}
           url={MAP_TILE_URL}
           noWrap={false}
+          opacity={0.5} // Keep background map dark
         />
 
-        <MapController onZoomChange={setZoom} />
+        <MapController onZoomChange={setZoom} onMapClick={onMapClick} />
         <MapResizeHandler onViewportChange={onViewportChange} />
 
-        {isCityView ? (
-             <CityHubLayer 
-                hubs={cityHubs} 
-                onClusterClick={onClusterClick}
-            />
-        ) : (
-            <DistrictBeaconLayer 
-                beacons={districtBeacons}
-                onClusterClick={onClusterClick}
-            />
-        )}
+        {/* PRIVACY-SAFE HEATMAP LAYER */}
+        <HeatmapLayer 
+            points={heatmapData} 
+            options={heatOptions}
+        />
         
       </MapContainer>
     </div>
