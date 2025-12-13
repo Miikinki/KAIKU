@@ -27,6 +27,9 @@
         height: 100%;
         width: 100%;
         background: #0a0a12;
+        /* Hardware Acceleration */
+        transform: translate3d(0,0,0);
+        will-change: transform;
       }
       
       /* Glassmorphism Scrollbar */
@@ -50,20 +53,14 @@
         border: none;
       }
 
-      /* Custom utility to hide Leaflet controls if needed */
       .leaflet-control-attribution {
         display: none !important;
       }
 
-      /* 
-         KAIKU GLOW EFFECT - CANVAS MODE
-         Instead of blurring individual markers (slow), we blur the canvas layer itself.
-         This creates the "glowing signal" look with high performance.
-      */
+      /* Performance Blur */
       .leaflet-overlay-pane canvas {
-        filter: blur(3px); /* Soft glow for all points */
-        mix-blend-mode: screen; /* Additive blending */
-        opacity: 0.9;
+        filter: blur(0.5px); /* Reduced blur for sharpness */
+        mix-blend-mode: screen; 
       }
 
     </style>

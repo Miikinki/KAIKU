@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Radio, Radar } from 'lucide-react';
+import { Plus, Radio } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -73,6 +73,7 @@ function App() {
       m.timestamp > cutoff
     );
 
+    // Sort: High zoom = Latest, Low zoom = Top Rated
     if (currentBounds.zoom < 9) {
         visible = visible.sort((a, b) => b.score - a.score);
     } else {
@@ -92,10 +93,11 @@ function App() {
 
   const getLocation = async (): Promise<{lat: number, lng: number}> => {
      if (locationCache.current) return locationCache.current;
-     return new Promise((resolve, reject) => {
+     return new Promise((resolve) => {
         navigator.geolocation.getCurrentPosition(
             (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-            (err) => {
+            () => {
+                // If GPS fails, give a random location for testing/privacy
                 const rnd = getRandomLocation();
                 resolve(rnd);
             },
@@ -128,18 +130,12 @@ function App() {
   };
 
   const handleDelete = async (msgId: string, parentId?: string | null) => {
-    // 1. Immediate UI Optimistic Update
     setMessages(prev => prev.filter(m => m.id !== msgId));
     
     if (selectedMessage?.id === msgId) {
         setSelectedMessage(null);
     }
-
-    // 2. Perform Backend Delete
     await deleteMessage(msgId);
-
-    // 3. If it was a reply (parentId exists), we might want to refresh the parent thread
-    // but the ThreadView handles its own state mostly. 
   };
 
   return (
@@ -153,7 +149,7 @@ function App() {
       />
 
       <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none">
-         <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 w-fit pointer-events-auto">
+         <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 w-fit pointer-events-auto shadow-lg">
             <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
             <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
          </div>
@@ -170,7 +166,6 @@ function App() {
         zoomLevel={currentBounds?.zoom}
       />
 
-      {/* Floating Add Button - Moved HIGHER to avoid 'Peek' Panel overlap (bottom-28) */}
       {!isFeedOpen && (
         <div className="fixed bottom-28 right-6 z-[400]">
             <button
@@ -181,8 +176,6 @@ function App() {
             </button>
         </div>
       )}
-
-      {/* MODALS */}
 
       <ChatInputModal 
         isOpen={isInputOpen}
