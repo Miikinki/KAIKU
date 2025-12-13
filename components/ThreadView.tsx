@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, AlertCircle, Trash2, Satellite } from 'lucide-react';
 import { ChatMessage } from '../types';
-import { fetchReplies, getUserVotes, getAnonymousID, getFlagEmoji } from '../services/storageService';
+import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 
 interface ThreadViewProps {
   parentMessage: ChatMessage;
@@ -116,10 +115,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    {msg.isRemote && (
-                        <div className="text-amber-400 flex items-center gap-1" title="Posted remotely">
+                    {msg.isRemote && msg.originCountry && (
+                        <div className="text-amber-400 flex items-center gap-1.5" title={`Posted remotely from ${msg.originCountry}`}>
                             <Satellite size={12} />
-                            {msg.originCountry && <span className="text-[10px] grayscale-0">{getFlagEmoji(msg.originCountry)}</span>}
+                            <img 
+                                src={getFlagUrl(msg.originCountry) || ''} 
+                                alt={msg.originCountry}
+                                className="w-4 h-3 object-cover rounded-[1px] shadow-sm opacity-90"
+                            />
                         </div>
                     )}
                     {msg.sessionId === currentSessionId && (

@@ -94,13 +94,10 @@ export const getAnonymousID = (): string => {
   return id;
 };
 
-export const getFlagEmoji = (countryCode?: string) => {
-  if (!countryCode) return '';
-  const codePoints = countryCode
-    .toUpperCase()
-    .split('')
-    .map(char =>  127397 + char.charCodeAt(0));
-  return String.fromCodePoint(...codePoints);
+// Changed from Emoji to URL to ensure cross-platform consistency (Fixes Windows 'FI' issue)
+export const getFlagUrl = (countryCode?: string) => {
+  if (!countryCode) return null;
+  return `https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`;
 };
 
 // Haversine formula to calculate distance between two points in km
@@ -237,7 +234,24 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
         }));
 };
 
-export const saveMessage = async (text: string, lat: number, lng: number, parentId?: string): Promise<ChatMessage> => {
+/**
+ * Saves a message.
+ * 
+ * @param text The message content
+ * @param targetLat The latitude where the message should APPEAR (Map Center or Thread Loc)
+ * @param targetLng The longitude where the message should APPEAR
+ * @param userLat The user's ACTUAL latitude (GPS)
+ * @param userLng The user's ACTUAL longitude (GPS)
+ * @param parentId Optional parent ID for replies
+ */
+export const saveMessage = async (
+    text: string, 
+    targetLat: number, 
+    targetLng: number, 
+    userLat: number, 
+    userLng: number, 
+    parentId?: string
+): Promise<ChatMessage> => {
   // 1. RATE LIMIT CHECK
   const lastPostTimeStr = localStorage.getItem(LAST_POST_TIMESTAMP_KEY);
   if (lastPostTimeStr) {
@@ -254,25 +268,34 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
     throw new Error("Message blocked by automated moderation.");
   }
 
-  const locationData = await getCityName(lat, lng);
+  // 2. REMOTE CHECK
+  // Calculate distance between where the user IS (userLat/Lng) and where they are POSTING (targetLat/Lng)
+  const distKm = calculateDistance(userLat, userLng, targetLat, targetLng);
+  const isRemote = distKm > 25; // 25km Threshold
   
-  // NOTE: We do NOT scramble the location here anymore.
-  // We save the accurate location to the database to allow for flexible future aggregation,
-  // BUT the frontend will NEVER display this location as a point.
-  // It will always be aggregated into a large Hexagon cell.
+  // 3. GEOCODING
+  // We need the City Name for the TARGET location (Context)
+  const targetLocationData = await getCityName(targetLat, targetLng);
+  
+  // If remote, we need the Country Code for the USER location (Origin)
+  let originCountry = "";
+  if (isRemote) {
+      const userLocationData = await getCityName(userLat, userLng);
+      originCountry = userLocationData.countryCode;
+  }
   
   const newMessage: ChatMessage = {
     id: generateUUID(), 
     text,
     timestamp: Date.now(),
-    location: { lat, lng }, // Save true location for accurate regional query
-    city: locationData.city,
+    location: { lat: targetLat, lng: targetLng }, // Saved at Target Location
+    city: targetLocationData.city,
     sessionId: userId,
     score: 0,
     parentId: parentId || null,
     replyCount: 0,
-    isRemote: false,
-    originCountry: locationData.countryCode
+    isRemote: isRemote,
+    originCountry: isRemote ? originCountry : undefined
   };
 
   // Supabase Insert
@@ -286,7 +309,8 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
           city_name: newMessage.city,
           session_id: newMessage.sessionId,
           parent_post_id: newMessage.parentId,
-          origin_country: newMessage.originCountry
+          origin_country: newMessage.originCountry,
+          is_remote: newMessage.isRemote
       }])
       .select();
 

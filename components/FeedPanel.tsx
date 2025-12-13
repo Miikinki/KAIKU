@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
-import { getUserVotes, getAnonymousID, getFlagEmoji } from '../services/storageService';
+import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -179,10 +179,14 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             </span>
                         </div>
                         <div className="flex items-center gap-2">
-                            {msg.isRemote && (
-                                <div className="text-amber-400 flex items-center gap-1" title="Long range signal">
+                            {msg.isRemote && msg.originCountry && (
+                                <div className="text-amber-400 flex items-center gap-1.5" title={`Signal origin: ${msg.originCountry}`}>
                                     <Satellite size={12} />
-                                    {msg.originCountry && <span className="text-[10px] grayscale-0">{getFlagEmoji(msg.originCountry)}</span>}
+                                    <img 
+                                        src={getFlagUrl(msg.originCountry) || ''} 
+                                        alt={msg.originCountry}
+                                        className="w-4 h-3 object-cover rounded-[1px] shadow-sm opacity-90"
+                                    />
                                 </div>
                             )}
                             {msg.sessionId === currentSessionId && (

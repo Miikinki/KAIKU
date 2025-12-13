@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
 import * as L from 'leaflet';
 import * as h3 from 'h3-js';
@@ -24,9 +24,12 @@ const MapEventHandler: React.FC<{
     click: () => onMapClick(),
     moveend: () => {
         const bounds = map.getBounds();
-        // Force integer zoom to prevent H3 calculation thrashing on floats
-        const z = Math.round(map.getZoom()); 
-        setZoom(z);
+        const z = map.getZoom();
+        
+        // Fix: Do NOT round here. Pass the raw float to state 
+        // to avoid fighting with Leaflet's internal animation loop.
+        setZoom(z); 
+        
         onViewportChange({
             north: bounds.getNorth(),
             south: bounds.getSouth(),
@@ -36,7 +39,7 @@ const MapEventHandler: React.FC<{
         });
     },
     zoomend: () => {
-        setZoom(Math.round(map.getZoom()));
+        setZoom(map.getZoom());
     }
   });
 
@@ -44,7 +47,7 @@ const MapEventHandler: React.FC<{
   React.useEffect(() => {
       map.invalidateSize();
       const bounds = map.getBounds();
-      const z = Math.round(map.getZoom());
+      const z = map.getZoom();
       onViewportChange({
           north: bounds.getNorth(),
           south: bounds.getSouth(),
@@ -61,16 +64,25 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
   const [zoom, setZoom] = useState(5);
 
   const hexData = useMemo(() => {
-      // Robust H3 Resolution Logic
-      let res = 4; // Default: Regional
+      // PRIVACY & VISUAL LOGIC
+      // We calculate the effective integer zoom for H3 logic only here,
+      // without affecting the actual map view state.
+      const effectiveZoom = Math.floor(zoom);
+
+      let res = 4; // Default: Regional (approx 20km radius)
       
-      if (zoom >= 6) res = 5;  // City
-      if (zoom >= 9) res = 6;  // District
-      if (zoom >= 11) res = 7; // Neighborhood (Max Detail)
+      // Adjusted Logic:
+      // Zoom 0-8:   Res 4 (Big Hexagons, covers whole cities)
+      // Zoom 9-11:  Res 5 (Medium, ~8km radius)
+      // Zoom 12+:   Res 6 (District, ~3km radius) -> PRIVACY CAP
+      
+      // We removed Res 7 (1km) because it was too precise for anonymity.
+      
+      if (effectiveZoom >= 9) res = 5;
+      if (effectiveZoom >= 12) res = 6; 
       
       const counts: Record<string, number> = {};
       
-      // Optimization: Only process messages if we have them
       if (messages.length > 0) {
         messages.forEach(msg => {
             try {
@@ -101,9 +113,9 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={3}
-        worldCopyJump={true} // Smoother infinite scrolling
+        worldCopyJump={true} 
         maxBounds={[[-85, -180], [85, 180]]}
-        preferCanvas={true} // Force Leaflet to use Canvas globally where possible
+        preferCanvas={true} 
       >
         <TileLayer
           attribution={MAP_ATTRIBUTION}

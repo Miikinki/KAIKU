@@ -107,14 +107,38 @@ function App() {
   };
 
   const handleSaveMessage = async (text: string) => {
-    const loc = await getLocation();
-    await saveMessage(text, loc.lat, loc.lng);
+    const userLoc = await getLocation(); // ACTUAL GPS
+    
+    // TARGET: Where the map is currently looking
+    // If we have bounds, use the center of the bounds. 
+    // If not, fall back to userLoc.
+    let targetLat = userLoc.lat;
+    let targetLng = userLoc.lng;
+
+    if (currentBounds) {
+        targetLat = (currentBounds.north + currentBounds.south) / 2;
+        targetLng = (currentBounds.east + currentBounds.west) / 2;
+    }
+
+    // Pass (Text, Target, User) to saveMessage to calculate "Remote" status
+    await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng);
     await loadData();
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
-      const loc = await getLocation();
-      await saveMessage(text, loc.lat, loc.lng, parentId);
+      const userLoc = await getLocation(); // ACTUAL GPS
+      
+      // TARGET: The location of the original message we are replying to.
+      // We can grab this from the selectedMessage state which should populate the ThreadView
+      let targetLat = userLoc.lat;
+      let targetLng = userLoc.lng;
+
+      if (selectedMessage) {
+          targetLat = selectedMessage.location.lat;
+          targetLng = selectedMessage.location.lng;
+      }
+
+      await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
       await loadData();
   };
 
