@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
@@ -21,6 +21,10 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 }) => {
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // -- TAG FILTER STATE --
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+  
   const currentSessionId = getAnonymousID();
 
   useEffect(() => {
@@ -55,25 +59,76 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       }
   };
 
-  // Determine Feed Context Title based on density/zoom (passed conceptually via props or inferred)
+  const handleTagClick = (e: React.MouseEvent, tag: string) => {
+      e.stopPropagation();
+      setActiveTag(tag);
+  };
+
+  // --- TEXT PARSER (Soft Tags) ---
+  const renderMessageText = (text: string) => {
+      // Split by hashtags (capturing the hashtag so it's in the array)
+      // Regex detects # followed by letters, numbers, or underscores. Unicode compatible.
+      const parts = text.split(/(#[\p{L}\p{N}_]+)/gu);
+      
+      return parts.map((part, index) => {
+          if (part.startsWith('#')) {
+              return (
+                  <span 
+                    key={index}
+                    onClick={(e) => handleTagClick(e, part)}
+                    className="text-cyan-400 font-bold hover:text-cyan-300 hover:underline cursor-pointer transition-colors"
+                  >
+                      {part}
+                  </span>
+              );
+          }
+          return <span key={index}>{part}</span>;
+      });
+  };
+
+  // --- FILTER LOGIC ---
+  const displayMessages = activeTag 
+    ? visibleMessages.filter(msg => msg.tags?.includes(activeTag))
+    : visibleMessages;
+
+  // --- VISITOR ICON LOGIC ---
+  const renderVisitorBadge = (msg: ChatMessage) => {
+    if (!msg.isRemote) return null;
+
+    const isDomestic = msg.country && msg.originCountry === msg.country;
+    const flagUrl = getFlagUrl(msg.originCountry);
+
+    if (isDomestic) {
+        return (
+            <div className="text-amber-400 flex items-center gap-1.5" title={`Remote signal from ${msg.originCountry}`}>
+                <Satellite size={12} />
+            </div>
+        );
+    } else {
+        return (
+            <div className="text-amber-400 flex items-center gap-1.5" title={`Global signal from ${msg.originCountry}`}>
+                <Satellite size={12} />
+                {flagUrl && (
+                    <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
+                )}
+            </div>
+        );
+    }
+  };
+
   const feedTitle = (zoomLevel && zoomLevel < 9) ? "REGIONAL INTERCEPT" : "LOCAL SIGNALS";
+  const hasSignals = displayMessages.length > 0;
   
-  // Logic for "Peeking" (Scanning effect)
-  // If closed, but we have messages, show a small "peek" bar.
-  const hasSignals = visibleMessages.length > 0;
-  
-  // Animation Variants
   const variants = {
       open: { y: 0 },
       closed: { y: '100%' },
-      peek: { y: 'calc(100% - 60px)' } // Show 60px of the header
+      peek: { y: 'calc(100% - 60px)' } 
   };
 
-  const currentState = isOpen ? 'open' : (hasSignals ? 'peek' : 'closed');
+  const currentState = isOpen ? 'open' : (visibleMessages.length > 0 ? 'peek' : 'closed');
 
   return (
     <>
-      {/* Floating Toggle Button - Hidden if peeking or open, visible only if closed and empty */}
       {currentState === 'closed' && (
         <button
             onClick={toggleOpen}
@@ -90,7 +145,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         className="fixed inset-x-0 bottom-0 top-[15vh] md:top-[10vh] bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden"
       >
-        {/* Drag Handle / Header */}
         <div 
             className={`p-4 border-b border-white/5 flex flex-col items-center bg-white/5 cursor-pointer transition-colors hover:bg-white/10 ${!isOpen ? 'h-[60px] justify-center' : ''}`}
             onClick={toggleOpen}
@@ -99,12 +153,11 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
           
           <div className="w-full flex justify-between items-center px-2">
             <div className="flex items-center gap-4">
-                {/* Icon changes based on state */}
                 {!isOpen ? (
                     <div className="flex items-center gap-2 text-cyan-400 animate-pulse">
                          <ScanLine size={20} />
                          <span className="text-sm font-bold tracking-widest uppercase">
-                            {visibleMessages.length} Signals Detected
+                            {displayMessages.length} Signals Detected
                          </span>
                     </div>
                 ) : (
@@ -116,7 +169,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     </div>
                 )}
 
-                {/* Refresh Button (only when open) */}
                 {isOpen && onRefresh && (
                     <button 
                         onClick={handleRefresh} 
@@ -136,16 +188,44 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
           </div>
         </div>
 
-        {/* Content (Only rendered/visible when effectively open to save resources, though Framer handles hidden well) */}
+        {/* ACTIVE FILTER BANNER */}
+        <AnimatePresence>
+            {activeTag && (
+                <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="bg-cyan-900/30 border-b border-cyan-500/30 overflow-hidden"
+                >
+                    <div className="flex items-center justify-between px-6 py-2">
+                        <div className="flex items-center gap-2 text-cyan-400 text-sm font-mono">
+                            <Hash size={14} />
+                            <span>Filtering: <span className="font-bold">{activeTag}</span></span>
+                        </div>
+                        <button 
+                            onClick={() => setActiveTag(null)}
+                            className="p-1 hover:bg-white/10 rounded-full text-cyan-200 transition-colors"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508]">
-            {visibleMessages.length === 0 ? (
+            {displayMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 text-center pb-20">
                 <Shield size={48} className="mb-4 opacity-20" />
-                <p>No signals detected in this sector.</p>
-                <p className="text-xs mt-2 opacity-50">Move the radar to a new location.</p>
+                <p>No signals detected.</p>
+                {activeTag ? (
+                    <p className="text-xs mt-2 opacity-50">Try clearing the tag filter.</p>
+                ) : (
+                    <p className="text-xs mt-2 opacity-50">Move the radar to a new location.</p>
+                )}
             </div>
             ) : (
-            visibleMessages.map((msg) => (
+            displayMessages.map((msg) => (
                 <motion.div
                 key={msg.id}
                 layoutId={msg.id}
@@ -179,16 +259,8 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             </span>
                         </div>
                         <div className="flex items-center gap-2">
-                            {msg.isRemote && msg.originCountry && (
-                                <div className="text-amber-400 flex items-center gap-1.5" title={`Signal origin: ${msg.originCountry}`}>
-                                    <Satellite size={12} />
-                                    <img 
-                                        src={getFlagUrl(msg.originCountry) || ''} 
-                                        alt={msg.originCountry}
-                                        className="w-4 h-3 object-cover rounded-[1px] shadow-sm opacity-90"
-                                    />
-                                </div>
-                            )}
+                            {renderVisitorBadge(msg)}
+
                             {msg.sessionId === currentSessionId && (
                                 <button 
                                     onClick={(e) => handleDeleteClick(e, msg.id, msg.parentId)}
@@ -204,8 +276,9 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         </div>
                     </div>
                     
+                    {/* Render Text with Clickable Tags */}
                     <p className="text-base text-gray-100 leading-relaxed font-light break-words">
-                    {msg.text}
+                        {renderMessageText(msg.text)}
                     </p>
                     
                     <div className="mt-3 flex justify-between items-center border-t border-white/5 pt-2">
@@ -220,7 +293,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 </motion.div>
             ))
             )}
-            {/* Spacer for bottom FAB */}
             <div className="h-20" /> 
         </div>
       </motion.div>

@@ -57,10 +57,52 @@
         display: none !important;
       }
 
-      /* Performance Blur */
+      /* Performance Blur - slightly reduced for sharper vectors */
       .leaflet-overlay-pane canvas {
-        filter: blur(0.5px); /* Reduced blur for sharpness */
+        filter: blur(0.5px); 
         mix-blend-mode: screen; 
+      }
+
+      /* --- KAIKU LIVING MAP ANIMATIONS --- */
+
+      /* 1. The Idle Breath: Hexagons pulse slowly */
+      @keyframes neon-breath {
+        0% { stroke: #06b6d4; stroke-width: 1px; fill-opacity: 0.15; filter: drop-shadow(0 0 1px #06b6d4); }
+        50% { stroke: #22d3ee; stroke-width: 2px; fill-opacity: 0.35; filter: drop-shadow(0 0 8px #22d3ee); }
+        100% { stroke: #06b6d4; stroke-width: 1px; fill-opacity: 0.15; filter: drop-shadow(0 0 1px #06b6d4); }
+      }
+
+      path.living-hex {
+        animation: neon-breath 4s infinite ease-in-out;
+        stroke-linejoin: round;
+        transition: all 0.3s ease;
+        /* Ensure vectors are sharp */
+        shape-rendering: geometricPrecision; 
+      }
+
+      /* 2. The Shockwave: Ripple effect for new messages */
+      @keyframes ripple-expand {
+        0% { transform: scale(0.1); opacity: 1; border-width: 4px; }
+        100% { transform: scale(3.0); opacity: 0; border-width: 0px; }
+      }
+
+      .shockwave-container {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .shockwave-ring {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        border-radius: 50%;
+        border: 2px solid #22d3ee;
+        box-shadow: 0 0 15px #22d3ee;
+        background: radial-gradient(circle, rgba(34,211,238,0.4) 0%, rgba(0,0,0,0) 70%);
+        animation: ripple-expand 2s ease-out forwards;
       }
 
     </style>

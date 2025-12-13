@@ -5,17 +5,22 @@ import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, getRandomLocation } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance } from './services/storageService';
+import { getCityName } from './services/moderationService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
+  const [lastNewMessage, setLastNewMessage] = useState<ChatMessage | null>(null);
   
   const [isInputOpen, setIsInputOpen] = useState(false);
   const [isFeedOpen, setIsFeedOpen] = useState(false); 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
+  
+  // New state to show user where they are posting
+  const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number, name: string} | null>(null);
   
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
 
@@ -33,9 +38,13 @@ function App() {
   useEffect(() => {
     // Location warm-up
     navigator.geolocation.getCurrentPosition(
-      (pos) => { locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude }; },
+      (pos) => { 
+          if (pos.coords.latitude !== 0 || pos.coords.longitude !== 0) {
+            locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude }; 
+          }
+      },
       (err) => console.warn("GPS Warm-up failed", err),
-      { timeout: 20000, maximumAge: 60000, enableHighAccuracy: false }
+      { timeout: 20000, maximumAge: 60000, enableHighAccuracy: true }
     );
   }, []);
 
@@ -48,8 +57,13 @@ function App() {
             next = prev.filter(m => m.id !== id);
         } else if (message) {
              const exists = prev.findIndex(p => p.id === message.id);
-             if (exists !== -1) next[exists] = { ...next[exists], ...message };
-             else next = [message, ...prev];
+             if (exists !== -1) {
+                 next[exists] = { ...next[exists], ...message };
+             } else {
+                 next = [message, ...prev];
+                 // Trigger Shockwave for truly new messages
+                 setLastNewMessage(message); 
+             }
         }
         return next;
       });
@@ -95,44 +109,71 @@ function App() {
      if (locationCache.current) return locationCache.current;
      return new Promise((resolve) => {
         navigator.geolocation.getCurrentPosition(
-            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-            () => {
-                // If GPS fails, give a random location for testing/privacy
-                const rnd = getRandomLocation();
-                resolve(rnd);
+            (pos) => {
+                // Reject 0,0 (Null Island) which is often an error
+                if (pos.coords.latitude === 0 && pos.coords.longitude === 0) {
+                    const fallback = { lat: 60.1699, lng: 24.9384 };
+                    console.warn("GPS returned (0,0), using fallback:", fallback);
+                    resolve(fallback);
+                    return;
+                }
+
+                const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                locationCache.current = loc; // Cache it
+                resolve(loc);
             },
-            { timeout: 5000 }
+            () => {
+                // FALLBACK: Default to Helsinki
+                const fallback = { lat: 60.1699, lng: 24.9384 };
+                console.warn("GPS failed, using fallback:", fallback);
+                resolve(fallback);
+            },
+            { timeout: 10000, enableHighAccuracy: true }
         );
      });
   };
 
+  // Pre-calculate location when opening the modal
+  const handleOpenInput = async () => {
+      setIsInputOpen(true);
+      setTargetLocation(null); // Clear previous
+
+      // STRICTLY use User Location only. 
+      // Removed logic that defaulted to Map Center if looking far away.
+      const userLoc = await getLocation();
+      
+      const lat = userLoc.lat;
+      const lng = userLoc.lng;
+
+      // Resolve Name for UI
+      const nameData = await getCityName(lat, lng);
+      setTargetLocation({ lat, lng, name: nameData.city });
+  };
+
   const handleSaveMessage = async (text: string) => {
-    const userLoc = await getLocation(); // ACTUAL GPS
+    // Use the pre-calculated target location from handleOpenInput
+    if (!targetLocation) return;
+
+    const userLoc = await getLocation(); // Always get fresh User GPS for origin check
     
-    // TARGET: Where the map is currently looking
-    // If we have bounds, use the center of the bounds. 
-    // If not, fall back to userLoc.
-    let targetLat = userLoc.lat;
-    let targetLng = userLoc.lng;
-
-    if (currentBounds) {
-        targetLat = (currentBounds.north + currentBounds.south) / 2;
-        targetLng = (currentBounds.east + currentBounds.west) / 2;
-    }
-
-    // Pass (Text, Target, User) to saveMessage to calculate "Remote" status
-    await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng);
+    await saveMessage(
+        text, 
+        targetLocation.lat, // Target is strictly where the user IS (from handleOpenInput)
+        targetLocation.lng, 
+        userLoc.lat, 
+        userLoc.lng
+    );
     await loadData();
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
-      const userLoc = await getLocation(); // ACTUAL GPS
+      const userLoc = await getLocation(); 
       
-      // TARGET: The location of the original message we are replying to.
-      // We can grab this from the selectedMessage state which should populate the ThreadView
       let targetLat = userLoc.lat;
       let targetLng = userLoc.lng;
 
+      // Replies still go to the parent message location (standard forum behavior)
+      // or should they? Usually replies stay in the thread.
       if (selectedMessage) {
           targetLat = selectedMessage.location.lat;
           targetLng = selectedMessage.location.lng;
@@ -169,7 +210,7 @@ function App() {
         messages={messages} 
         onViewportChange={handleViewportChange}
         onMapClick={handleMapClick}
-        lastNewMessage={null}
+        lastNewMessage={lastNewMessage}
       />
 
       <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none">
@@ -193,7 +234,7 @@ function App() {
       {!isFeedOpen && (
         <div className="fixed bottom-28 right-6 z-[400]">
             <button
-            onClick={() => setIsInputOpen(true)}
+            onClick={handleOpenInput}
             className="flex items-center justify-center w-14 h-14 bg-white text-black rounded-full shadow-[0_0_20px_rgba(255,255,255,0.4)] hover:scale-105 transition-transform"
             >
             <Plus size={24} />
@@ -206,6 +247,7 @@ function App() {
         onClose={() => setIsInputOpen(false)}
         onSave={handleSaveMessage}
         cooldownUntil={rateLimit.cooldownUntil}
+        targetLocationName={targetLocation?.name}
       />
 
       {selectedMessage && (

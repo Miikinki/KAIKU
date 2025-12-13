@@ -7,23 +7,17 @@ interface HeatmapLayerProps {
 }
 
 /**
- * HIGH-PERFORMANCE H3 RENDERER
+ * ANIMATED H3 RENDERER (SVG)
  * 
- * Performance Fix:
- * 1. Reuses a single L.canvas() renderer instance via useRef.
- * 2. Does not destroy the LayerGroup on updates, just clears layers.
+ * Update: Switched to SVG renderer (default) to allow CSS animations.
+ * Added 'living-hex' class for the neon breath effect.
  */
 const HeatmapLayer: React.FC<HeatmapLayerProps> = ({ polygons }) => {
     const map = useMap();
     const layerGroupRef = useRef<L.LayerGroup | null>(null);
-    const rendererRef = useRef<L.Canvas | null>(null);
 
-    // 1. Initialize LayerGroup & Renderer ONCE
+    // 1. Initialize LayerGroup ONCE
     useEffect(() => {
-        // Create a single shared canvas renderer for all polygons
-        // This is critical for performance. Previous version created a new one on every render.
-        rendererRef.current = L.canvas({ padding: 0.5 });
-        
         const layerGroup = L.layerGroup().addTo(map);
         layerGroupRef.current = layerGroup;
 
@@ -34,25 +28,23 @@ const HeatmapLayer: React.FC<HeatmapLayerProps> = ({ polygons }) => {
         };
     }, [map]);
 
-    // 2. Update Data Smoothly
+    // 2. Update Data
     useEffect(() => {
-        if (!layerGroupRef.current || !rendererRef.current) return;
+        if (!layerGroupRef.current) return;
 
         const group = layerGroupRef.current;
-        const renderer = rendererRef.current;
         
         // Clear existing shapes
         group.clearLayers();
 
-        // Draw new polygons using the SHARED renderer
+        // Draw new polygons
         polygons.forEach(poly => {
             const shape = L.polygon(poly.coords, {
-                renderer: renderer, // Reuse the same canvas context
-                stroke: true,
-                color: '#22d3ee',
-                weight: 1.5,
+                className: 'living-hex', // CSS Animation trigger (see index.html)
+                color: '#22d3ee',        // Fallback color
+                weight: 1,
                 fillColor: '#06b6d4',
-                fillOpacity: 0.4 + (Math.min(poly.count, 20) * 0.02), 
+                fillOpacity: 0.2,        // Base opacity, animation modulates this
                 interactive: false,
                 smoothFactor: 1
             });

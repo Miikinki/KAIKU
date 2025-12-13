@@ -34,7 +34,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   }, [parentMessage.id]);
 
   useEffect(() => {
-      // Scroll to bottom when replies load or new reply added
       if (replies.length > 0 && bottomRef.current) {
           bottomRef.current.scrollIntoView({ behavior: 'smooth' });
       }
@@ -47,7 +46,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     try {
       await onReply(replyText, parentMessage.id);
       setReplyText('');
-      // Refresh replies
       const data = await fetchReplies(parentMessage.id);
       setReplies(data);
     } catch (e: any) {
@@ -76,11 +74,33 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
             onDelete(msgId);
             onClose();
         } else {
-            // Optimistically remove from local view
             setReplies(prev => prev.filter(r => r.id !== msgId));
-            // Update parent count in main app
             onDelete(msgId, parentMessage.id);
         }
+    }
+  };
+
+  const renderVisitorBadge = (msg: ChatMessage) => {
+    if (!msg.isRemote) return null;
+
+    const isDomestic = msg.country && msg.originCountry === msg.country;
+    const flagUrl = getFlagUrl(msg.originCountry);
+
+    if (isDomestic) {
+        return (
+             <div className="text-amber-400 flex items-center gap-1.5" title={`Remote signal from ${msg.originCountry}`}>
+                <Satellite size={12} />
+             </div>
+        );
+    } else {
+        return (
+            <div className="text-amber-400 flex items-center gap-1.5" title={`Global signal from ${msg.originCountry}`}>
+                <Satellite size={12} />
+                {flagUrl && (
+                    <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
+                )}
+            </div>
+        );
     }
   };
 
@@ -115,16 +135,9 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    {msg.isRemote && msg.originCountry && (
-                        <div className="text-amber-400 flex items-center gap-1.5" title={`Posted remotely from ${msg.originCountry}`}>
-                            <Satellite size={12} />
-                            <img 
-                                src={getFlagUrl(msg.originCountry) || ''} 
-                                alt={msg.originCountry}
-                                className="w-4 h-3 object-cover rounded-[1px] shadow-sm opacity-90"
-                            />
-                        </div>
-                    )}
+                    
+                    {renderVisitorBadge(msg)}
+
                     {msg.sessionId === currentSessionId && (
                          <button 
                             onClick={(e) => handleDeleteClick(e, msg.id, isParent)}
@@ -157,7 +170,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         className="relative w-full max-w-lg h-[80vh] flex flex-col bg-[#0f0f18] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
       >
-        {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-white/10 bg-[#0f0f18]">
           <h2 className="text-sm font-bold text-white flex items-center gap-2">
             <MessageSquare size={16} className="text-cyan-400" />
@@ -168,7 +180,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
           </button>
         </div>
 
-        {/* Content Area */}
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {renderMessageCard(parentMessage, true)}
           
@@ -197,7 +208,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
           <div ref={bottomRef} />
         </div>
 
-        {/* Input Area */}
         <div className="p-4 bg-[#0a0a12] border-t border-white/10">
           
           {error && (

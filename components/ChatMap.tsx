@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
+import React, { useState, useMemo, useEffect } from 'react';
+import { MapContainer, TileLayer, useMapEvents, Marker } from 'react-leaflet';
 import * as L from 'leaflet';
 import * as h3 from 'h3-js';
 import { ChatMessage, ViewportBounds } from '../types';
@@ -60,8 +60,28 @@ const MapEventHandler: React.FC<{
   return null;
 };
 
-const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClick }) => {
+const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClick, lastNewMessage }) => {
   const [zoom, setZoom] = useState(5);
+  const [shockwaves, setShockwaves] = useState<{id: string, lat: number, lng: number}[]>([]);
+
+  // Effect: Trigger Shockwave when a new message arrives
+  useEffect(() => {
+    if (lastNewMessage) {
+        const id = Date.now().toString() + Math.random().toString();
+        const wave = { 
+            id, 
+            lat: lastNewMessage.location.lat, 
+            lng: lastNewMessage.location.lng 
+        };
+        
+        setShockwaves(prev => [...prev, wave]);
+
+        // Remove after animation (2 seconds)
+        setTimeout(() => {
+            setShockwaves(prev => prev.filter(w => w.id !== id));
+        }, 2000);
+    }
+  }, [lastNewMessage]);
 
   const hexData = useMemo(() => {
       // PRIVACY & VISUAL LOGIC
@@ -75,8 +95,6 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
       // Zoom 0-8:   Res 4 (Big Hexagons, covers whole cities)
       // Zoom 9-11:  Res 5 (Medium, ~8km radius)
       // Zoom 12+:   Res 6 (District, ~3km radius) -> PRIVACY CAP
-      
-      // We removed Res 7 (1km) because it was too precise for anonymity.
       
       if (effectiveZoom >= 9) res = 5;
       if (effectiveZoom >= 12) res = 6; 
@@ -101,6 +119,16 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
       }));
 
   }, [messages, zoom]);
+
+  // DivIcon for Shockwave Animation
+  const createShockwaveIcon = () => {
+      return L.divIcon({
+          className: 'custom-shockwave-icon',
+          html: `<div class="shockwave-container"><div class="shockwave-ring"></div></div>`,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20]
+      });
+  };
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
@@ -131,6 +159,15 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
         />
 
         <HeatmapLayer polygons={hexData} />
+
+        {/* Render Active Shockwaves */}
+        {shockwaves.map(wave => (
+            <Marker 
+                key={wave.id}
+                position={[wave.lat, wave.lng]}
+                icon={createShockwaveIcon()}
+            />
+        ))}
         
       </MapContainer>
     </div>

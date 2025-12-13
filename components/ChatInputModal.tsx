@@ -8,9 +8,10 @@ interface ChatInputModalProps {
   onClose: () => void;
   onSave: (text: string) => Promise<void>;
   cooldownUntil: number | null;
+  targetLocationName?: string;
 }
 
-const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil }) => {
+const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName }) => {
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState('');
@@ -81,7 +82,18 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
             </button>
 
             <h2 className="text-xl font-bold mb-1 text-white">Broadcast Signal</h2>
-            <p className="text-xs text-gray-400 mb-6">Anonymous. Local. Encrypted.</p>
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-6">
+                 {targetLocationName ? (
+                    <>
+                        <span>To:</span>
+                        <span className="text-cyan-400 font-bold flex items-center gap-1">
+                            <MapPin size={10} /> {targetLocationName}
+                        </span>
+                    </>
+                 ) : (
+                    <span className="animate-pulse">Locating...</span>
+                 )}
+            </div>
 
             {isLocked ? (
               <div className="bg-white/5 rounded-xl p-6 text-center border border-white/10">
@@ -107,8 +119,8 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
 
                 <button
                   onClick={handleSubmit}
-                  disabled={isSubmitting || !text.trim()}
-                  className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                  disabled={isSubmitting || !text.trim() || !targetLocationName}
+                  className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
                 >
                   {isSubmitting ? <Loader2 className="animate-spin" /> : <Send size={18} />}
                   BROADCAST

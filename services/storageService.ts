@@ -12,28 +12,35 @@ const DELETED_IDS_KEY = 'kaiku_deleted_ids';
 // --- MASSIVE SEED DATA GENERATOR (For Local Mode) ---
 
 const SAMPLE_TEXTS = [
-  "Traffic is completely stopped here.",
-  "Did anyone else see those lights in the sky?",
-  "Quiet night in the city.",
-  "Police activity near the main station.",
-  "Just found a lost drone.",
-  "The fog is getting really thick.",
-  "Anyone want to meet up?",
+  "Traffic is completely stopped here #traffic",
+  "Did anyone else see those lights in the sky? #ufo",
+  "Quiet night in the city. #chill",
+  "Police activity near the main station. #alert",
+  "Just found a lost drone. #lostandfound",
+  "The fog is getting really thick. #weather",
+  "Anyone want to meet up? #coffee",
   "Hearing sirens everywhere.",
-  "Internet is down in the whole sector.",
-  "Beautiful sunset tonight.",
-  "Construction noise is unbearable.",
-  "Is the bridge open?",
-  "Signals are weird tonight."
+  "Internet is down in the whole sector. #outage",
+  "Beautiful sunset tonight. #photography",
+  "Construction noise is unbearable. #noise",
+  "Is the bridge open? #traffic",
+  "Signals are weird tonight. #kaiku"
 ];
 
 const HUB_CITIES = [
-  { name: "Porvoo", lat: 60.39, lng: 25.66, weight: 15 },
-  { name: "Helsinki", lat: 60.16, lng: 24.93, weight: 10 },
-  { name: "New York", lat: 40.71, lng: -74.00, weight: 12 },
-  { name: "London", lat: 51.50, lng: -0.12, weight: 8 },
-  { name: "Tokyo", lat: 35.67, lng: 139.65, weight: 10 }
+  { name: "Porvoo", lat: 60.39, lng: 25.66, weight: 15, country: "FI" },
+  { name: "Helsinki", lat: 60.16, lng: 24.93, weight: 10, country: "FI" },
+  { name: "New York", lat: 40.71, lng: -74.00, weight: 12, country: "US" },
+  { name: "London", lat: 51.50, lng: -0.12, weight: 8, country: "GB" },
+  { name: "Tokyo", lat: 35.67, lng: 139.65, weight: 10, country: "JP" }
 ];
+
+const extractTags = (text: string): string[] => {
+    // Matches #word containing letters (including unicode like äöå), numbers, or underscores
+    const regex = /#[\p{L}\p{N}_]+/gu;
+    const matches = text.match(regex);
+    return matches ? Array.from(new Set(matches)) : []; // Deduplicate
+};
 
 const generateSeedData = (): ChatMessage[] => {
   const messages: ChatMessage[] = [];
@@ -41,27 +48,30 @@ const generateSeedData = (): ChatMessage[] => {
 
   HUB_CITIES.forEach(city => {
     for (let i = 0; i < city.weight; i++) {
-      // Small variation just so they aren't on top of each other in the DB, 
-      // but visualization will aggregate them anyway.
       const latJitter = (Math.random() - 0.5) * 0.05;
       const lngJitter = (Math.random() - 0.5) * 0.05;
       const maxAge = MESSAGE_LIFESPAN_MS - 10000;
       const timeOffset = Math.floor(Math.random() * maxAge);
       const parentId = `seed-msg-${count}`;
+      
+      const text = SAMPLE_TEXTS[Math.floor(Math.random() * SAMPLE_TEXTS.length)];
 
       messages.push({
         id: parentId,
-        text: SAMPLE_TEXTS[Math.floor(Math.random() * SAMPLE_TEXTS.length)],
+        text: text,
         timestamp: Date.now() - timeOffset,
         location: { 
           lat: city.lat + latJitter, 
           lng: city.lng + lngJitter 
         },
         city: city.name,
+        country: city.country,
         sessionId: `seed-user-${Math.floor(Math.random() * 100)}`,
         score: Math.floor(Math.random() * 10) - 2,
         replyCount: Math.random() > 0.7 ? Math.floor(Math.random() * 5) : 0,
-        isRemote: Math.random() > 0.9 
+        isRemote: Math.random() > 0.9,
+        originCountry: Math.random() > 0.9 ? (Math.random() > 0.5 ? "JP" : "US") : city.country,
+        tags: extractTags(text)
       });
       count++;
     }
@@ -94,10 +104,10 @@ export const getAnonymousID = (): string => {
   return id;
 };
 
-// Changed from Emoji to URL to ensure cross-platform consistency (Fixes Windows 'FI' issue)
+// Returns URL to flag image. Fixes Windows rendering issues with Emojis.
 export const getFlagUrl = (countryCode?: string) => {
   if (!countryCode) return null;
-  return `https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`;
+  return `https://flagcdn.com/w20/${countryCode.toLowerCase()}.png`;
 };
 
 // Haversine formula to calculate distance between two points in km
@@ -194,12 +204,14 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
             timestamp: new Date(d.created_at).getTime(),
             location: { lat: Number(d.latitude), lng: Number(d.longitude) }, 
             city: d.city_name,
+            country: d.target_country,
             sessionId: d.session_id,
             score: d.score ?? 0,
             parentId: d.parent_post_id,
             replyCount: d.replies?.[0]?.count || 0,
             isRemote: d.is_remote,
-            originCountry: d.origin_country
+            originCountry: d.origin_country,
+            tags: d.tags || [] // Retrieve tags
         }));
   }
 };
@@ -226,24 +238,16 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
             timestamp: new Date(d.created_at).getTime(),
             location: { lat: Number(d.latitude), lng: Number(d.longitude) },
             city: d.city_name,
+            country: d.target_country,
             sessionId: d.session_id,
             score: d.score ?? 0,
             parentId: d.parent_post_id,
             isRemote: d.is_remote,
-            originCountry: d.origin_country
+            originCountry: d.origin_country,
+            tags: d.tags || []
         }));
 };
 
-/**
- * Saves a message.
- * 
- * @param text The message content
- * @param targetLat The latitude where the message should APPEAR (Map Center or Thread Loc)
- * @param targetLng The longitude where the message should APPEAR
- * @param userLat The user's ACTUAL latitude (GPS)
- * @param userLng The user's ACTUAL longitude (GPS)
- * @param parentId Optional parent ID for replies
- */
 export const saveMessage = async (
     text: string, 
     targetLat: number, 
@@ -269,33 +273,35 @@ export const saveMessage = async (
   }
 
   // 2. REMOTE CHECK
-  // Calculate distance between where the user IS (userLat/Lng) and where they are POSTING (targetLat/Lng)
   const distKm = calculateDistance(userLat, userLng, targetLat, targetLng);
   const isRemote = distKm > 25; // 25km Threshold
   
   // 3. GEOCODING
-  // We need the City Name for the TARGET location (Context)
   const targetLocationData = await getCityName(targetLat, targetLng);
   
-  // If remote, we need the Country Code for the USER location (Origin)
   let originCountry = "";
   if (isRemote) {
       const userLocationData = await getCityName(userLat, userLng);
-      originCountry = userLocationData.countryCode;
+      originCountry = (userLocationData.countryCode || "").toUpperCase();
   }
+  
+  // 4. EXTRACT TAGS
+  const tags = extractTags(text);
   
   const newMessage: ChatMessage = {
     id: generateUUID(), 
     text,
     timestamp: Date.now(),
-    location: { lat: targetLat, lng: targetLng }, // Saved at Target Location
+    location: { lat: targetLat, lng: targetLng }, 
     city: targetLocationData.city,
+    country: (targetLocationData.countryCode || "").toUpperCase(), 
     sessionId: userId,
     score: 0,
     parentId: parentId || null,
     replyCount: 0,
     isRemote: isRemote,
-    originCountry: isRemote ? originCountry : undefined
+    originCountry: isRemote ? originCountry : undefined,
+    tags: tags
   };
 
   // Supabase Insert
@@ -307,23 +313,23 @@ export const saveMessage = async (
           latitude: newMessage.location.lat,
           longitude: newMessage.location.lng,
           city_name: newMessage.city,
+          target_country: newMessage.country,
           session_id: newMessage.sessionId,
           parent_post_id: newMessage.parentId,
           origin_country: newMessage.originCountry,
-          is_remote: newMessage.isRemote
+          is_remote: newMessage.isRemote,
+          tags: newMessage.tags // Save Tags
       }])
       .select();
 
   if (error) {
       console.warn("Supabase insert failed, saving locally", error);
-      // Local fallback save
       const stored = localStorage.getItem(STORAGE_KEY);
       const messages = stored ? JSON.parse(stored) : [];
       messages.unshift(newMessage);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
   }
   
-  // Update timestamps for rate limiting
   localStorage.setItem(LAST_POST_TIMESTAMP_KEY, Date.now().toString());
   
   return newMessage;
@@ -379,11 +385,13 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
                     timestamp: new Date(d.created_at).getTime(),
                     location: { lat: Number(d.latitude), lng: Number(d.longitude) },
                     city: d.city_name,
+                    country: d.target_country,
                     sessionId: d.session_id,
                     score: d.score || 0,
                     parentId: d.parent_post_id,
                     isRemote: d.is_remote,
-                    originCountry: d.origin_country
+                    originCountry: d.origin_country,
+                    tags: d.tags || []
                 };
                 callback({ type: 'INSERT', message: msg });
             } else if (payload.eventType === 'DELETE') {
