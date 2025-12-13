@@ -13,17 +13,14 @@ interface ChatMapProps {
 }
 
 // --- OPTIMIZED POST MARKER COMPONENT ---
-// Separated to prevent re-renders when the Map moves.
-// Only updates if the specific 'msg' prop changes.
 const PostMarker = React.memo(({ msg, onClick }: { msg: ChatMessage, onClick: () => void }) => {
     
     const icon = useMemo(() => {
         const now = Date.now();
         const age = now - msg.timestamp;
         const lifeRatio = 1 - (age / MESSAGE_LIFESPAN_MS);
-        const opacity = Math.max(0.3, lifeRatio).toFixed(2); // Calculate once
+        const opacity = Math.max(0.3, lifeRatio).toFixed(2); 
         
-        // Visual Size Calculation
         let size = 8;
         if (msg.score > 5) size = 12;
         if (msg.score > 20) size = 18;
@@ -34,8 +31,6 @@ const PostMarker = React.memo(({ msg, onClick }: { msg: ChatMessage, onClick: ()
         const color = msg.score < 0 ? '#64748b' : '#06b6d4';
         const glowColor = msg.score < 0 ? '#64748b' : '#22d3ee';
 
-        // NOTE: We use transform: translate(-50%, -50%) in CSS to center.
-        // This allows us to use standard width/height without offsets messing up animations.
         const html = `
             <div class="marker-container ${pulseClass}" style="width: ${size}px; height: ${size}px; opacity: ${opacity};">
                 <div class="marker-core" style="
@@ -51,10 +46,9 @@ const PostMarker = React.memo(({ msg, onClick }: { msg: ChatMessage, onClick: ()
             className: 'leaflet-div-icon',
             html: html,
             iconSize: [size, size],
-            // Important: We rely on CSS centering now, so anchor is minimal/center
             iconAnchor: [size / 2, size / 2] 
         });
-    }, [msg.score, msg.timestamp, msg.id]); // Dependencies for regen
+    }, [msg.score, msg.timestamp, msg.id]); 
 
     return (
         <Marker 
@@ -84,6 +78,15 @@ const MapController: React.FC<{
       }
   }, [selectedLocation, map]);
 
+  // FIX: Force a resize calculation after mount. 
+  // This solves the "gray map" or "partial map" issue in production/Vercel
+  // where the container size isn't immediately available to Leaflet.
+  useEffect(() => {
+      setTimeout(() => {
+          map.invalidateSize();
+      }, 250);
+  }, [map]);
+
   useMapEvents({
     click: () => onMapClick(),
     moveend: () => {
@@ -103,15 +106,10 @@ const MapController: React.FC<{
     }
   });
 
-  useEffect(() => {
-      map.invalidateSize();
-  }, [map]);
-
   return null;
 };
 
 // --- MAIN CHAT MAP ---
-// Memoized to prevent re-renders when Parent (App) state changes (like feed opening)
 const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange, onMapClick, lastNewMessage }) => {
   const [zoom, setZoom] = useState(5);
   const [flyToTarget, setFlyToTarget] = useState<{lat: number, lng: number} | null>(null);
@@ -125,7 +123,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
-        center={[20, 0]} 
+        center={[25, 0]} 
         zoom={3}
         scrollWheelZoom={true}
         zoomControl={false}
@@ -133,9 +131,9 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={2} 
-        // FIX: Web Mercator projection is undefined above ~85 degrees.
-        // Limiting to -85/85 prevents the renderer from breaking and showing a blank map.
-        maxBounds={[[-85, -180], [85, 180]]} 
+        // FIX: Relaxed bounds to -90/90. 
+        // The previous -85 limit caused tile clipping on some production renderers.
+        maxBounds={[[-90, -180], [90, 180]]} 
         maxBoundsViscosity={1.0} 
         preferCanvas={true}
         worldCopyJump={false} 
@@ -143,8 +141,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
         <TileLayer
           attribution={MAP_ATTRIBUTION}
           url={MAP_TILE_URL}
-          noWrap={true} // Prevents horizontal repetition
-          opacity={0.8} // Increased visibility
+          noWrap={true} // Keep this to prevent horizontal repeating
+          opacity={0.8}
         />
 
         <MapController 
@@ -154,10 +152,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
             selectedLocation={flyToTarget}
         />
 
-        {/* Connectivity Arcs */}
         <ArcLayer messages={messages} />
 
-        {/* Optimized Markers List */}
         {messages.map(msg => (
             <PostMarker 
                 key={msg.id}
