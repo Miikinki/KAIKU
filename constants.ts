@@ -24,3 +24,22 @@ export const JITTER_CONFIG = {
   REGION: 0.09,   // ~10km
   LOCAL: 0.045     // ~5km
 };
+
+// Approximate centers for arc generation
+export const COUNTRY_COORDINATES: Record<string, [number, number]> = {
+  'FI': [64.0, 26.0],
+  'JP': [36.2, 138.2],
+  'US': [37.0, -95.7],
+  'GB': [55.3, -3.4],
+  'DE': [51.1, 10.4],
+  'BR': [-14.2, -51.9],
+  'CN': [35.8, 104.1],
+  'FR': [46.2, 2.2],
+  'ES': [40.4, -3.7],
+  'IT': [41.8, 12.5],
+  'RU': [61.5, 105.3],
+  'AU': [-25.2, 133.7],
+  'CA': [56.1, -106.3],
+  'IN': [20.5, 78.9],
+  'ZA': [-30.5, 22.9]
+};
