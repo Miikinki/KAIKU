@@ -24,7 +24,8 @@ const MapEventHandler: React.FC<{
     click: () => onMapClick(),
     moveend: () => {
         const bounds = map.getBounds();
-        const z = map.getZoom();
+        // Force integer zoom to prevent H3 calculation thrashing on floats
+        const z = Math.round(map.getZoom()); 
         setZoom(z);
         onViewportChange({
             north: bounds.getNorth(),
@@ -35,7 +36,7 @@ const MapEventHandler: React.FC<{
         });
     },
     zoomend: () => {
-        setZoom(map.getZoom());
+        setZoom(Math.round(map.getZoom()));
     }
   });
 
@@ -43,7 +44,7 @@ const MapEventHandler: React.FC<{
   React.useEffect(() => {
       map.invalidateSize();
       const bounds = map.getBounds();
-      const z = map.getZoom();
+      const z = Math.round(map.getZoom());
       onViewportChange({
           north: bounds.getNorth(),
           south: bounds.getSouth(),
@@ -69,15 +70,18 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
       
       const counts: Record<string, number> = {};
       
-      messages.forEach(msg => {
-          try {
-             const hexIndex = h3.latLngToCell(msg.location.lat, msg.location.lng, res);
-             if (!counts[hexIndex]) counts[hexIndex] = 0;
-             counts[hexIndex]++;
-          } catch(e) {
-              // Ignore invalid coords
-          }
-      });
+      // Optimization: Only process messages if we have them
+      if (messages.length > 0) {
+        messages.forEach(msg => {
+            try {
+               const hexIndex = h3.latLngToCell(msg.location.lat, msg.location.lng, res);
+               if (!counts[hexIndex]) counts[hexIndex] = 0;
+               counts[hexIndex]++;
+            } catch(e) {
+                // Ignore invalid coords
+            }
+        });
+      }
 
       return Object.entries(counts).map(([hexId, count]) => ({
           coords: h3.cellToBoundary(hexId) as [number, number][],
@@ -99,11 +103,12 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
         minZoom={3}
         worldCopyJump={true} // Smoother infinite scrolling
         maxBounds={[[-85, -180], [85, 180]]}
+        preferCanvas={true} // Force Leaflet to use Canvas globally where possible
       >
         <TileLayer
           attribution={MAP_ATTRIBUTION}
           url={MAP_TILE_URL}
-          noWrap={false} // Allow wrapping for worldCopyJump
+          noWrap={false} 
           opacity={0.8}
         />
 
