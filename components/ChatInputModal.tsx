@@ -118,7 +118,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
             
             <div className="mt-4 flex items-start gap-2 text-[10px] text-gray-500">
                <MapPin size={12} className="mt-0.5" />
-               <p>Your location will be scrambled by ~2-3km for privacy. Location services are required to broadcast.</p>
+               <p>Your signal will be aggregated into the regional grid for privacy. No precise location is ever displayed.</p>
             </div>
           </motion.div>
         </div>

@@ -55,18 +55,15 @@
         display: none !important;
       }
 
-      /* KAIKU GLOW EFFECT for Leaflet CircleMarkers */
-      /* This makes standard SVG circles look like heatmap blobs */
-      .heatmap-marker {
-        filter: blur(8px); /* Soft glow */
-        mix-blend-mode: screen; /* Additive blending for intensity */
-        transition: r 0.3s ease;
-      }
-      
-      /* Sharper dots when zoomed in deep */
-      .heatmap-marker-sharp {
-        filter: blur(4px);
-        mix-blend-mode: screen;
+      /* 
+         KAIKU GLOW EFFECT - CANVAS MODE
+         Instead of blurring individual markers (slow), we blur the canvas layer itself.
+         This creates the "glowing signal" look with high performance.
+      */
+      .leaflet-overlay-pane canvas {
+        filter: blur(3px); /* Soft glow for all points */
+        mix-blend-mode: screen; /* Additive blending */
+        opacity: 0.9;
       }
 
     </style>

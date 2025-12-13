@@ -1,67 +1,56 @@
-import React from 'react';
-import { CircleMarker } from 'react-leaflet';
+import React, { useEffect, useRef } from 'react';
+import { useMap } from 'react-leaflet';
+import * as L from 'leaflet';
 
 interface HeatmapLayerProps {
-    points: [number, number, number][]; // lat, lng, intensity
-    options: {
-        radius: number; // This comes in as a pixel size from ChatMap
-        blur: number;
-        max?: number;
-        minOpacity?: number;
-        gradient?: Record<number, string>;
-        maxZoom?: number;
-    }
+    polygons: { coords: [number, number][], count: number }[]; // Array of polygon coordinates
 }
 
 /**
- * STABLE HEATMAP IMPLEMENTATION
+ * H3 HEXAGON GRID RENDERER
  * 
- * Instead of using a custom Canvas layer (which causes drift/projection errors),
- * we render individual CircleMarkers. 
- * 
- * - ACCURACY: 100% (Leaflet handles the projection).
- * - AESTHETIC: We use CSS classes (.heatmap-marker) defined in index.html to apply a blur filter,
- *   making them look like glowing orbs.
+ * Draws hexagonal cells.
  */
-const HeatmapLayer: React.FC<HeatmapLayerProps> = ({ points, options }) => {
-    
-    // We determine the CSS class based on the radius (zoom level proxy).
-    // Larger radius = more blur (atmospheric). Smaller radius = sharper (precise).
-    const className = options.radius > 20 ? 'heatmap-marker' : 'heatmap-marker-sharp';
+const HeatmapLayer: React.FC<HeatmapLayerProps> = ({ polygons }) => {
+    const map = useMap();
+    const layerGroupRef = useRef<L.LayerGroup | null>(null);
 
-    return (
-        <>
-            {points.map((p, index) => {
-                const [lat, lng, intensity] = p;
-                
-                // Calculate opacity based on intensity
-                // Base opacity 0.3 + intensity bonus, capped at 0.8
-                const opacity = Math.min(0.3 + (intensity * 0.2), 0.8);
+    useEffect(() => {
+        // 1. Clean up previous layer
+        if (layerGroupRef.current) {
+            map.removeLayer(layerGroupRef.current);
+        }
 
-                // If zoom is very far out (radius is small), we make dots brighter/solid
-                const isFarOut = options.radius < 10;
-                
-                return (
-                    <CircleMarker
-                        key={`${lat}-${lng}-${index}`}
-                        center={[lat, lng]}
-                        radius={options.radius}
-                        pathOptions={{
-                            stroke: false,
-                            fillColor: '#06b6d4', // Cyan-500
-                            fillOpacity: isFarOut ? 0.8 : opacity,
-                            className: isFarOut ? '' : className // Don't blur when dots are tiny
-                        }}
-                        eventHandlers={{
-                            click: () => {
-                                // Optional: Handle click on a heat spot
-                            }
-                        }}
-                    />
-                );
-            })}
-        </>
-    );
+        // 2. Create Canvas Renderer
+        const canvasRenderer = L.canvas({ padding: 0.5 });
+
+        // 3. Create Polygons
+        const shapes = polygons.map(poly => {
+            return L.polygon(poly.coords, {
+                renderer: canvasRenderer,
+                stroke: true,
+                color: '#22d3ee', // Brighter Cyan outline
+                weight: 1.5,      // Slightly thicker line for better visibility
+                fillColor: '#06b6d4',
+                // Base opacity 0.4 ensures single messages are clearly visible. 
+                // Increases with density up to 0.8.
+                fillOpacity: 0.4 + (Math.min(poly.count, 20) * 0.02), 
+                interactive: false
+            });
+        });
+
+        // 4. Add to Map
+        const layerGroup = L.layerGroup(shapes).addTo(map);
+        layerGroupRef.current = layerGroup;
+
+        return () => {
+            if (map.hasLayer(layerGroup)) {
+                map.removeLayer(layerGroup);
+            }
+        };
+    }, [map, polygons]); 
+
+    return null;
 };
 
 export default HeatmapLayer;

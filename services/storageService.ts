@@ -7,7 +7,7 @@ const STORAGE_KEY = 'global_local_talk_data';
 const USER_ID_KEY = 'kaiku_session_id'; 
 const USER_VOTES_KEY = 'global_local_talk_user_votes';
 const LAST_POST_TIMESTAMP_KEY = 'kaiku_last_post_ts';
-const DELETED_IDS_KEY = 'kaiku_deleted_ids'; // NEW: Persistent Local Blocklist
+const DELETED_IDS_KEY = 'kaiku_deleted_ids'; 
 
 // --- MASSIVE SEED DATA GENERATOR (For Local Mode) ---
 
@@ -41,9 +41,10 @@ const generateSeedData = (): ChatMessage[] => {
 
   HUB_CITIES.forEach(city => {
     for (let i = 0; i < city.weight; i++) {
-      // Reduced jitter for seed data too, so they cluster better
-      const latJitter = (Math.random() - 0.5) * 0.04;
-      const lngJitter = (Math.random() - 0.5) * 0.04;
+      // Small variation just so they aren't on top of each other in the DB, 
+      // but visualization will aggregate them anyway.
+      const latJitter = (Math.random() - 0.5) * 0.05;
+      const lngJitter = (Math.random() - 0.5) * 0.05;
       const maxAge = MESSAGE_LIFESPAN_MS - 10000;
       const timeOffset = Math.floor(Math.random() * maxAge);
       const parentId = `seed-msg-${count}`;
@@ -60,7 +61,7 @@ const generateSeedData = (): ChatMessage[] => {
         sessionId: `seed-user-${Math.floor(Math.random() * 100)}`,
         score: Math.floor(Math.random() * 10) - 2,
         replyCount: Math.random() > 0.7 ? Math.floor(Math.random() * 5) : 0,
-        isRemote: Math.random() > 0.9 // Randomly mark some seeds as remote
+        isRemote: Math.random() > 0.9 
       });
       count++;
     }
@@ -126,16 +127,6 @@ export const getRandomLocation = () => {
   return { lat, lng };
 };
 
-export const applyFuzzyLogic = (lat: number, lng: number) => {
-  // REDUCED JITTER for cleaner maps.
-  // 0.008 deg is approx 800m. Enough for privacy, but tight enough for city-level distinction.
-  const JITTER = 0.008; 
-  return {
-    lat: lat + (Math.random() - 0.5) * JITTER,
-    lng: lng + (Math.random() - 0.5) * JITTER
-  };
-};
-
 const getDeletedIds = (): Set<string> => {
     try {
         const stored = localStorage.getItem(DELETED_IDS_KEY);
@@ -171,7 +162,7 @@ export const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
   const valid = messages.filter((m: ChatMessage) => 
       m.timestamp > cutoff && 
       m.score > SCORE_THRESHOLD_HIDE &&
-      !deleted.has(m.id) // Filter deleted
+      !deleted.has(m.id) 
   );
   
   return onlyRoot ? valid.filter((m: ChatMessage) => !m.parentId) : valid;
@@ -199,12 +190,12 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
     const deleted = getDeletedIds();
     
     return data
-        .filter((d: any) => !deleted.has(d.id)) // CRITICAL: Filter out deleted messages
+        .filter((d: any) => !deleted.has(d.id))
         .map((d: any) => ({
             id: d.id,
             text: d.text,
             timestamp: new Date(d.created_at).getTime(),
-            location: { lat: Number(d.latitude), lng: Number(d.longitude) }, // Explicit Number cast
+            location: { lat: Number(d.latitude), lng: Number(d.longitude) }, 
             city: d.city_name,
             sessionId: d.session_id,
             score: d.score ?? 0,
@@ -265,11 +256,16 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
 
   const locationData = await getCityName(lat, lng);
   
+  // NOTE: We do NOT scramble the location here anymore.
+  // We save the accurate location to the database to allow for flexible future aggregation,
+  // BUT the frontend will NEVER display this location as a point.
+  // It will always be aggregated into a large Hexagon cell.
+  
   const newMessage: ChatMessage = {
-    id: generateUUID(), // Generate local ID first, might be replaced by DB
+    id: generateUUID(), 
     text,
     timestamp: Date.now(),
-    location: applyFuzzyLogic(lat, lng),
+    location: { lat, lng }, // Save true location for accurate regional query
     city: locationData.city,
     sessionId: userId,
     score: 0,
@@ -283,7 +279,7 @@ export const saveMessage = async (text: string, lat: number, lng: number, parent
   const { data, error } = await supabase
       .from('kaiku_posts')
       .insert([{
-          id: newMessage.id, // Explicitly send UUID so we match
+          id: newMessage.id,
           text: newMessage.text,
           latitude: newMessage.location.lat,
           longitude: newMessage.location.lng,

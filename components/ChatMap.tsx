@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
 import * as L from 'leaflet';
+import * as h3 from 'h3-js';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import HeatmapLayer from './HeatmapLayer';
@@ -17,20 +18,17 @@ interface ChatMapProps {
 // ----------------------------------------------------------------------
 
 const MapController: React.FC<{ 
-    onZoomChange: (z: number) => void;
     onMapClick: () => void;
-}> = ({ onZoomChange, onMapClick }) => {
-  const map = useMapEvents({
-    zoomend: () => onZoomChange(map.getZoom()),
+}> = ({ onMapClick }) => {
+  useMapEvents({
     click: () => {
-        // Global Map Click Handler -> Opens Feed
         onMapClick();
     }
   });
   return null;
 };
 
-const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void }> = ({ onViewportChange }) => {
+const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void, setZoom: (z: number) => void }> = ({ onViewportChange, setZoom }) => {
   const map = useMap();
   const mapContainerRef = useRef<HTMLElement | null>(map.getContainer());
 
@@ -38,12 +36,16 @@ const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void
     const handleUpdate = () => {
       map.invalidateSize();
       const bounds = map.getBounds();
+      const currentZoom = map.getZoom();
+      
+      setZoom(currentZoom);
+      
       onViewportChange({
         north: bounds.getNorth(),
         south: bounds.getSouth(),
         east: bounds.getEast(),
         west: bounds.getWest(),
-        zoom: map.getZoom()
+        zoom: currentZoom
       });
     };
     
@@ -68,64 +70,46 @@ const MapResizeHandler: React.FC<{ onViewportChange: (b: ViewportBounds) => void
 };
 
 const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClick, lastNewMessage }) => {
-  const [zoom, setZoom] = useState(5); // Default start zoom
+  const [zoom, setZoom] = useState(5);
 
-  // --- PRIVACY-FIRST DATA PREPARATION ---
-  const heatmapData = useMemo(() => {
-      // Snapping ~600-700m. 
-      const SNAPPING_PRECISION = 0.006; 
+  const hexData = useMemo(() => {
+      // DYNAMIC RESOLUTION BASED ON ZOOM
+      // H3 Resolution Scale:
+      // Res 4: ~22km edge (Metro Area) - BASELINE. Never go bigger than this.
+      // Res 5: ~8.5km edge (City)
+      // Res 6: ~3km edge (District)
+      // Res 7: ~1.2km edge (Neighborhood) - MAX DETAIL.
       
-      const points = messages.map(msg => {
-          const snappedLat = Math.round(msg.location.lat / SNAPPING_PRECISION) * SNAPPING_PRECISION;
-          const snappedLng = Math.round(msg.location.lng / SNAPPING_PRECISION) * SNAPPING_PRECISION;
-          
-          // Intensity Logic:
-          // Range: 0.5 - 3.0
-          const baseIntensity = 0.6;
-          const scoreBonus = Math.max(msg.score, 0) * 0.1; 
-          const intensity = Math.min(baseIntensity + scoreBonus, 3.0);
-
-          return [snappedLat, snappedLng, intensity] as [number, number, number];
+      let res = 4; // Start at "Large City/Region" level, so Porvoo is just Porvoo.
+      
+      if (zoom >= 7) res = 5;  // Zoomed into province
+      if (zoom >= 9) res = 6;  // Zoomed into city
+      if (zoom >= 11) res = 7; // Zoomed into district (Privacy Cap)
+      
+      const counts: Record<string, number> = {};
+      
+      messages.forEach(msg => {
+          try {
+             // Convert point to Hexagon ID
+             const hexIndex = h3.latLngToCell(msg.location.lat, msg.location.lng, res);
+             if (!counts[hexIndex]) counts[hexIndex] = 0;
+             counts[hexIndex]++;
+          } catch(e) {
+              // Ignore invalid coords
+          }
       });
 
-      return points;
-  }, [messages]);
+      // Convert Hex IDs to Polygon Coordinates for Leaflet
+      return Object.entries(counts).map(([hexId, count]) => {
+          const boundary = h3.cellToBoundary(hexId);
+          // h3 returns [lat, lng] arrays, exactly what Leaflet wants
+          return {
+              coords: boundary as [number, number][],
+              count: count
+          };
+      });
 
-  // --- DYNAMIC VISUAL TUNING ---
-  
-  // VISIBILITY FIX:
-  // When zoomed out, we prevent the points from fading away by setting maxZoom = currentZoom.
-  // This effectively disables the intensity reduction formula in the heatmap engine.
-  const dynamicMaxZoom = zoom;
-
-  // Size of the dots
-  const getRadius = (z: number) => {
-      if (z < 6) return 8;    // World view: small, distinct dots
-      if (z < 10) return 18;  // Country view
-      if (z < 13) return 30;  // City view
-      return 45;              // Street view: ambient glow
-  };
-
-  // Visibility floor
-  const getMinOpacity = (z: number) => {
-       if (z < 8) return 0.35; // High floor when zoomed out -> dots are ALWAYS visible
-       return 0.05;            // Low floor when zoomed in -> allows transparency
-  };
-
-  const heatOptions = useMemo(() => ({
-      radius: getRadius(zoom),
-      blur: 15,           // Standard blur
-      max: 2.0,           // Intensity saturation point
-      minOpacity: getMinOpacity(zoom),
-      maxZoom: dynamicMaxZoom, // Keeps dots bright at all levels
-      gradient: {
-          0.0: 'rgba(6, 182, 212, 0)',    // Transparent
-          0.1: 'rgba(6, 182, 212, 0.4)',  // Cyan Mist (Starts early!)
-          0.5: 'rgba(34, 211, 238, 0.7)', // Visible Cyan
-          0.8: 'rgba(200, 255, 255, 0.9)', // Bright
-          1.0: '#ffffff'                  // Core White
-      }
-  }), [zoom, dynamicMaxZoom]); 
+  }, [messages, zoom]);
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
@@ -137,25 +121,24 @@ const ChatMap: React.FC<ChatMapProps> = ({ messages, onViewportChange, onMapClic
         attributionControl={false}
         className="w-full h-full"
         style={{ width: '100vw', height: '100vh', background: '#0a0a12' }}
-        minZoom={3} // FIX: Raised to 3 to prevent extreme zoom-out drift
-        worldCopyJump={false} // DISABLED to fix drift
-        maxBounds={[[-85, -180], [85, 180]]} // Strict bounds
+        minZoom={3}
+        worldCopyJump={false} 
+        maxBounds={[[-85, -180], [85, 180]]}
       >
         <TileLayer
           attribution={MAP_ATTRIBUTION}
           url={MAP_TILE_URL}
-          noWrap={true} // Don't repeat tiles
-          opacity={0.7} // Background map visibility
+          noWrap={true}
+          opacity={0.7}
         />
 
-        <MapController onZoomChange={setZoom} onMapClick={onMapClick} />
-        <MapResizeHandler onViewportChange={onViewportChange} />
+        <MapController onMapClick={onMapClick} />
+        <MapResizeHandler onViewportChange={onViewportChange} setZoom={setZoom} />
 
-        {/* PRIVACY-SAFE HEATMAP LAYER */}
-        <HeatmapLayer 
-            points={heatmapData} 
-            options={heatOptions}
-        />
+        {/* 
+            RENDER HEXAGONS
+        */}
+        <HeatmapLayer polygons={hexData} />
         
       </MapContainer>
     </div>
