@@ -125,25 +125,26 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
-        center={[25, 0]} // Center roughly on equator/prime meridian for global view
+        center={[20, 0]} 
         zoom={3}
         scrollWheelZoom={true}
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
-        minZoom={2} // Prevent zooming out too far to see gray space
-        maxBounds={[[-90, -180], [90, 180]]} // Strict world bounds
-        maxBoundsViscosity={1.0} // Sticky bounds (no bouncing past the world edge)
+        minZoom={2} 
+        // FIX: Web Mercator projection is undefined above ~85 degrees.
+        // Limiting to -85/85 prevents the renderer from breaking and showing a blank map.
+        maxBounds={[[-85, -180], [85, 180]]} 
+        maxBoundsViscosity={1.0} 
         preferCanvas={true}
-        worldCopyJump={false} // Prevent jumping to "copied" worlds
+        worldCopyJump={false} 
       >
         <TileLayer
           attribution={MAP_ATTRIBUTION}
           url={MAP_TILE_URL}
-          noWrap={true} // CRITICAL: Prevents the map from repeating horizontally
-          bounds={[[-90, -180], [90, 180]]}
-          opacity={0.6}
+          noWrap={true} // Prevents horizontal repetition
+          opacity={0.8} // Increased visibility
         />
 
         <MapController 
