@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, MapPin, AlertCircle, Loader2, Clock } from 'lucide-react';
 import { THEME_COLOR } from '../constants';
+import { useTranslation } from 'react-i18next';
 
 interface ChatInputModalProps {
   isOpen: boolean;
@@ -12,6 +13,7 @@ interface ChatInputModalProps {
 }
 
 const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName }) => {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timeLeft, setTimeLeft] = useState('');
@@ -51,7 +53,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
       onClose();
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Transmission failed.");
+      setError(err.message || t('input.error_transmission'));
     } finally {
       setIsSubmitting(false);
     }
@@ -81,32 +83,32 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
               <X size={20} />
             </button>
 
-            <h2 className="text-xl font-bold mb-1 text-white">Broadcast Signal</h2>
+            <h2 className="text-xl font-bold mb-1 text-white">{t('input.broadcast_signal')}</h2>
             <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-6">
                  {targetLocationName ? (
                     <>
-                        <span>To:</span>
+                        <span>{t('input.to')}</span>
                         <span className="text-cyan-400 font-bold flex items-center gap-1">
                             <MapPin size={10} /> {targetLocationName}
                         </span>
                     </>
                  ) : (
-                    <span className="animate-pulse">Locating...</span>
+                    <span className="animate-pulse">{t('input.locating')}</span>
                  )}
             </div>
 
             {isLocked ? (
               <div className="bg-white/5 rounded-xl p-6 text-center border border-white/10">
                 <Clock className="mx-auto mb-2 text-yellow-500" size={32} />
-                <h3 className="text-white font-medium">Rate Limit Exceeded</h3>
-                <p className="text-sm text-gray-400 mt-1">Please wait {timeLeft} before broadcasting again.</p>
+                <h3 className="text-white font-medium">{t('input.rate_limit_exceeded')}</h3>
+                <p className="text-sm text-gray-400 mt-1">{t('input.wait_message', { time: timeLeft })}</p>
               </div>
             ) : (
               <>
                 <textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="What's happening nearby?"
+                  placeholder={t('input.placeholder')}
                   className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-gray-200 focus:outline-none focus:border-cyan-500/50 resize-none mb-4"
                 />
 
@@ -123,14 +125,14 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                   className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
                 >
                   {isSubmitting ? <Loader2 className="animate-spin" /> : <Send size={18} />}
-                  BROADCAST
+                  {t('input.broadcast_btn')}
                 </button>
               </>
             )}
             
             <div className="mt-4 flex items-start gap-2 text-[10px] text-gray-500">
                <MapPin size={12} className="mt-0.5" />
-               <p>Your signal will be aggregated into the regional grid for privacy. No precise location is ever displayed.</p>
+               <p>{t('input.disclaimer')}</p>
             </div>
           </motion.div>
         </div>

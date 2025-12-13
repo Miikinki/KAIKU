@@ -4,6 +4,7 @@ import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
+import { useTranslation } from 'react-i18next';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -19,6 +20,7 @@ interface FeedPanelProps {
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
     visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel
 }) => {
+  const { t } = useTranslation();
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   
@@ -45,7 +47,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, parentId?: string | null) => {
       e.stopPropagation();
-      if (window.confirm("Are you sure you want to delete this signal?")) {
+      if (window.confirm(t('feed.delete_confirm'))) {
           onDelete(msgId, parentId || undefined);
       }
   };
@@ -67,7 +69,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   // --- TEXT PARSER (Soft Tags) ---
   const renderMessageText = (text: string) => {
       // Split by hashtags (capturing the hashtag so it's in the array)
-      // Regex detects # followed by letters, numbers, or underscores. Unicode compatible.
       const parts = text.split(/(#[\p{L}\p{N}_]+)/gu);
       
       return parts.map((part, index) => {
@@ -97,27 +98,21 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
     const isDomestic = msg.country && msg.originCountry === msg.country;
     const flagUrl = getFlagUrl(msg.originCountry);
+    const title = isDomestic 
+        ? t('feed.visitor_remote', { country: msg.originCountry })
+        : t('feed.visitor_global', { country: msg.originCountry });
 
-    if (isDomestic) {
-        return (
-            <div className="text-amber-400 flex items-center gap-1.5" title={`Remote signal from ${msg.originCountry}`}>
-                <Satellite size={12} />
-            </div>
-        );
-    } else {
-        return (
-            <div className="text-amber-400 flex items-center gap-1.5" title={`Global signal from ${msg.originCountry}`}>
-                <Satellite size={12} />
-                {flagUrl && (
-                    <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
-                )}
-            </div>
-        );
-    }
+    return (
+        <div className="text-amber-400 flex items-center gap-1.5" title={title}>
+            <Satellite size={12} />
+            {!isDomestic && flagUrl && (
+                <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
+            )}
+        </div>
+    );
   };
 
-  const feedTitle = (zoomLevel && zoomLevel < 9) ? "REGIONAL INTERCEPT" : "LOCAL SIGNALS";
-  const hasSignals = displayMessages.length > 0;
+  const feedTitle = (zoomLevel && zoomLevel < 9) ? t('feed.regional_intercept') : t('feed.local_signals');
   
   const variants = {
       open: { y: 0 },
@@ -157,7 +152,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     <div className="flex items-center gap-2 text-cyan-400 animate-pulse">
                          <ScanLine size={20} />
                          <span className="text-sm font-bold tracking-widest uppercase">
-                            {displayMessages.length} Signals Detected
+                            {displayMessages.length} {t('feed.signals_detected')}
                          </span>
                     </div>
                 ) : (
@@ -200,7 +195,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     <div className="flex items-center justify-between px-6 py-2">
                         <div className="flex items-center gap-2 text-cyan-400 text-sm font-mono">
                             <Hash size={14} />
-                            <span>Filtering: <span className="font-bold">{activeTag}</span></span>
+                            <span>{t('feed.filtering')}: <span className="font-bold">{activeTag}</span></span>
                         </div>
                         <button 
                             onClick={() => setActiveTag(null)}
@@ -217,11 +212,11 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             {displayMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 text-center pb-20">
                 <Shield size={48} className="mb-4 opacity-20" />
-                <p>No signals detected.</p>
+                <p>{t('feed.no_signals')}</p>
                 {activeTag ? (
-                    <p className="text-xs mt-2 opacity-50">Try clearing the tag filter.</p>
+                    <p className="text-xs mt-2 opacity-50">{t('feed.clear_tag_hint')}</p>
                 ) : (
-                    <p className="text-xs mt-2 opacity-50">Move the radar to a new location.</p>
+                    <p className="text-xs mt-2 opacity-50">{t('feed.move_radar_hint')}</p>
                 )}
             </div>
             ) : (
@@ -286,7 +281,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         
                         <div className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">
                             <MessageSquare size={14} />
-                            <span>{msg.replyCount || 0} Replies</span>
+                            <span>{msg.replyCount || 0} {t('feed.replies')}</span>
                         </div>
                     </div>
                 </div>

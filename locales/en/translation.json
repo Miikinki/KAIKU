@@ -1,0 +1,35 @@
+{
+  "feed": {
+    "signals_detected": "Signals Detected",
+    "regional_intercept": "REGIONAL INTERCEPT",
+    "local_signals": "LOCAL SIGNALS",
+    "filtering": "Filtering",
+    "no_signals": "No signals detected.",
+    "clear_tag_hint": "Try clearing the tag filter.",
+    "move_radar_hint": "Move the radar to a new location.",
+    "replies": "Replies",
+    "delete_confirm": "Are you sure you want to delete this signal?",
+    "visitor_remote": "Remote signal from {{country}}",
+    "visitor_global": "Global signal from {{country}}"
+  },
+  "input": {
+    "broadcast_signal": "Broadcast Signal",
+    "to": "To:",
+    "locating": "Locating...",
+    "rate_limit_exceeded": "Rate Limit Exceeded",
+    "wait_message": "Please wait {{time}} before broadcasting again.",
+    "placeholder": "What's happening nearby?",
+    "broadcast_btn": "BROADCAST",
+    "disclaimer": "Your signal will be aggregated into the regional grid for privacy. No precise location is ever displayed.",
+    "error_transmission": "Transmission failed."
+  },
+  "thread": {
+    "title": "THREAD",
+    "replies_label": "Replies",
+    "loading": "Loading...",
+    "no_replies": "No replies yet. Be the first to respond.",
+    "post_reply_placeholder": "Post a reply...",
+    "delete_signal_tooltip": "Delete your signal",
+    "error_send_reply": "Failed to send reply. Please try again."
+  }
+}

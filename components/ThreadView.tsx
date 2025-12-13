@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, AlertCircle, Trash2, Satellite } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
+import { useTranslation } from 'react-i18next';
 
 interface ThreadViewProps {
   parentMessage: ChatMessage;
@@ -13,6 +14,7 @@ interface ThreadViewProps {
 }
 
 const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete }) => {
+  const { t } = useTranslation();
   const [replies, setReplies] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [replyText, setReplyText] = useState('');
@@ -50,7 +52,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       setReplies(data);
     } catch (e: any) {
       console.error(e);
-      setError(e.message || "Failed to send reply. Please try again.");
+      setError(e.message || t('thread.error_send_reply'));
     } finally {
       setIsSending(false);
     }
@@ -69,7 +71,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
 
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
     e.stopPropagation();
-    if (window.confirm("Are you sure you want to delete this signal?")) {
+    if (window.confirm(t('feed.delete_confirm'))) {
         if (isParent) {
             onDelete(msgId);
             onClose();
@@ -85,16 +87,19 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
 
     const isDomestic = msg.country && msg.originCountry === msg.country;
     const flagUrl = getFlagUrl(msg.originCountry);
+    const title = isDomestic 
+        ? t('feed.visitor_remote', { country: msg.originCountry })
+        : t('feed.visitor_global', { country: msg.originCountry });
 
     if (isDomestic) {
         return (
-             <div className="text-amber-400 flex items-center gap-1.5" title={`Remote signal from ${msg.originCountry}`}>
+             <div className="text-amber-400 flex items-center gap-1.5" title={title}>
                 <Satellite size={12} />
              </div>
         );
     } else {
         return (
-            <div className="text-amber-400 flex items-center gap-1.5" title={`Global signal from ${msg.originCountry}`}>
+            <div className="text-amber-400 flex items-center gap-1.5" title={title}>
                 <Satellite size={12} />
                 {flagUrl && (
                     <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
@@ -142,7 +147,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                          <button 
                             onClick={(e) => handleDeleteClick(e, msg.id, isParent)}
                             className="text-gray-600 hover:text-red-400 transition-colors p-1"
-                            title="Delete your signal"
+                            title={t('thread.delete_signal_tooltip')}
                         >
                             <Trash2 size={12} />
                         </button>
@@ -173,7 +178,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
         <div className="flex justify-between items-center p-4 border-b border-white/10 bg-[#0f0f18]">
           <h2 className="text-sm font-bold text-white flex items-center gap-2">
             <MessageSquare size={16} className="text-cyan-400" />
-            THREAD
+            {t('thread.title')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
             <X size={20} />
@@ -185,7 +190,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
           
           <div className="px-4 py-2">
              <div className="h-px bg-white/5 my-2" />
-             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-4">Replies</p>
+             <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-4">{t('thread.replies_label')}</p>
           </div>
 
           {isLoading ? (
@@ -194,7 +199,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
             </div>
           ) : replies.length === 0 ? (
             <div className="text-center py-8 text-gray-500 text-xs">
-              No replies yet. Be the first to respond.
+              {t('thread.no_replies')}
             </div>
           ) : (
             <div className="space-y-2 pb-4">
@@ -222,7 +227,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
               type="text"
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
-              placeholder="Post a reply..."
+              placeholder={t('thread.post_reply_placeholder')}
               className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-cyan-500/50"
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             />

@@ -67,7 +67,6 @@
       
       .marker-container {
         position: relative;
-        /* Centering hack that works with scaling */
         display: flex;
         align-items: center;
         justify-content: center;
@@ -79,10 +78,10 @@
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        transition: background-color 0.3s ease;
+        transition: all 0.5s ease;
       }
 
-      /* Pulse Ring using Pseudo-element for performance */
+      /* 1. HIGH ZOOM: Intense Pulse (User is close) */
       .kaiku-pulse-intense::after {
         content: '';
         position: absolute;
@@ -96,6 +95,7 @@
         animation: pulse-ring-gpu 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
       }
 
+      /* 2. MID ZOOM: Steady Glow */
       .kaiku-pulse-steady::after {
         content: '';
         position: absolute;
@@ -109,6 +109,11 @@
         animation: pulse-dot-gpu 4s infinite ease-in-out;
       }
 
+      /* 3. LOW ZOOM: Stardust (No heavy rings, just twinkle) */
+      .kaiku-pulse-stardust .marker-core {
+        animation: twinkle 3s infinite ease-in-out;
+      }
+
       @keyframes pulse-ring-gpu {
         0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
         100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
@@ -118,6 +123,11 @@
         0% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
         50% { transform: translate(-50%, -50%) scale(1.5); opacity: 0.1; }
         100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
+      }
+
+      @keyframes twinkle {
+        0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+        50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.2); }
       }
 
       /* --- KAIKU ARCS (Transient) --- */
@@ -165,7 +175,10 @@
     "h3-js": "https://esm.sh/h3-js@4.1.0",
     "@google/genai": "https://esm.sh/@google/genai",
     "react-dom/": "https://esm.sh/react-dom@^19.2.2/",
-    "leaflet/": "https://esm.sh/leaflet@^1.9.4/"
+    "leaflet/": "https://esm.sh/leaflet@^1.9.4/",
+    "react-i18next": "https://esm.sh/react-i18next@^16.5.0",
+    "i18next": "https://esm.sh/i18next@^25.7.2",
+    "i18next-browser-languagedetector": "https://esm.sh/i18next-browser-languagedetector@^8.2.0"
   }
 }
 </script>

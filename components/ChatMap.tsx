@@ -13,21 +13,42 @@ interface ChatMapProps {
 }
 
 // --- OPTIMIZED POST MARKER COMPONENT ---
-const PostMarker = React.memo(({ msg, onClick }: { msg: ChatMessage, onClick: () => void }) => {
+// Now accepts 'zoomTier' to render differently based on map height.
+const PostMarker = React.memo(({ msg, onClick, zoomTier }: { msg: ChatMessage, onClick: () => void, zoomTier: number }) => {
     
     const icon = useMemo(() => {
         const now = Date.now();
         const age = now - msg.timestamp;
         const lifeRatio = 1 - (age / MESSAGE_LIFESPAN_MS);
-        const opacity = Math.max(0.3, lifeRatio).toFixed(2); 
         
+        let opacity = Math.max(0.3, lifeRatio).toFixed(2); 
         let size = 8;
-        if (msg.score > 5) size = 12;
-        if (msg.score > 20) size = 18;
-        if (msg.score < 0) size = 6;
+        let pulseClass = 'kaiku-pulse-steady';
+        let zIndex = 100 + msg.score; // Higher score = on top
 
-        const isNew = age < 60000;
-        const pulseClass = isNew ? 'kaiku-pulse-intense' : 'kaiku-pulse-steady';
+        // LEVEL OF DETAIL (LOD) LOGIC
+        if (zoomTier === 0) {
+            // ZOOM < 10: "Stardust Mode" (Tiny, transparent, no rings)
+            size = msg.score > 20 ? 4 : 3; 
+            opacity = (parseFloat(opacity) * 0.6).toFixed(2); // More transparent to allow heatmap effect
+            pulseClass = 'kaiku-pulse-stardust';
+            zIndex = 50;
+        } 
+        else if (zoomTier === 1) {
+            // ZOOM 10-13: "Beacon Mode" (Medium, steady glow)
+            size = msg.score > 10 ? 8 : 6;
+            pulseClass = 'kaiku-pulse-steady';
+        } 
+        else {
+            // ZOOM > 13: "Interaction Mode" (Large, intense pulse)
+            size = msg.score > 5 ? 12 : 8;
+            if (msg.score > 20) size = 16;
+            
+            // Only new messages get the intense ring at high zoom
+            const isNew = age < 60000;
+            pulseClass = isNew ? 'kaiku-pulse-intense' : 'kaiku-pulse-steady';
+        }
+
         const color = msg.score < 0 ? '#64748b' : '#06b6d4';
         const glowColor = msg.score < 0 ? '#64748b' : '#22d3ee';
 
@@ -46,14 +67,16 @@ const PostMarker = React.memo(({ msg, onClick }: { msg: ChatMessage, onClick: ()
             className: 'leaflet-div-icon',
             html: html,
             iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2] 
+            iconAnchor: [size / 2, size / 2],
+            // Leaflet zIndexOffset helps sorting
         });
-    }, [msg.score, msg.timestamp, msg.id]); 
+    }, [msg.score, msg.timestamp, msg.id, zoomTier]); 
 
     return (
         <Marker 
             position={[msg.location.lat, msg.location.lng]}
             icon={icon}
+            zIndexOffset={msg.score * 10} // Native Leaflet sorting
             eventHandlers={{ click: onClick }}
         />
     );
@@ -71,16 +94,13 @@ const MapController: React.FC<{
 
   useEffect(() => {
       if (selectedLocation) {
-          map.flyTo([selectedLocation.lat, selectedLocation.lng], 10, {
+          map.flyTo([selectedLocation.lat, selectedLocation.lng], 14, { // Fly deeper (14) for better UX
               animate: true,
               duration: 1.5
           });
       }
   }, [selectedLocation, map]);
 
-  // FIX: Force a resize calculation after mount. 
-  // This solves the "gray map" or "partial map" issue in production/Vercel
-  // where the container size isn't immediately available to Leaflet.
   useEffect(() => {
       setTimeout(() => {
           map.invalidateSize();
@@ -120,6 +140,19 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
       onMapClick(); 
   };
 
+  // Determine Zoom Tier to minimize re-renders on every fractional zoom change
+  const zoomTier = useMemo(() => {
+      if (zoom < 10) return 0; // Stardust
+      if (zoom < 14) return 1; // Beacon
+      return 2; // Interaction
+  }, [zoom]);
+
+  // Sort messages so high score ones render ON TOP of low score ones
+  // This is critical for the "mössö" (clutter) problem.
+  const sortedMessages = useMemo(() => {
+      return [...messages].sort((a, b) => a.score - b.score);
+  }, [messages]);
+
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12]">
       <MapContainer
@@ -131,8 +164,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={2} 
-        // FIX: Relaxed bounds to -90/90. 
-        // The previous -85 limit caused tile clipping on some production renderers.
         maxBounds={[[-90, -180], [90, 180]]} 
         maxBoundsViscosity={1.0} 
         preferCanvas={true}
@@ -141,7 +172,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
         <TileLayer
           attribution={MAP_ATTRIBUTION}
           url={MAP_TILE_URL}
-          noWrap={true} // Keep this to prevent horizontal repeating
+          noWrap={true}
           opacity={0.8}
         />
 
@@ -154,11 +185,12 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
 
         <ArcLayer messages={messages} />
 
-        {messages.map(msg => (
+        {sortedMessages.map(msg => (
             <PostMarker 
                 key={msg.id}
                 msg={msg}
                 onClick={() => handleMarkerClick(msg)}
+                zoomTier={zoomTier}
             />
         ))}
         

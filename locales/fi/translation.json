@@ -1,0 +1,35 @@
+{
+  "feed": {
+    "signals_detected": "Signaalia Havaittu",
+    "regional_intercept": "ALUEELLINEN SIEPPAUS",
+    "local_signals": "PAIKALLISET SIGNAALIT",
+    "filtering": "Suodatus",
+    "no_signals": "Ei signaaleja havaittu.",
+    "clear_tag_hint": "Tyhjennä aihetunniste.",
+    "move_radar_hint": "Siirrä tutkaa uudelle alueelle.",
+    "replies": "Vastausta",
+    "delete_confirm": "Haluatko varmasti poistaa tämän signaalin?",
+    "visitor_remote": "Etäsignaali maasta: {{country}}",
+    "visitor_global": "Globaali signaali maasta: {{country}}"
+  },
+  "input": {
+    "broadcast_signal": "Lähetä Signaali",
+    "to": "Kohde:",
+    "locating": "Paikannetaan...",
+    "rate_limit_exceeded": "Lähetysraja Ylittyi",
+    "wait_message": "Odota {{time}} ennen seuraavaa lähetystä.",
+    "placeholder": "Mitä lähistöllä tapahtuu?",
+    "broadcast_btn": "LÄHETÄ",
+    "disclaimer": "Signaalisi yhdistetään alueelliseen verkkoon yksityisyyden turvaamiseksi. Tarkkaa sijaintia ei koskaan näytetä.",
+    "error_transmission": "Lähetys epäonnistui."
+  },
+  "thread": {
+    "title": "KETJU",
+    "replies_label": "Vastaukset",
+    "loading": "Ladataan...",
+    "no_replies": "Ei vastauksia. Ole ensimmäinen.",
+    "post_reply_placeholder": "Kirjoita vastaus...",
+    "delete_signal_tooltip": "Poista signaali",
+    "error_send_reply": "Vastauksen lähetys epäonnistui. Yritä uudelleen."
+  }
+}
