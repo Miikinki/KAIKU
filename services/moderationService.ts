@@ -40,3 +40,24 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
     return { city: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`, countryCode: "" };
   }
 };
+
+// 3. IP-Based Location Fallback
+// Used when GPS is unavailable or timed out.
+export const getIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+    try {
+        // Calling this API without lat/lng params returns the IP-based location
+        const response = await fetch(
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en`
+        );
+        if (!response.ok) return null;
+        const data = await response.json();
+        
+        if (data.latitude && data.longitude) {
+            return { lat: data.latitude, lng: data.longitude };
+        }
+        return null;
+    } catch (e) {
+        console.warn("IP Location failed", e);
+        return null;
+    }
+};

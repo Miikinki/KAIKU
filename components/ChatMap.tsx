@@ -114,7 +114,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
 
-  // Adjusted threshold: UI warning triggers at 12, forcing "Security Protocol" look
+  // "Security Protocol" Warning Threshold
+  // Triggers just before max zoom to warn user.
   const isMaxZoom = zoom >= 12;
 
   return (
@@ -128,8 +129,10 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={4}
-        // Reduced from 14 to 13 (Neighborhood level, but not street address level)
-        maxZoom={13}
+        // Precision Zoom: 12.5
+        // Just enough to distinguish neighborhoods, but not street details.
+        maxZoom={12.5}
+        zoomSnap={0.5} // Allow half-step zooming
         maxBounds={[[-90, -220], [90, 220]]} 
         maxBoundsViscosity={1.0} 
         preferCanvas={true}

@@ -1,4 +1,5 @@
 
+
 export interface ChatMessage {
   id: string;
   text: string;
@@ -16,7 +17,8 @@ export interface ChatMessage {
   isRemote?: boolean; // Signal Origin Indicator
   originCountry?: string; // ISO Country Code (e.g. "FI", "US") - Where the User IS
   tags?: string[]; // Array of hashtags found in the text (e.g. ["#summer", "#helsinki"])
-  customOrigin?: { lat: number, lng: number }; // TRANSIENT: For animating "My" outgoing messages precisely
+  customOrigin?: { lat: number, lng: number }; // TRANSIENT: For animating "My" outgoing messages precisely (Local Echo)
+  preciseOrigin?: { lat: number, lng: number }; // PERSISTENT: Extracted from metadata for accurate remote arcs
 }
 
 export interface ViewportBounds {

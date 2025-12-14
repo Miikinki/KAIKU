@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Radio, Zap, Volume2, VolumeX } from 'lucide-react';
+import { Plus, Radio, Zap, Volume2, VolumeX, AlertCircle } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -166,34 +166,47 @@ function App() {
      // 1. Prefer cached high-accuracy watch position
      if (locationCache.current) return locationCache.current;
      
-     // 2. Fallback to one-shot
-     return new Promise((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                locationCache.current = loc; 
-                resolve(loc);
-            },
-            () => {
-                // Last resort fallback (Helsinki)
-                resolve({ lat: 60.1699, lng: 24.9384 });
-            },
-            { timeout: 5000, enableHighAccuracy: true }
-        );
+     // 2. Try explicit current position (wait up to 10s)
+     // STRICT MODE: No IP fallback, No Hardcoded fallback.
+     return new Promise((resolve, reject) => {
+         if (!navigator.geolocation) {
+             reject(new Error("Geolocation not supported"));
+             return;
+         }
+
+         navigator.geolocation.getCurrentPosition(
+             (pos) => {
+                 const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                 locationCache.current = loc;
+                 resolve(loc);
+             }, 
+             (err) => {
+                 console.warn("GPS failed", err);
+                 reject(new Error("GPS signal required."));
+             }, 
+             { 
+                 timeout: 10000, 
+                 enableHighAccuracy: true 
+             }
+         );
      });
   };
 
   const handleOpenInput = async () => {
       SoundService.playClick();
-      setIsInputOpen(true);
       setTargetLocation(null); 
 
-      const userLoc = await getLocation();
-      const lat = userLoc.lat;
-      const lng = userLoc.lng;
+      try {
+          const userLoc = await getLocation();
+          const lat = userLoc.lat;
+          const lng = userLoc.lng;
 
-      const nameData = await getCityName(lat, lng);
-      setTargetLocation({ lat, lng, name: nameData.city });
+          const nameData = await getCityName(lat, lng);
+          setTargetLocation({ lat, lng, name: nameData.city });
+          setIsInputOpen(true);
+      } catch (e) {
+          alert("GPS Signal Lost. Cannot broadcast without precise location.");
+      }
   };
 
   const handleSaveMessage = async (text: string) => {
@@ -210,43 +223,48 @@ function App() {
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
-      // Force get latest location for the arc origin
-      const userLoc = await getLocation(); 
-      
-      let targetLat = userLoc.lat;
-      let targetLng = userLoc.lng;
+      try {
+          // Force get latest location for the arc origin
+          const userLoc = await getLocation(); 
+          
+          let targetLat = userLoc.lat;
+          let targetLng = userLoc.lng;
 
-      if (selectedMessage) {
-          targetLat = selectedMessage.location.lat;
-          targetLng = selectedMessage.location.lng;
+          if (selectedMessage) {
+              targetLat = selectedMessage.location.lat;
+              targetLng = selectedMessage.location.lng;
+          }
+
+          const dist = calculateDistance(userLoc.lat, userLoc.lng, targetLat, targetLng);
+          // If > 25km, it's considered remote enough to warrant an arc
+          const isRemote = dist > 25; 
+
+          await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
+          
+          // VISUAL FEEDBACK
+          // Because we have the exact userLoc here, this arc will be precise.
+          if (isRemote) {
+              const tempSignal: ChatMessage = {
+                  id: `local-echo-${Date.now()}`,
+                  text: text,
+                  timestamp: Date.now(),
+                  location: { lat: targetLat, lng: targetLng },
+                  city: "Target",
+                  sessionId: "me", // Marker for ArcLayer to recognize as local
+                  score: 0,
+                  parentId: parentId,
+                  isRemote: true,
+                  originCountry: "ME",
+                  // CRITICAL: Inject EXACT user GPS for the Arc start point
+                  customOrigin: { lat: userLoc.lat, lng: userLoc.lng } 
+              };
+              setSignals(prev => [...prev, tempSignal]);
+          }
+
+          await loadData();
+      } catch (e) {
+          alert("GPS Signal Lost. Cannot send reply.");
       }
-
-      const dist = calculateDistance(userLoc.lat, userLoc.lng, targetLat, targetLng);
-      // If > 25km, it's considered remote enough to warrant an arc
-      const isRemote = dist > 25; 
-
-      await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
-      
-      // VISUAL FEEDBACK
-      if (isRemote) {
-          const tempSignal: ChatMessage = {
-              id: `local-echo-${Date.now()}`,
-              text: text,
-              timestamp: Date.now(),
-              location: { lat: targetLat, lng: targetLng },
-              city: "Target",
-              sessionId: "me",
-              score: 0,
-              parentId: parentId,
-              isRemote: true,
-              originCountry: "ME",
-              // CRITICAL: Inject EXACT user GPS for the Arc start point
-              customOrigin: { lat: userLoc.lat, lng: userLoc.lng } 
-          };
-          setSignals(prev => [...prev, tempSignal]);
-      }
-
-      await loadData();
   };
 
   const handleVote = async (msgId: string, direction: 'up' | 'down') => {

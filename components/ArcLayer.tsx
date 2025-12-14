@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useMap } from 'react-leaflet';
 import { ChatMessage } from '../types';
 import { COUNTRY_COORDINATES, THEME_COLOR_GLOW } from '../constants';
+import { getAnonymousID } from '../services/storageService';
 
 interface ArcLayerProps {
   messages: ChatMessage[]; // Represents the Signal Queue
@@ -32,6 +33,7 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
   useEffect(() => {
     const newArcs: ActiveArc[] = [];
     const now = Date.now();
+    const mySessionId = getAnonymousID();
 
     const newSignals = messages.filter(m => {
         // Prevent re-animating the same signal ID
@@ -41,9 +43,15 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
 
         // Strict validation: 
         // 1. Must be a reply (parentId exists)
-        // 2. Must be remote OR have a custom origin (local user replying)
+        // 2. Must be remote OR have a custom/precise origin
         if (!m.parentId) return false;
-        if (!m.isRemote && !m.customOrigin) return false;
+        if (!m.isRemote && !m.customOrigin && !m.preciseOrigin) return false;
+
+        // DUPLICATE PREVENTION:
+        // If this is a server message (has ID, no customOrigin) from ME,
+        // we ignore it because the Local Echo (tempSignal) already handled the visual.
+        // This prevents double-arcs for the sender.
+        if (m.sessionId === mySessionId && !m.customOrigin) return false;
 
         return true;
     });
@@ -51,11 +59,15 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     newSignals.forEach(msg => {
        let origin: [number, number] | undefined;
 
-       // A. User's own reply (Precise Location)
+       // PRIORITY 1: User's own reply (Precise Local Echo)
        if (msg.customOrigin) {
            origin = [msg.customOrigin.lat, msg.customOrigin.lng];
        } 
-       // B. Remote reply (Country Center)
+       // PRIORITY 2: Metadata Origin (Precise Remote Arc for Everyone)
+       else if (msg.preciseOrigin) {
+           origin = [msg.preciseOrigin.lat, msg.preciseOrigin.lng];
+       }
+       // PRIORITY 3: Country Fallback (Legacy)
        else if (msg.originCountry && COUNTRY_COORDINATES[msg.originCountry]) {
            origin = COUNTRY_COORDINATES[msg.originCountry];
        }

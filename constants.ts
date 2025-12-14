@@ -1,4 +1,5 @@
 
+
 export const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 export const MAP_ATTRIBUTION = ''; // Hidden as per request
 
@@ -13,23 +14,21 @@ export const SCORE_THRESHOLD_HIDE = -5; // Hide posts with score <= -5
 export const THEME_COLOR = '#06b6d4'; // Cyan-500
 export const THEME_COLOR_GLOW = '#22d3ee'; // Cyan-400
 
+// PRIVACY SETTINGS
+// 0.03 degrees is roughly ~3km jitter. 
+// This ensures that even if IP geolocation is accurate, the saved point is never the user's exact house.
+export const PRIVACY_JITTER_DEG = 0.03; 
+
 // Basic moderation list
 export const BANNED_WORDS = [
   'spam', 'scam', 'buy', 'sell', 'crypto', 'nft' 
 ];
 
-// Jitter settings (in degrees, roughly)
-export const JITTER_CONFIG = {
-  GLOBAL: 0.45,   // ~50km
-  REGION: 0.09,   // ~10km
-  LOCAL: 0.045     // ~5km
-};
-
 // Approximate POPULATION centers for arc generation (Not geographic centers)
 // This ensures arcs look like they come from where people actually are.
 export const COUNTRY_COORDINATES: Record<string, [number, number]> = {
   // Nordics & Baltics
-  'FI': [61.9, 25.7], // Shifted South (Jyväskylä/Lahti axis) instead of Lapland
+  'FI': [60.1, 24.9], // Helsinki Region (Fixing the 'Central Finland' confusion)
   'SE': [59.3, 18.0], // Stockholm region
   'NO': [59.9, 10.7], // Oslo region
   'DK': [56.2, 9.5],
