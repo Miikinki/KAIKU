@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, MapPin, AlertCircle, Loader2, Clock } from 'lucide-react';
 import { THEME_COLOR } from '../constants';
+import { SoundService } from '../services/soundService';
 import { useTranslation } from 'react-i18next';
 
 interface ChatInputModalProps {
@@ -47,8 +48,10 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
     if (!text.trim()) return;
     setIsSubmitting(true);
     setError(null);
+    SoundService.playClick();
     try {
       await onSave(text);
+      SoundService.playSuccess();
       setText('');
       onClose();
     } catch (err: any) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Radio, Zap } from 'lucide-react';
+import { Plus, Radio, Zap, Volume2, VolumeX } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -7,6 +7,7 @@ import ThreadView from './components/ThreadView';
 import { ChatMessage, ViewportBounds } from './types';
 import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance } from './services/storageService';
 import { getCityName } from './services/moderationService';
+import { SoundService } from './services/soundService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -29,6 +30,9 @@ function App() {
   // -- HASHTAG SYSTEM STATE --
   const [activeTag, setActiveTag] = useState<string | null>(null);
   
+  // -- SOUND STATE --
+  const [isMuted, setIsMuted] = useState(SoundService.getMuteStatus());
+
   // New state to show user where they are posting
   const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number, name: string} | null>(null);
   
@@ -73,8 +77,9 @@ function App() {
                  // FIX: Ensure replies (messages with parentId) are NOT added to the main feed.
                  if (!message.parentId) {
                      next = [message, ...prev];
-                     // Trigger Shockwave for truly new messages
+                     // Trigger Shockwave & Sound for truly new messages
                      setLastNewMessage(message); 
+                     SoundService.playScan();
                  } else {
                      // If it is a reply, find the parent in the feed and increment its replyCount
                      // This gives immediate visual feedback in the feed without cluttering it
@@ -85,6 +90,8 @@ function App() {
                              ...parent,
                              replyCount: (parent.replyCount || 0) + 1
                          };
+                         // Also play sound for replies if desired, or keep silent for lower noise
+                         SoundService.playScan();
                      }
                  }
              }
@@ -140,10 +147,12 @@ function App() {
   };
 
   const handleMapClick = () => {
+    SoundService.playClick();
     setIsFeedOpen(true);
   };
 
   const handleTagClick = (tag: string) => {
+      SoundService.playClick();
       setActiveTag(tag);
       setIsFeedOpen(true); // Open feed to show results
       setSelectedMessage(null); // Close thread if open
@@ -173,6 +182,7 @@ function App() {
   };
 
   const handleOpenInput = async () => {
+      SoundService.playClick();
       setIsInputOpen(true);
       setTargetLocation(null); 
 
@@ -211,6 +221,7 @@ function App() {
   };
 
   const handleVote = async (msgId: string, direction: 'up' | 'down') => {
+    SoundService.playClick();
     setMessages(prev => prev.map(m => {
         if (m.id === msgId) {
             const delta = direction === 'up' ? 1 : -1; 
@@ -226,6 +237,12 @@ function App() {
     if (selectedMessage?.id === msgId) setSelectedMessage(null);
     await deleteMessage(msgId);
   };
+  
+  const toggleMute = () => {
+      const newState = SoundService.toggleMute();
+      setIsMuted(newState);
+      if (!newState) SoundService.playClick(); // Play sound to confirm unmute
+  };
 
   const hasSignal = visibleMessages.length > 0;
 
@@ -240,26 +257,38 @@ function App() {
         hasSignal={hasSignal}
       />
 
-      {/* HEADER LOGO (Top Left) */}
-      <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none">
-         <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 w-fit pointer-events-auto shadow-lg">
-            <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
-            <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
+      {/* HEADER LOGO & CONTROLS (Top Left) */}
+      <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">
+         
+         <div className="flex items-center gap-2 pointer-events-auto">
+             <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg">
+                <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
+                <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
+             </div>
+             
+             {/* MUTE BUTTON */}
+             <button 
+                onClick={toggleMute}
+                className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-colors shadow-lg"
+             >
+                 {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+             </button>
          </div>
+
       </div>
 
       <FeedPanel 
         visibleMessages={visibleMessages}
-        onMessageClick={(msg) => setSelectedMessage(msg)} 
+        onMessageClick={(msg) => { SoundService.playClick(); setSelectedMessage(msg); }} 
         isOpen={isFeedOpen}
-        toggleOpen={() => setIsFeedOpen(!isFeedOpen)}
+        toggleOpen={() => { SoundService.playClick(); setIsFeedOpen(!isFeedOpen); }}
         onVote={handleVote}
         onDelete={handleDelete}
-        onRefresh={loadData}
+        onRefresh={() => { SoundService.playClick(); loadData(); }}
         zoomLevel={currentBounds?.zoom}
         activeTag={activeTag}
         onTagClick={handleTagClick}
-        onClearTag={() => setActiveTag(null)}
+        onClearTag={() => { SoundService.playClick(); setActiveTag(null); }}
       />
 
       {/* BROADCAST BUTTON - TOP RIGHT */}
@@ -285,7 +314,7 @@ function App() {
 
       <ChatInputModal 
         isOpen={isInputOpen}
-        onClose={() => setIsInputOpen(false)}
+        onClose={() => { SoundService.playClick(); setIsInputOpen(false); }}
         onSave={handleSaveMessage}
         cooldownUntil={rateLimit.cooldownUntil}
         targetLocationName={targetLocation?.name}
@@ -294,7 +323,7 @@ function App() {
       {selectedMessage && (
           <ThreadView 
             parentMessage={selectedMessage}
-            onClose={() => setSelectedMessage(null)}
+            onClose={() => { SoundService.playClick(); setSelectedMessage(null); }}
             onReply={handleReplyMessage}
             onVote={handleVote}
             onDelete={handleDelete}
