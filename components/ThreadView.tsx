@@ -11,9 +11,10 @@ interface ThreadViewProps {
   onReply: (text: string, parentId: string) => Promise<void>;
   onVote: (msgId: string, direction: 'up' | 'down') => void;
   onDelete: (msgId: string, parentId?: string) => void;
+  onTagClick: (tag: string) => void;
 }
 
-const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete }) => {
+const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick }) => {
   const { t } = useTranslation();
   const [replies, setReplies] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -80,6 +81,29 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
             onDelete(msgId, parentMessage.id);
         }
     }
+  };
+
+  // --- TEXT PARSER (Clickable Hashtags) ---
+  const renderMessageText = (text: string) => {
+      const parts = text.split(/(#[\p{L}\p{N}_]+)/gu);
+      
+      return parts.map((part, index) => {
+          if (part.startsWith('#')) {
+              return (
+                  <span 
+                    key={index}
+                    onClick={(e) => { 
+                        e.stopPropagation(); 
+                        onTagClick(part); 
+                    }}
+                    className="text-cyan-400 font-bold hover:text-cyan-300 hover:underline cursor-pointer transition-colors"
+                  >
+                      {part}
+                  </span>
+              );
+          }
+          return <span key={index}>{part}</span>;
+      });
   };
 
   const renderVisitorBadge = (msg: ChatMessage) => {
@@ -159,8 +183,9 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     )}
                 </div>
             </div>
+            {/* RENDER TEXT WITH HASHTAGS */}
             <p className={`text-sm text-gray-200 leading-relaxed whitespace-pre-wrap ${isParent ? 'font-medium text-base' : 'font-light'}`}>
-                {msg.text}
+                {renderMessageText(msg.text)}
             </p>
         </div>
       </div>

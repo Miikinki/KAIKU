@@ -4,6 +4,7 @@
     "regional_intercept": "REGIONAL INTERCEPT",
     "local_signals": "LOCAL SIGNALS",
     "filtering": "Filtering",
+    "trending_header": "TRENDING NOW (24H)",
     "no_signals": "Scanning sector...",
     "clear_tag_hint": "Try clearing the tag filter.",
     "move_radar_hint": "Move the radar to a new location.",
@@ -34,6 +35,7 @@
   },
   "map": {
     "sector_scan_active": "Sector Scan Active",
-    "signal_locked": "SIGNAL LOCKED"
+    "signal_locked": "SIGNAL LOCKED",
+    "zoom_limit": "SECURITY PROTOCOL: PRECISE LOCATION ENCRYPTED"
   }
 }

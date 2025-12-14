@@ -4,6 +4,7 @@
     "regional_intercept": "ALUEELLINEN SIEPPAUS",
     "local_signals": "PAIKALLISET SIGNAALIT",
     "filtering": "Suodatus",
+    "trending_header": "JUURI NYT (24H)",
     "no_signals": "Etsitään signaalia...",
     "clear_tag_hint": "Siirrä sektoria löytääksesi lähetyksiä.",
     "move_radar_hint": "Siirrä tutkaa uudelle alueelle.",
@@ -34,6 +35,7 @@
   },
   "map": {
     "sector_scan_active": "SEKTORISKANNAUS AKTIIVINEN",
-    "signal_locked": "SIGNAALI LUKITTU"
+    "signal_locked": "SIGNAALI LUKITTU",
+    "zoom_limit": "TURVALLISUUSPROTOKOLLA: TARKKA SIJAINTI SALATTU"
   }
 }

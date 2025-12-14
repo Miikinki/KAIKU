@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { THEME_COLOR } from '../constants';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
@@ -15,23 +15,49 @@ interface FeedPanelProps {
   onDelete: (msgId: string, parentId?: string) => void;
   onRefresh?: () => void;
   zoomLevel?: number;
+  activeTag: string | null;
+  onTagClick: (tag: string) => void;
+  onClearTag: () => void;
 }
 
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
-    visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel
+    visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel,
+    activeTag, onTagClick, onClearTag
 }) => {
   const { t } = useTranslation();
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
-  // -- TAG FILTER STATE --
-  const [activeTag, setActiveTag] = useState<string | null>(null);
   
   const currentSessionId = getAnonymousID();
 
   useEffect(() => {
     setUserVotes(getUserVotes());
   }, [visibleMessages, isOpen]);
+
+  // --- TRENDING CALCULATION ---
+  // Calculates top hashtags from the VISIBLE messages in the last 24h.
+  // This means "Trending" is context-aware based on where the user is looking on the map.
+  const trendingTags = useMemo(() => {
+      if (activeTag) return []; // Don't calc trends if already filtering
+
+      const now = Date.now();
+      const timeWindow = 24 * 60 * 60 * 1000; // 24 hours
+      const counts: Record<string, number> = {};
+
+      visibleMessages.forEach(msg => {
+          if (now - msg.timestamp < timeWindow && msg.tags) {
+              msg.tags.forEach(tag => {
+                  counts[tag] = (counts[tag] || 0) + 1;
+              });
+          }
+      });
+
+      return Object.entries(counts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 5) // Top 5
+          .map(([tag, count]) => ({ tag, count }));
+  }, [visibleMessages, activeTag]);
+
 
   const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
     e.stopPropagation();
@@ -61,11 +87,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       }
   };
 
-  const handleTagClick = (e: React.MouseEvent, tag: string) => {
-      e.stopPropagation();
-      setActiveTag(tag);
-  };
-
   // --- TEXT PARSER (Soft Tags) ---
   const renderMessageText = (text: string) => {
       // Split by hashtags (capturing the hashtag so it's in the array)
@@ -76,7 +97,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
               return (
                   <span 
                     key={index}
-                    onClick={(e) => handleTagClick(e, part)}
+                    onClick={(e) => { e.stopPropagation(); onTagClick(part); }}
                     className="text-cyan-400 font-bold hover:text-cyan-300 hover:underline cursor-pointer transition-colors"
                   >
                       {part}
@@ -89,7 +110,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   // --- FILTER LOGIC ---
   const displayMessages = activeTag 
-    ? visibleMessages.filter(msg => msg.tags?.includes(activeTag))
+    ? visibleMessages.filter(msg => msg.tags?.includes(activeTag) || msg.text.includes(activeTag))
     : visibleMessages;
 
   // --- VISITOR ICON LOGIC ---
@@ -115,19 +136,12 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   const feedTitle = (zoomLevel && zoomLevel < 9) ? t('feed.regional_intercept') : t('feed.local_signals');
   
   // VARIANTS
-  // open: Full screen (mostly)
-  // peek: Half screen (Tuner Mode) 
-  // collapsed: Only header visible (approx 60-70px from bottom)
   const variants = {
       open: { y: 0 },
       peek: { y: '55%' },
       collapsed: { y: 'calc(100% - 76px)' } 
   };
 
-  // Logic: 
-  // 1. If explicitly Open -> Open
-  // 2. If 0 messages -> Collapsed (Show only header to maximize map)
-  // 3. Otherwise -> Peek (Show some messages)
   const currentState = isOpen 
     ? 'open' 
     : (displayMessages.length === 0 ? 'collapsed' : 'peek');
@@ -208,7 +222,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             <span>{t('feed.filtering')}: <span className="font-bold">{activeTag}</span></span>
                         </div>
                         <button 
-                            onClick={() => setActiveTag(null)}
+                            onClick={onClearTag}
                             className="p-1 hover:bg-white/10 rounded-full text-cyan-200 transition-colors"
                         >
                             <X size={16} />
@@ -219,6 +233,33 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
         </AnimatePresence>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508]">
+            
+            {/* TRENDING TOPICS (Only show if open and no active filter) */}
+            {isOpen && !activeTag && trendingTags.length > 0 && (
+                <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-4 pb-4 border-b border-white/5"
+                >
+                    <div className="flex items-center gap-2 mb-3 text-xs font-bold text-cyan-500/80 uppercase tracking-widest px-1">
+                         <TrendingUp size={12} />
+                         <span>{t('feed.trending_header')}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {trendingTags.map((tItem) => (
+                            <button
+                                key={tItem.tag}
+                                onClick={(e) => { e.stopPropagation(); onTagClick(tItem.tag); }}
+                                className="group flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 hover:bg-cyan-500/10 border border-white/5 hover:border-cyan-500/40 transition-all active:scale-95"
+                            >
+                                <span className="text-sm font-medium text-cyan-200 group-hover:text-cyan-400">{tItem.tag}</span>
+                                <span className="text-[10px] text-gray-500 font-mono group-hover:text-cyan-500/70">{tItem.count}</span>
+                            </button>
+                        ))}
+                    </div>
+                </motion.div>
+            )}
+
             {displayMessages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 text-center pb-20">
                 <Shield size={48} className="mb-4 opacity-20" />

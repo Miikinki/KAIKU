@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
-import { Crosshair, Lock } from 'lucide-react';
+import { Crosshair, Lock, ShieldAlert } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
@@ -123,6 +123,9 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
 
+  // 11 is the maxZoom set in MapContainer.
+  const isMaxZoom = zoom >= 11;
+
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
       <MapContainer
@@ -135,7 +138,9 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={4}
         maxZoom={11}
-        maxBounds={[[-90, -180], [90, 180]]} 
+        // Expanded Bounds to allow scrolling past 180/-180 meridian (e.g. Russia/Alaska)
+        // This solves the "wall" issue on wide screens.
+        maxBounds={[[-90, -220], [90, 220]]} 
         maxBoundsViscosity={1.0} 
         preferCanvas={true}
         worldCopyJump={false} 
@@ -164,30 +169,51 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
           {/* Wrapper for Circle and Crosshair */}
           <div className="relative flex items-center justify-center transition-all duration-200">
               {/* Animated Target HUD */}
-              <div className={`absolute flex items-center justify-center w-64 h-64 transition-all duration-200 ease-out ${hasSignal ? 'opacity-100 scale-105' : 'opacity-20 scale-100'}`}>
+              <div className={`absolute flex items-center justify-center w-64 h-64 transition-all duration-200 ease-out 
+                  ${isMaxZoom ? 'opacity-100 scale-110' : (hasSignal ? 'opacity-100 scale-105' : 'opacity-20 scale-100')}
+              `}>
                    {/* Outer Ring */}
-                   <div className={`absolute inset-0 border rounded-full animate-[spin_10s_linear_infinite] transition-colors duration-200 ${hasSignal ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]' : 'border-cyan-500/30'}`} />
+                   <div className={`absolute inset-0 border rounded-full animate-[spin_10s_linear_infinite] transition-colors duration-300 
+                       ${isMaxZoom 
+                            ? 'border-red-500 shadow-[0_0_25px_rgba(239,68,68,0.6)]' 
+                            : (hasSignal ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]' : 'border-cyan-500/30')
+                       }`} 
+                   />
                    
                    {/* Inner Dashed Ring */}
-                   <div className={`absolute inset-4 border rounded-full border-dashed animate-[spin_15s_linear_infinite_reverse] transition-colors duration-200 ${hasSignal ? 'border-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'border-cyan-500/20'}`} />
+                   <div className={`absolute inset-4 border rounded-full border-dashed animate-[spin_15s_linear_infinite_reverse] transition-colors duration-300 
+                       ${isMaxZoom 
+                            ? 'border-red-400/50 shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
+                            : (hasSignal ? 'border-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'border-cyan-500/20')
+                       }`} 
+                   />
               </div>
               
               {/* Center Crosshair */}
-              <div className={`transition-all duration-200 z-10 ${hasSignal ? 'text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.9)] scale-110' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]'}`}>
-                  {hasSignal ? <Lock size={32} strokeWidth={2} /> : <Crosshair size={32} strokeWidth={1.5} />}
+              <div className={`transition-all duration-300 z-10 
+                  ${isMaxZoom 
+                      ? 'text-red-500 drop-shadow-[0_0_12px_rgba(239,68,68,1)] scale-125' 
+                      : (hasSignal ? 'text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.9)] scale-110' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]')
+                  }`}>
+                  {isMaxZoom ? <ShieldAlert size={32} strokeWidth={2} /> : (hasSignal ? <Lock size={32} strokeWidth={2} /> : <Crosshair size={32} strokeWidth={1.5} />)}
               </div>
           </div>
 
           {/* HUD Text */}
-          <div className={`mt-36 flex items-center gap-2 text-[10px] font-mono tracking-[0.2em] uppercase px-4 py-2 rounded backdrop-blur-md border shadow-lg transition-all duration-200 ${
-              hasSignal 
-                ? 'bg-cyan-500/20 border-cyan-400 text-white shadow-[0_0_20px_rgba(34,211,238,0.4)]' 
-                : 'bg-black/60 border-cyan-500/20 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]'
+          <div className={`mt-36 flex items-center gap-2 text-[10px] font-mono tracking-[0.2em] uppercase px-4 py-2 rounded backdrop-blur-md border shadow-lg transition-all duration-300 ${
+              isMaxZoom
+                ? 'bg-red-950/80 border-red-500 text-red-500 shadow-[0_0_30px_rgba(220,38,38,0.5)] animate-pulse'
+                : (hasSignal 
+                    ? 'bg-cyan-500/20 border-cyan-400 text-white shadow-[0_0_20px_rgba(34,211,238,0.4)]' 
+                    : 'bg-black/60 border-cyan-500/20 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]')
           }`}>
-              <span className={`drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] ${hasSignal ? 'animate-none font-bold' : 'animate-pulse'}`}>
-                {hasSignal ? t('map.signal_locked') : t('map.sector_scan_active')}
+              <span className={`drop-shadow-md ${isMaxZoom || hasSignal ? 'font-bold' : ''}`}>
+                {isMaxZoom 
+                    ? t('map.zoom_limit') 
+                    : (hasSignal ? t('map.signal_locked') : t('map.sector_scan_active'))
+                }
               </span>
-              {!hasSignal && <AnimatedEllipsis />}
+              {!hasSignal && !isMaxZoom && <AnimatedEllipsis />}
           </div>
       </div>
     </div>

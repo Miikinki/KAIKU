@@ -11,6 +11,7 @@ const resources = {
         "regional_intercept": "REGIONAL INTERCEPT",
         "local_signals": "LOCAL SIGNALS",
         "filtering": "Filtering",
+        "trending_header": "TRENDING NOW (24H)",
         "no_signals": "Scanning sector...",
         "clear_tag_hint": "Try clearing the tag filter.",
         "move_radar_hint": "Move the radar to a new location.",
@@ -41,7 +42,8 @@ const resources = {
       },
       "map": {
         "sector_scan_active": "Sector Scan Active",
-        "signal_locked": "SIGNAL LOCKED"
+        "signal_locked": "SIGNAL LOCKED",
+        "zoom_limit": "SECURITY PROTOCOL: PRECISE LOCATION ENCRYPTED"
       }
     }
   },
@@ -52,6 +54,7 @@ const resources = {
         "regional_intercept": "ALUEELLINEN SIEPPAUS",
         "local_signals": "PAIKALLISET SIGNAALIT",
         "filtering": "Suodatus",
+        "trending_header": "JUURI NYT (24H)",
         "no_signals": "Etsitään signaalia...",
         "clear_tag_hint": "Siirrä sektoria löytääksesi lähetyksiä.",
         "move_radar_hint": "Siirrä tutkaa uudelle alueelle.",
@@ -82,7 +85,8 @@ const resources = {
       },
       "map": {
         "sector_scan_active": "SEKTORISKANNAUS AKTIIVINEN",
-        "signal_locked": "SIGNAALI LUKITTU"
+        "signal_locked": "SIGNAALI LUKITTU",
+        "zoom_limit": "TURVALLISUUSPROTOKOLLA: TARKKA SIJAINTI SALATTU"
       }
     }
   }

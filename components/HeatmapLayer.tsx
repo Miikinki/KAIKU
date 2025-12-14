@@ -132,15 +132,16 @@ const GlowLayer = L.Layer.extend({
         const now = Date.now();
 
         // Scale tuning based on Zoom
+        // Adjusted to be slightly larger at low zooms to avoid "tiny dots" issue
         let baseRadius = 15 * dpr;
         let baseIntensity = 0.4;
 
         if (zoom < 5) { 
-            baseRadius = 4 * dpr; 
+            baseRadius = 6 * dpr; // Increased from 4
             baseIntensity = 0.6; 
         }
         else if (zoom < 8) { 
-            baseRadius = 10 * dpr; 
+            baseRadius = 13 * dpr; // Increased from 10
             baseIntensity = 0.5; 
         }
         else if (zoom < 10) { 
@@ -176,12 +177,17 @@ const GlowLayer = L.Layer.extend({
             let radius = baseRadius * breathing;
             let intensity = baseIntensity * breathing;
             
-            if (msg.score > 5) { radius *= 1.5; intensity += 0.2; }
-            if (msg.score > 20) { radius *= 2.0; intensity = 0.8; }
+            // Score multipliers (Toned down slightly to keep new messages competitive)
+            if (msg.score > 5) { radius *= 1.25; intensity += 0.1; }
+            if (msg.score > 20) { radius *= 1.5; intensity = 0.8; }
             
-            // New signal flash
+            // New signal flash - BOOST NEW MESSAGES
+            // This ensures user-created content (which starts at score 0) feels significant
             const ageHours = (now - msg.timestamp) / (1000 * 60 * 60);
-            if (ageHours < 1) intensity += 0.2;
+            if (ageHours < 4) {
+                intensity += 0.25;
+                radius *= 1.3; // Make fresh signals physically larger
+            }
 
             intensity = Math.min(intensity, 1.0);
 

@@ -10,9 +10,11 @@ import { getCityName } from './services/moderationService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
 
-// Radius of the visual ring in pixels (w-64 = 256px diam => 128px radius)
-// Setting this exactly to 128px ensures what you see is what you scan.
-const SCAN_RADIUS_PX = 128; 
+// Radius of the visual ring in pixels.
+// Visual ring is w-64 (256px) -> 128px radius.
+// We set this slightly higher (142px) to account for the ring's thickness and glow,
+// making the "lock" feel more responsive when the dot touches the outer edge.
+const SCAN_RADIUS_PX = 142; 
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
@@ -23,6 +25,9 @@ function App() {
   const [isFeedOpen, setIsFeedOpen] = useState(false); 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
+  
+  // -- HASHTAG SYSTEM STATE --
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   
   // New state to show user where they are posting
   const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number, name: string} | null>(null);
@@ -65,9 +70,23 @@ function App() {
              if (exists !== -1) {
                  next[exists] = { ...next[exists], ...message };
              } else {
-                 next = [message, ...prev];
-                 // Trigger Shockwave for truly new messages
-                 setLastNewMessage(message); 
+                 // FIX: Ensure replies (messages with parentId) are NOT added to the main feed.
+                 if (!message.parentId) {
+                     next = [message, ...prev];
+                     // Trigger Shockwave for truly new messages
+                     setLastNewMessage(message); 
+                 } else {
+                     // If it is a reply, find the parent in the feed and increment its replyCount
+                     // This gives immediate visual feedback in the feed without cluttering it
+                     const parentIndex = prev.findIndex(p => p.id === message.parentId);
+                     if (parentIndex !== -1) {
+                         const parent = next[parentIndex];
+                         next[parentIndex] = {
+                             ...parent,
+                             replyCount: (parent.replyCount || 0) + 1
+                         };
+                     }
+                 }
              }
         }
         return next;
@@ -122,6 +141,12 @@ function App() {
 
   const handleMapClick = () => {
     setIsFeedOpen(true);
+  };
+
+  const handleTagClick = (tag: string) => {
+      setActiveTag(tag);
+      setIsFeedOpen(true); // Open feed to show results
+      setSelectedMessage(null); // Close thread if open
   };
 
   const getLocation = async (): Promise<{lat: number, lng: number}> => {
@@ -232,6 +257,9 @@ function App() {
         onDelete={handleDelete}
         onRefresh={loadData}
         zoomLevel={currentBounds?.zoom}
+        activeTag={activeTag}
+        onTagClick={handleTagClick}
+        onClearTag={() => setActiveTag(null)}
       />
 
       {/* BROADCAST BUTTON - TOP RIGHT */}
@@ -270,6 +298,7 @@ function App() {
             onReply={handleReplyMessage}
             onVote={handleVote}
             onDelete={handleDelete}
+            onTagClick={handleTagClick}
           />
       )}
 
