@@ -227,7 +227,9 @@ export const HeatLayer = L.Layer.extend({
         const canvas = this._canvas = L.DomUtil.create('canvas', 'leaflet-heatmap-layer leaflet-layer') as HTMLCanvasElement;
         
         const originProp = L.DomUtil.testProp(['transformOrigin', 'WebkitTransformOrigin', 'msTransformOrigin']);
-        (canvas.style as any)[originProp] = '0 0';
+        if (originProp) {
+            (canvas.style as any)[originProp] = '0 0';
+        }
 
         // REMOVED mix-blend-mode: screen. 
         // We rely on the base brush being cyan and proper alpha mapping to blend.

@@ -97,7 +97,9 @@ const GlowLayer = L.Layer.extend({
         const canvas = this._canvas = L.DomUtil.create('canvas', 'leaflet-glow-layer leaflet-layer') as HTMLCanvasElement;
         
         const originProp = L.DomUtil.testProp(['transformOrigin', 'WebkitTransformOrigin', 'msTransformOrigin']);
-        (canvas.style as any)[originProp] = '0 0';
+        if (originProp) {
+            (canvas.style as any)[originProp] = '0 0';
+        }
 
         // CRITICAL: Screen blending for additive light
         canvas.style.mixBlendMode = 'screen'; 
