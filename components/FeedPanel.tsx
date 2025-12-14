@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity } from 'lucide-react';
 import { ChatMessage } from '../types';
-import { THEME_COLOR } from '../constants';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { useTranslation } from 'react-i18next';
 
@@ -20,6 +19,32 @@ interface FeedPanelProps {
   onClearTag: () => void;
 }
 
+// Helper: Calculate if signal is dying
+const getSignalHealth = (msg: ChatMessage) => {
+    const expiry = msg.expiresAt || (msg.timestamp + 24 * 60 * 60 * 1000);
+    const diff = expiry - Date.now();
+    const hoursLeft = diff / (1000 * 60 * 60);
+    
+    return {
+        isCritical: hoursLeft < 1, // < 1h
+        isWeak: hoursLeft < 4,     // < 4h
+        timeLeftMs: diff
+    };
+};
+
+// Helper: Relative Creation Time (e.g. "5m ago")
+const formatRelativeTime = (timestamp: number) => {
+    const now = Date.now();
+    const diff = Math.max(0, now - timestamp);
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return new Date(timestamp).toLocaleDateString(); // Fallback for very old
+};
+
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
     visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel,
     activeTag, onTagClick, onClearTag
@@ -27,21 +52,26 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   const { t } = useTranslation();
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [now, setNow] = useState(Date.now());
   
   const currentSessionId = getAnonymousID();
+
+  // Update ticker
+  useEffect(() => {
+      if (!isOpen) return;
+      const interval = setInterval(() => setNow(Date.now()), 60000); // Update every minute
+      return () => clearInterval(interval);
+  }, [isOpen]);
 
   useEffect(() => {
     setUserVotes(getUserVotes());
   }, [visibleMessages, isOpen]);
 
   // --- TRENDING CALCULATION ---
-  // Calculates top hashtags from the VISIBLE messages in the last 24h.
-  // This means "Trending" is context-aware based on where the user is looking on the map.
   const trendingTags = useMemo(() => {
-      if (activeTag) return []; // Don't calc trends if already filtering
+      if (activeTag) return []; 
 
-      const now = Date.now();
-      const timeWindow = 24 * 60 * 60 * 1000; // 24 hours
+      const timeWindow = 24 * 60 * 60 * 1000; 
       const counts: Record<string, number> = {};
 
       visibleMessages.forEach(msg => {
@@ -54,21 +84,24 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
       return Object.entries(counts)
           .sort(([, a], [, b]) => b - a)
-          .slice(0, 5) // Top 5
+          .slice(0, 5) 
           .map(([tag, count]) => ({ tag, count }));
-  }, [visibleMessages, activeTag]);
+  }, [visibleMessages, activeTag, now]);
 
 
-  const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
+  const handleBoostClick = (e: React.MouseEvent, msgId: string) => {
     e.stopPropagation();
-    onVote(msgId, direction);
-    setUserVotes(prev => {
-        const current = prev[msgId];
-        const next = { ...prev };
-        if (current === direction) delete next[msgId];
-        else next[msgId] = direction;
-        return next;
-    });
+    if (userVotes[msgId] === 'up') return; // Already boosted
+
+    onVote(msgId, 'up');
+    setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
+  };
+
+  const handleReportClick = (e: React.MouseEvent, msgId: string) => {
+      e.stopPropagation();
+      if (window.confirm("Report this signal as spam/offensive? It will be removed from your view.")) {
+          onDelete(msgId);
+      }
   };
 
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, parentId?: string | null) => {
@@ -87,11 +120,9 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       }
   };
 
-  // --- TEXT PARSER (Soft Tags) ---
+  // --- TEXT PARSER ---
   const renderMessageText = (text: string) => {
-      // Split by hashtags (capturing the hashtag so it's in the array)
       const parts = text.split(/(#[\p{L}\p{N}_]+)/gu);
-      
       return parts.map((part, index) => {
           if (part.startsWith('#')) {
               return (
@@ -108,12 +139,10 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       });
   };
 
-  // --- FILTER LOGIC ---
   const displayMessages = activeTag 
     ? visibleMessages.filter(msg => msg.tags?.includes(activeTag) || msg.text.includes(activeTag))
     : visibleMessages;
 
-  // --- VISITOR ICON LOGIC ---
   const renderVisitorBadge = (msg: ChatMessage) => {
     if (!msg.isRemote) return null;
 
@@ -135,7 +164,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   const feedTitle = (zoomLevel && zoomLevel < 9) ? t('feed.regional_intercept') : t('feed.local_signals');
   
-  // VARIANTS
   const variants = {
       open: { y: 0 },
       peek: { y: '55%' },
@@ -234,7 +262,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508]">
             
-            {/* TRENDING TOPICS (Only show if open and no active filter) */}
+            {/* TRENDING TOPICS */}
             {isOpen && !activeTag && trendingTags.length > 0 && (
                 <motion.div 
                     initial={{ opacity: 0, y: -10 }}
@@ -271,29 +299,41 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 )}
             </div>
             ) : (
-            displayMessages.map((msg) => (
+            displayMessages.map((msg) => {
+                const { isCritical, isWeak } = getSignalHealth(msg);
+                const isBoosted = userVotes[msg.id] === 'up';
+
+                // BORDER COLOR LOGIC: Strong (Default) -> Weak (Orange) -> Critical (Red)
+                // This communicates signal strength visually.
+                let borderClass = 'border-white/5 hover:border-cyan-500/30'; // Strong
+                let bgClass = 'bg-white/5 hover:bg-white/10';
+
+                if (isCritical) {
+                    borderClass = 'border-red-500/50 hover:border-red-500';
+                    bgClass = 'bg-red-950/10';
+                } else if (isWeak) {
+                    borderClass = 'border-orange-500/30 hover:border-orange-500/60';
+                    bgClass = 'bg-orange-950/5';
+                }
+
+                return (
                 <motion.div
                 key={msg.id}
                 layoutId={msg.id}
                 onClick={() => onMessageClick(msg)}
-                className="group bg-white/5 hover:bg-white/10 border border-white/5 hover:border-cyan-500/30 rounded-xl p-4 cursor-pointer transition-all flex gap-4"
+                className={`group border rounded-xl p-4 cursor-pointer transition-all flex gap-4 ${borderClass} ${bgClass}`}
                 >
                 <div className="flex flex-col items-center justify-start gap-1 min-w-[30px] pt-1">
                     <button 
-                        onClick={(e) => handleVoteClick(e, msg.id, 'up')}
-                        className={`p-1 rounded-full transition-colors ${userVotes[msg.id] === 'up' ? 'text-cyan-400 bg-cyan-400/10' : 'text-gray-500 hover:text-white'}`}
+                        onClick={(e) => handleBoostClick(e, msg.id)}
+                        className={`p-2 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                        disabled={isBoosted}
                     >
-                        <ChevronUp size={24} />
+                        <Zap size={20} className={isBoosted ? "fill-cyan-400" : ""} />
                     </button>
-                    <span className={`text-sm font-bold font-mono ${msg.score > 0 ? 'text-white' : msg.score < 0 ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {msg.score > 0 ? '+' : ''}{msg.score}
+                    <span className={`text-xs font-bold font-mono ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
+                        {msg.score}
                     </span>
-                    <button 
-                        onClick={(e) => handleVoteClick(e, msg.id, 'down')}
-                        className={`p-1 rounded-full transition-colors ${userVotes[msg.id] === 'down' ? 'text-purple-400 bg-purple-400/10' : 'text-gray-500 hover:text-white'}`}
-                    >
-                        <ChevronDown size={24} />
-                    </button>
                 </div>
 
                 <div className="flex-1">
@@ -307,22 +347,34 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         <div className="flex items-center gap-2">
                             {renderVisitorBadge(msg)}
 
-                            {msg.sessionId === currentSessionId && (
+                            <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-gray-400">
+                                <Clock size={10} />
+                                {formatRelativeTime(msg.timestamp)}
+                                {isCritical && (
+                                    <span className="text-red-500 ml-1 animate-pulse tracking-wider">FAILING</span>
+                                )}
+                            </div>
+
+                            {msg.sessionId === currentSessionId ? (
                                 <button 
                                     onClick={(e) => handleDeleteClick(e, msg.id, msg.parentId)}
                                     className="relative z-10 p-1.5 bg-red-500/10 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-all shadow-sm"
                                 >
                                     <Trash2 size={12} />
                                 </button>
+                            ) : (
+                                <button 
+                                    onClick={(e) => handleReportClick(e, msg.id)}
+                                    className="relative z-10 p-1.5 text-gray-600 hover:text-red-400 transition-colors"
+                                    title="Report"
+                                >
+                                    <Flag size={12} />
+                                </button>
                             )}
-                            <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-                                <Clock size={10} />
-                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}
-                            </div>
                         </div>
                     </div>
                     
-                    {/* Render Text with Clickable Tags */}
+                    {/* Render Text */}
                     <p className="text-base text-gray-100 leading-relaxed font-light break-words">
                         {renderMessageText(msg.text)}
                     </p>
@@ -337,7 +389,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     </div>
                 </div>
                 </motion.div>
-            ))
+            )})
             )}
             <div className="h-20" /> 
         </div>

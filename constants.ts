@@ -7,9 +7,11 @@ export const MAX_POSTS_PER_WINDOW = 10;
 export const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 export const SPAM_RATE_LIMIT_MS = 4000; // 4 seconds between posts
 
-// Lifecycle & Scoring
-export const MESSAGE_LIFESPAN_MS = 48 * 60 * 60 * 1000; // 48 Hours
-export const SCORE_THRESHOLD_HIDE = -5; // Hide posts with score <= -5
+// Lifecycle & Scoring - SIGNAL DECAY SYSTEM
+export const BASE_LIFESPAN_MS = 24 * 60 * 60 * 1000; // 24 Hours Base Life
+export const BOOST_EXTENSION_MS = 4 * 60 * 60 * 1000; // +4 Hours per Boost
+export const MESSAGE_LIFESPAN_MS = BASE_LIFESPAN_MS; // Fallback ref
+export const SCORE_THRESHOLD_HIDE = -999; // Deprecated (since we don't downvote anymore), kept low to show everything alive
 
 export const THEME_COLOR = '#06b6d4'; // Cyan-500
 export const THEME_COLOR_GLOW = '#22d3ee'; // Cyan-400

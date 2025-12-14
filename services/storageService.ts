@@ -1,16 +1,15 @@
-
 import { ChatMessage, RateLimitStatus } from '../types';
 import { supabase } from './supabaseClient';
-import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, MESSAGE_LIFESPAN_MS, SCORE_THRESHOLD_HIDE, SPAM_RATE_LIMIT_MS, PRIVACY_JITTER_DEG } from '../constants';
+import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS, PRIVACY_JITTER_DEG } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
 
-const STORAGE_KEY = 'kaiku_local_data'; // Renamed from global_local_talk_data
+const STORAGE_KEY = 'kaiku_local_data'; 
 const USER_ID_KEY = 'kaiku_session_id'; 
 const USER_VOTES_KEY = 'kaiku_user_votes';
 const LAST_POST_TIMESTAMP_KEY = 'kaiku_last_post_ts';
 const DELETED_IDS_KEY = 'kaiku_deleted_ids'; 
 
-// --- SEED DATA (Minimal, KAIKU branded) ---
+// --- SEED DATA ---
 
 const SAMPLE_TEXTS = [
   "Signals are strong tonight. #kaiku",
@@ -27,14 +26,11 @@ const HUB_CITIES = [
 ];
 
 const extractTags = (text: string): string[] => {
-    // Matches #word containing letters (including unicode like äöå), numbers, or underscores
     const regex = /#[\p{L}\p{N}_]+/gu;
     const matches = text.match(regex);
-    return matches ? Array.from(new Set(matches)) : []; // Deduplicate
+    return matches ? Array.from(new Set(matches)) : []; 
 };
 
-// Helper: Process tags to find hidden location data
-// This is the magic that allows precise arcs for everyone
 const processTags = (rawTags: string[] | null) => {
     const tags = rawTags || [];
     let preciseOrigin: { lat: number, lng: number } | undefined = undefined;
@@ -50,9 +46,7 @@ const processTags = (rawTags: string[] | null) => {
                         lng: parseFloat(parts[1])
                     };
                 }
-            } catch (e) {
-                // Ignore parsing errors
-            }
+            } catch (e) {}
         } else {
             cleanTags.push(tag);
         }
@@ -64,25 +58,25 @@ const processTags = (rawTags: string[] | null) => {
 const generateSeedData = (): ChatMessage[] => {
   const messages: ChatMessage[] = [];
   let count = 0;
+  const now = Date.now();
 
   HUB_CITIES.forEach(city => {
     for (let i = 0; i < city.weight; i++) {
       const latJitter = (Math.random() - 0.5) * 0.05; 
       const lngJitter = (Math.random() - 0.5) * 0.05;
       const text = SAMPLE_TEXTS[Math.floor(Math.random() * SAMPLE_TEXTS.length)];
+      const timestamp = now - Math.floor(Math.random() * (BASE_LIFESPAN_MS / 2));
 
       messages.push({
         id: `seed-msg-${count}`,
         text: text,
-        timestamp: Date.now() - Math.floor(Math.random() * MESSAGE_LIFESPAN_MS),
-        location: { 
-          lat: city.lat + latJitter, 
-          lng: city.lng + lngJitter 
-        },
+        timestamp: timestamp,
+        expiresAt: timestamp + BASE_LIFESPAN_MS, // Default local expiry
+        location: { lat: city.lat + latJitter, lng: city.lng + lngJitter },
         city: city.name,
         country: city.country,
         sessionId: `seed-user-${Math.floor(Math.random() * 100)}`,
-        score: 0,
+        score: Math.floor(Math.random() * 5),
         replyCount: 0,
         isRemote: Math.random() > 0.8,
         originCountry: city.country,
@@ -171,20 +165,25 @@ export const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_MESSAGES));
   }
   
-  const cutoff = Date.now() - MESSAGE_LIFESPAN_MS;
+  // Local Filter: Check expiresAt
+  const now = Date.now();
   const valid = messages.filter((m: ChatMessage) => 
-      m.timestamp > cutoff && 
-      m.score > SCORE_THRESHOLD_HIDE &&
-      !deleted.has(m.id) 
+      !deleted.has(m.id) && m.expiresAt > now
   );
   
   return onlyRoot ? valid.filter((m: ChatMessage) => !m.parentId) : valid;
 };
 
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
+  const nowISO = new Date().toISOString();
+
+  // SUPABASE QUERY: 
+  // 1. Order by creation
+  // 2. FILTER: expires_at > NOW (Server-side filtering!)
   let query = supabase
     .from('kaiku_posts')
     .select('*, replies:kaiku_posts!parent_post_id(count)')
+    .gt('expires_at', nowISO) // <--- CRITICAL: Do not download dead messages
     .order('created_at', { ascending: false })
     .limit(500); 
 
@@ -203,12 +202,12 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
     return data
         .filter((d: any) => !deleted.has(d.id))
         .map((d: any) => {
-            // CRITICAL: Extract location from tags here
             const { tags, preciseOrigin } = processTags(d.tags);
             return {
                 id: d.id,
                 text: d.text,
                 timestamp: new Date(d.created_at).getTime(),
+                expiresAt: d.expires_at ? new Date(d.expires_at).getTime() : (Date.now() + BASE_LIFESPAN_MS),
                 location: { lat: Number(d.latitude), lng: Number(d.longitude) }, 
                 city: d.city_name,
                 country: d.target_country,
@@ -226,10 +225,15 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
 };
 
 export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => {
+    // Note: Replies might also expire, but usually we want to see them if the parent is alive.
+    // For consistency, we filter replies by expiry too.
+    const nowISO = new Date().toISOString();
+
     const { data, error } = await supabase
         .from('kaiku_posts')
         .select('*')
         .eq('parent_post_id', parentId)
+        .gt('expires_at', nowISO) // Only fetch alive replies
         .order('created_at', { ascending: true });
 
     if (error) {
@@ -247,6 +251,7 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
                 id: d.id,
                 text: d.text,
                 timestamp: new Date(d.created_at).getTime(),
+                expiresAt: d.expires_at ? new Date(d.expires_at).getTime() : (Date.now() + BASE_LIFESPAN_MS),
                 location: { lat: Number(d.latitude), lng: Number(d.longitude) },
                 city: d.city_name,
                 country: d.target_country,
@@ -303,20 +308,19 @@ export const saveMessage = async (
 
   const finalLat = jitter(targetLat);
   const finalLng = jitter(targetLng);
-  
-  // CRITICAL: Jitter the Sender Location and inject into tags
-  // This preserves privacy (exact home not shown) but gives a precise-enough start point for arcs.
   const senderLatJitter = jitter(userLat);
   const senderLngJitter = jitter(userLng);
   
   const tags = extractTags(text);
-  // HIDDEN METADATA
   tags.push(`__loc:${senderLatJitter.toFixed(5)},${senderLngJitter.toFixed(5)}`);
 
+  const now = Date.now();
+  
   const newMessage: ChatMessage = {
     id: generateUUID(), 
     text,
-    timestamp: Date.now(),
+    timestamp: now,
+    expiresAt: now + BASE_LIFESPAN_MS, // Optimistic local update
     location: { lat: finalLat, lng: finalLng },
     city: targetLocationData.city,
     country: (targetLocationData.countryCode || "").toUpperCase(), 
@@ -330,6 +334,7 @@ export const saveMessage = async (
     preciseOrigin: { lat: senderLatJitter, lng: senderLngJitter }
   };
 
+  // We don't send expires_at explicitly here; we let the DB Default (now() + 24h) handle it.
   const { error } = await supabase
       .from('kaiku_posts')
       .insert([{
@@ -343,7 +348,7 @@ export const saveMessage = async (
           parent_post_id: newMessage.parentId,
           origin_country: newMessage.originCountry,
           is_remote: newMessage.isRemote,
-          tags: newMessage.tags // Saves the __loc tag!
+          tags: newMessage.tags
       }]);
 
   if (error) {
@@ -362,21 +367,48 @@ export const saveMessage = async (
 export const deleteMessage = async (msgId: string) => {
     markAsDeleted(msgId);
     try {
-        await supabase.from('kaiku_posts').delete().eq('id', msgId);
-    } catch (err) {}
-    
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-        let localData = JSON.parse(stored);
-        localData = localData.filter((m: ChatMessage) => m.id !== msgId);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
-    }
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            let localData = JSON.parse(stored);
+            localData = localData.filter((m: ChatMessage) => m.id !== msgId);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
+        }
+    } catch (e) {}
 };
 
+// MODIFIED: BOOST (RPC CALL)
 export const castVote = async (msgId: string, direction: 'up' | 'down') => {
+    if (direction === 'down') return; 
+
     const votes = getUserVotes();
-    votes[msgId] = direction;
+    votes[msgId] = 'up'; 
     localStorage.setItem(USER_VOTES_KEY, JSON.stringify(votes));
+    
+    // CALL THE SERVER-SIDE FUNCTION
+    // This atomically increments score AND extends expires_at by 4 hours
+    const { error } = await supabase.rpc('boost_message', { message_id: msgId });
+    
+    if (error) {
+        console.error("Boost RPC failed:", error);
+        // Fallback for local testing if RPC missing:
+        // Note: This won't actually extend expiry on server without the RPC, just score
+        const { data } = await supabase.from('kaiku_posts').select('score').eq('id', msgId).single();
+        if (data) {
+            await supabase.from('kaiku_posts').update({ score: (data.score || 0) + 1 }).eq('id', msgId);
+        }
+    } else {
+        // Optimistically update local storage if needed (optional)
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            const localData = JSON.parse(stored);
+            const msg = localData.find((m: ChatMessage) => m.id === msgId);
+            if (msg) {
+                msg.score = (msg.score || 0) + 1;
+                msg.expiresAt = (msg.expiresAt || Date.now()) + BOOST_EXTENSION_MS;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
+            }
+        }
+    }
 };
 
 export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
@@ -396,7 +428,7 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
         .channel('kaiku_public')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'kaiku_posts' }, (payload) => {
             
-            if (payload.eventType === 'INSERT') {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                 const d = payload.new;
                 const { tags, preciseOrigin } = processTags(d.tags);
 
@@ -404,6 +436,7 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
                     id: d.id,
                     text: d.text,
                     timestamp: new Date(d.created_at).getTime(),
+                    expiresAt: d.expires_at ? new Date(d.expires_at).getTime() : (Date.now() + BASE_LIFESPAN_MS),
                     location: { lat: Number(d.latitude), lng: Number(d.longitude) },
                     city: d.city_name,
                     country: d.target_country,
@@ -413,8 +446,10 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
                     isRemote: d.is_remote,
                     originCountry: d.origin_country,
                     tags: tags,
-                    preciseOrigin: preciseOrigin // This ensures real-time arcs are accurate
+                    preciseOrigin: preciseOrigin 
                 };
+                
+                // If update, we might just re-insert to refresh state in UI
                 callback({ type: 'INSERT', message: msg });
             } else if (payload.eventType === 'DELETE') {
                 callback({ type: 'DELETE', id: payload.old.id });

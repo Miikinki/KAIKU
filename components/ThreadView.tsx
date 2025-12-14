@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, ChevronUp, ChevronDown, MapPin, AlertCircle, Trash2, Satellite } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,31 @@ interface ThreadViewProps {
   onDelete: (msgId: string, parentId?: string) => void;
   onTagClick: (tag: string) => void;
 }
+
+// Helper: Relative Creation Time (e.g. "5m ago")
+const formatRelativeTime = (timestamp: number) => {
+    const now = Date.now();
+    const diff = Math.max(0, now - timestamp);
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return new Date(timestamp).toLocaleDateString(); 
+};
+
+// Helper: Calculate if signal is dying
+const getSignalHealth = (msg: ChatMessage) => {
+    const expiry = msg.expiresAt || (msg.timestamp + 24 * 60 * 60 * 1000);
+    const diff = expiry - Date.now();
+    const hoursLeft = diff / (1000 * 60 * 60);
+    
+    return {
+        isCritical: hoursLeft < 1, 
+        isWeak: hoursLeft < 4
+    };
+};
 
 const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick }) => {
   const { t } = useTranslation();
@@ -59,15 +84,24 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     }
   };
 
-  const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
+  const handleBoostClick = (e: React.MouseEvent, msgId: string) => {
     e.stopPropagation();
-    onVote(msgId, direction);
-    setUserVotes(prev => {
-        const next = { ...prev };
-        if (next[msgId] === direction) delete next[msgId];
-        else next[msgId] = direction;
-        return next;
-    });
+    if (userVotes[msgId] === 'up') return; 
+    onVote(msgId, 'up');
+    setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
+  };
+
+  const handleReportClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
+    e.stopPropagation();
+    if (window.confirm("Report this signal as spam/offensive? It will be removed from your view.")) {
+        if (isParent) {
+             onDelete(msgId);
+             onClose();
+        } else {
+             onDelete(msgId, parentMessage.id);
+             setReplies(prev => prev.filter(r => r.id !== msgId));
+        }
+    }
   };
 
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
@@ -115,82 +149,96 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
         ? t('feed.visitor_remote', { country: msg.originCountry })
         : t('feed.visitor_global', { country: msg.originCountry });
 
-    if (isDomestic) {
-        return (
-             <div className="text-amber-400 flex items-center gap-1.5" title={title}>
-                <Satellite size={12} />
-             </div>
-        );
-    } else {
-        return (
-            <div className="text-amber-400 flex items-center gap-1.5" title={title}>
-                <Satellite size={12} />
-                {flagUrl && (
-                    <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
-                )}
-            </div>
-        );
-    }
+    return (
+        <div className="text-amber-400 flex items-center gap-1.5" title={title}>
+            <Satellite size={12} />
+            {!isDomestic && flagUrl && (
+                <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
+            )}
+        </div>
+    );
   };
 
-  const renderMessageCard = (msg: ChatMessage, isParent: boolean) => (
-    <div className={`p-4 ${isParent ? 'bg-white/10 border-b border-white/10' : 'bg-transparent border-l-2 border-white/10 ml-4 pl-4'}`}>
-      <div className="flex gap-3">
-        {/* Vote Column */}
-        <div className="flex flex-col items-center gap-1 min-w-[24px]">
-             <button 
-                onClick={(e) => handleVoteClick(e, msg.id, 'up')}
-                className={`p-0.5 rounded transition-colors ${userVotes[msg.id] === 'up' ? 'text-orange-400' : 'text-gray-500 hover:text-white'}`}
-            >
-                <ChevronUp size={18} />
-            </button>
-            <span className={`text-xs font-mono font-bold ${msg.score > 0 ? 'text-white' : 'text-gray-500'}`}>
-                {msg.score > 0 ? '+' : ''}{msg.score}
-            </span>
-            <button 
-                onClick={(e) => handleVoteClick(e, msg.id, 'down')}
-                className={`p-0.5 rounded transition-colors ${userVotes[msg.id] === 'down' ? 'text-blue-400' : 'text-gray-500 hover:text-white'}`}
-            >
-                <ChevronDown size={18} />
-            </button>
-        </div>
-        
-        {/* Content */}
-        <div className="flex-1">
-            <div className="flex justify-between items-start mb-1">
-                <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                    <span className="font-mono text-cyan-400">ID: {msg.sessionId.slice(0, 6)}</span>
-                    <span>•</span>
-                    <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' })}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    
-                    {renderVisitorBadge(msg)}
+  const renderMessageCard = (msg: ChatMessage, isParent: boolean) => {
+      const isBoosted = userVotes[msg.id] === 'up';
+      const { isCritical, isWeak } = getSignalHealth(msg);
 
-                    {msg.sessionId === currentSessionId && (
-                         <button 
-                            onClick={(e) => handleDeleteClick(e, msg.id, isParent)}
-                            className="text-gray-600 hover:text-red-400 transition-colors p-1"
-                            title={t('thread.delete_signal_tooltip')}
-                        >
-                            <Trash2 size={12} />
-                        </button>
-                    )}
-                    {isParent && (
-                        <div className="flex items-center gap-1 text-[10px] text-gray-500 uppercase">
-                            <MapPin size={10} /> {msg.city}
-                        </div>
-                    )}
-                </div>
+      let borderClass = isParent ? 'border-b border-white/10' : 'border-l-2 border-white/10 ml-4 pl-4';
+      
+      // Apply health colors if it's the parent message (replies usually don't have separate health logic visually in thread view, but we can add it lightly)
+      if (isParent) {
+         if (isCritical) borderClass += ' border-red-500/50';
+         else if (isWeak) borderClass += ' border-orange-500/30';
+      }
+
+      return (
+        <div className={`p-4 ${isParent ? 'bg-white/10' : 'bg-transparent'} ${borderClass}`}>
+        <div className="flex gap-3">
+            {/* Boost Column */}
+            <div className="flex flex-col items-center gap-1 min-w-[24px]">
+                <button 
+                    onClick={(e) => handleBoostClick(e, msg.id)}
+                    className={`p-1.5 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                    disabled={isBoosted}
+                >
+                    <Zap size={18} className={isBoosted ? "fill-cyan-400" : ""} />
+                </button>
+                <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
+                    {msg.score}
+                </span>
             </div>
-            {/* RENDER TEXT WITH HASHTAGS */}
-            <p className={`text-sm text-gray-200 leading-relaxed whitespace-pre-wrap ${isParent ? 'font-medium text-base' : 'font-light'}`}>
-                {renderMessageText(msg.text)}
-            </p>
+            
+            {/* Content */}
+            <div className="flex-1">
+                <div className="flex justify-between items-start mb-1">
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                        <span className="font-mono text-cyan-400">ID: {msg.sessionId.slice(0, 6)}</span>
+                        <span>•</span>
+                        <div className="flex items-center gap-1 font-mono font-bold">
+                            <Clock size={10} />
+                            {formatRelativeTime(msg.timestamp)}
+                            {isParent && isCritical && (
+                                <span className="text-red-500 ml-1 animate-pulse">FAILING</span>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        
+                        {renderVisitorBadge(msg)}
+
+                        {msg.sessionId === currentSessionId ? (
+                            <button 
+                                onClick={(e) => handleDeleteClick(e, msg.id, isParent)}
+                                className="text-gray-600 hover:text-red-400 transition-colors p-1"
+                                title={t('thread.delete_signal_tooltip')}
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        ) : (
+                             <button 
+                                onClick={(e) => handleReportClick(e, msg.id, isParent)}
+                                className="text-gray-600 hover:text-red-400 transition-colors p-1"
+                                title="Report"
+                            >
+                                <Flag size={12} />
+                            </button>
+                        )}
+                        {isParent && (
+                            <div className="flex items-center gap-1 text-[10px] text-gray-500 uppercase">
+                                <MapPin size={10} /> {msg.city}
+                            </div>
+                        )}
+                    </div>
+                </div>
+                {/* RENDER TEXT WITH HASHTAGS */}
+                <p className={`text-sm text-gray-200 leading-relaxed whitespace-pre-wrap ${isParent ? 'font-medium text-base' : 'font-light'}`}>
+                    {renderMessageText(msg.text)}
+                </p>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+        </div>
+      );
+  };
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">

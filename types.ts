@@ -4,6 +4,7 @@ export interface ChatMessage {
   id: string;
   text: string;
   timestamp: number;
+  expiresAt: number; // NEW: Absolute timestamp when message dies
   location: {
     lat: number;
     lng: number;
@@ -11,7 +12,7 @@ export interface ChatMessage {
   city: string; // The "Context" e.g., "Porvoo", "Unknown Sector"
   country?: string; // The "Target Country" e.g., "FI", "JP" (Where the pin is)
   sessionId: string; // Anonymous User ID
-  score: number; // Jodel-style score (Upvotes - Downvotes)
+  score: number; // Acts as "Boost Count"
   parentId?: string | null; // For threaded replies
   replyCount?: number; // Visual counter
   isRemote?: boolean; // Signal Origin Indicator
