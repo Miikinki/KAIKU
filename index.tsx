@@ -1,8 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { I18nextProvider } from 'react-i18next';
 import App from './App';
-import 'leaflet/dist/leaflet.css'; // CRITICAL FIX: Ensure CSS is bundled with JS
-import './i18n'; // Initialize i18n
+import i18n from './i18n';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -11,7 +11,9 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(
-  <>
-    <App />
-  </>
+  <React.StrictMode>
+    <I18nextProvider i18n={i18n}>
+      <App />
+    </I18nextProvider>
+  </React.StrictMode>
 );

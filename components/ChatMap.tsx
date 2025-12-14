@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { MapContainer, TileLayer, useMapEvents, Marker, useMap } from 'react-leaflet';
-import * as L from 'leaflet';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
+import { Crosshair } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
-import { MAP_TILE_URL, MAP_ATTRIBUTION, MESSAGE_LIFESPAN_MS } from '../constants';
+import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
+import HeatmapLayer from './HeatmapLayer';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -12,103 +13,31 @@ interface ChatMapProps {
   lastNewMessage: ChatMessage | null;
 }
 
-// --- OPTIMIZED POST MARKER COMPONENT ---
-// Now accepts 'zoomTier' to render differently based on map height.
-const PostMarker = React.memo(({ msg, onClick, zoomTier }: { msg: ChatMessage, onClick: () => void, zoomTier: number }) => {
-    
-    const icon = useMemo(() => {
-        const now = Date.now();
-        const age = now - msg.timestamp;
-        const lifeRatio = 1 - (age / MESSAGE_LIFESPAN_MS);
-        
-        let opacity = Math.max(0.3, lifeRatio).toFixed(2); 
-        let size = 8;
-        let pulseClass = 'kaiku-pulse-steady';
-        let zIndex = 100 + msg.score; // Higher score = on top
-
-        // LEVEL OF DETAIL (LOD) LOGIC
-        if (zoomTier === 0) {
-            // ZOOM < 10: "Stardust Mode" (Tiny, transparent, no rings)
-            size = msg.score > 20 ? 4 : 3; 
-            opacity = (parseFloat(opacity) * 0.6).toFixed(2); // More transparent to allow heatmap effect
-            pulseClass = 'kaiku-pulse-stardust';
-            zIndex = 50;
-        } 
-        else if (zoomTier === 1) {
-            // ZOOM 10-13: "Beacon Mode" (Medium, steady glow)
-            size = msg.score > 10 ? 8 : 6;
-            pulseClass = 'kaiku-pulse-steady';
-        } 
-        else {
-            // ZOOM > 13: "Interaction Mode" (Large, intense pulse)
-            size = msg.score > 5 ? 12 : 8;
-            if (msg.score > 20) size = 16;
-            
-            // Only new messages get the intense ring at high zoom
-            const isNew = age < 60000;
-            pulseClass = isNew ? 'kaiku-pulse-intense' : 'kaiku-pulse-steady';
-        }
-
-        const color = msg.score < 0 ? '#64748b' : '#06b6d4';
-        const glowColor = msg.score < 0 ? '#64748b' : '#22d3ee';
-
-        const html = `
-            <div class="marker-container ${pulseClass}" style="width: ${size}px; height: ${size}px; opacity: ${opacity};">
-                <div class="marker-core" style="
-                    width: ${size}px; 
-                    height: ${size}px; 
-                    background-color: ${color};
-                    box-shadow: 0 0 ${size}px ${glowColor};
-                "></div>
-            </div>
-        `;
-
-        return L.divIcon({
-            className: 'leaflet-div-icon',
-            html: html,
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2],
-            // Leaflet zIndexOffset helps sorting
-        });
-    }, [msg.score, msg.timestamp, msg.id, zoomTier]); 
-
-    return (
-        <Marker 
-            position={[msg.location.lat, msg.location.lng]}
-            icon={icon}
-            zIndexOffset={msg.score * 10} // Native Leaflet sorting
-            eventHandlers={{ click: onClick }}
-        />
-    );
-});
-
 // --- MAP CONTROLLER ---
 const MapController: React.FC<{ 
     onViewportChange: (b: ViewportBounds) => void, 
-    onMapClick: () => void,
-    setZoom: (z: number) => void,
-    selectedLocation: { lat: number, lng: number } | null
-}> = ({ onViewportChange, onMapClick, setZoom, selectedLocation }) => {
+    setZoom: (z: number) => void
+}> = ({ onViewportChange, setZoom }) => {
   
   const map = useMap();
 
+  // CRITICAL FIX: Robust Size Invalidation
   useEffect(() => {
-      if (selectedLocation) {
-          map.flyTo([selectedLocation.lat, selectedLocation.lng], 14, { // Fly deeper (14) for better UX
-              animate: true,
-              duration: 1.5
-          });
-      }
-  }, [selectedLocation, map]);
-
-  useEffect(() => {
-      setTimeout(() => {
-          map.invalidateSize();
-      }, 250);
+      const invalidate = () => map.invalidateSize();
+      invalidate();
+      const rafId = requestAnimationFrame(() => { invalidate(); });
+      const timer = setTimeout(invalidate, 500);
+      const container = map.getContainer();
+      const resizeObserver = new ResizeObserver(() => { invalidate(); });
+      resizeObserver.observe(container);
+      return () => {
+          cancelAnimationFrame(rafId);
+          clearTimeout(timer);
+          resizeObserver.disconnect();
+      };
   }, [map]);
 
   useMapEvents({
-    click: () => onMapClick(),
     moveend: () => {
         const bounds = map.getBounds();
         const z = map.getZoom();
@@ -132,29 +61,9 @@ const MapController: React.FC<{
 // --- MAIN CHAT MAP ---
 const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange, onMapClick, lastNewMessage }) => {
   const [zoom, setZoom] = useState(5);
-  const [flyToTarget, setFlyToTarget] = useState<{lat: number, lng: number} | null>(null);
-
-  const handleMarkerClick = (msg: ChatMessage) => {
-      setFlyToTarget({ lat: msg.location.lat, lng: msg.location.lng });
-      setTimeout(() => setFlyToTarget(null), 1000);
-      onMapClick(); 
-  };
-
-  // Determine Zoom Tier to minimize re-renders on every fractional zoom change
-  const zoomTier = useMemo(() => {
-      if (zoom < 10) return 0; // Stardust
-      if (zoom < 14) return 1; // Beacon
-      return 2; // Interaction
-  }, [zoom]);
-
-  // Sort messages so high score ones render ON TOP of low score ones
-  // This is critical for the "mössö" (clutter) problem.
-  const sortedMessages = useMemo(() => {
-      return [...messages].sort((a, b) => a.score - b.score);
-  }, [messages]);
 
   return (
-    <div className="absolute inset-0 z-0 bg-[#0a0a12]">
+    <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
       <MapContainer
         center={[25, 0]} 
         zoom={3}
@@ -164,6 +73,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={2} 
+        maxZoom={14} // RESTRICTION: City District Level (Privacy "Fog of Zoom")
         maxBounds={[[-90, -180], [90, 180]]} 
         maxBoundsViscosity={1.0} 
         preferCanvas={true}
@@ -177,24 +87,35 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
         />
 
         <MapController 
-            onMapClick={onMapClick} 
             onViewportChange={onViewportChange}
             setZoom={setZoom}
-            selectedLocation={flyToTarget}
         />
 
         <ArcLayer messages={messages} />
-
-        {sortedMessages.map(msg => (
-            <PostMarker 
-                key={msg.id}
-                msg={msg}
-                onClick={() => handleMarkerClick(msg)}
-                zoomTier={zoomTier}
-            />
-        ))}
+        
+        {/* HEATMAP LAYER: Pure visual aggregation of activity */}
+        <HeatmapLayer messages={messages} />
         
       </MapContainer>
+
+      {/* VIEWPORT TUNER CROSSHAIR OVERLAY */}
+      <div className="pointer-events-none absolute inset-0 z-[400] flex items-center justify-center">
+          {/* Animated Target HUD */}
+          <div className="relative flex items-center justify-center w-64 h-64 opacity-20">
+               <div className="absolute inset-0 border border-cyan-500/30 rounded-full animate-[spin_10s_linear_infinite]" />
+               <div className="absolute inset-4 border border-cyan-500/20 rounded-full border-dashed animate-[spin_15s_linear_infinite_reverse]" />
+          </div>
+          
+          {/* Center Crosshair */}
+          <div className="absolute text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]">
+              <Crosshair size={32} strokeWidth={1.5} />
+          </div>
+
+          {/* HUD Text */}
+          <div className="absolute mt-24 text-[10px] font-mono text-cyan-500/50 tracking-[0.2em] uppercase bg-black/40 px-2 py-1 rounded backdrop-blur-sm border border-white/5">
+              Sector Scan Active
+          </div>
+      </div>
     </div>
   );
 }, (prevProps, nextProps) => {

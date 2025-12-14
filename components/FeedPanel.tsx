@@ -114,34 +114,30 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   const feedTitle = (zoomLevel && zoomLevel < 9) ? t('feed.regional_intercept') : t('feed.local_signals');
   
+  // VARIANTS
+  // open: Full screen (mostly)
+  // peek: Half screen (Tuner Mode) - 60vh offset from top means 40vh height (approx 40% of screen)
   const variants = {
       open: { y: 0 },
       closed: { y: '100%' },
-      peek: { y: 'calc(100% - 60px)' } 
+      peek: { y: '55%' } 
   };
 
-  const currentState = isOpen ? 'open' : (visibleMessages.length > 0 ? 'peek' : 'closed');
+  // Always 'peek' if not explicitly open, unless absolutely no messages (then close to show map)
+  // Actually for Tuner model, we want it to stay up even if empty to show "No Signals"
+  const currentState = isOpen ? 'open' : 'peek';
 
   return (
     <>
-      {currentState === 'closed' && (
-        <button
-            onClick={toggleOpen}
-            className="fixed bottom-8 left-8 z-[400] bg-black/60 backdrop-blur-md border border-white/10 p-3 rounded-full text-white shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:bg-white/10 transition-all animate-pulse"
-        >
-            <Radar size={24} style={{ color: THEME_COLOR }} />
-        </button>
-      )}
-
       <motion.div
-        initial="closed"
+        initial="peek"
         animate={currentState}
         variants={variants}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed inset-x-0 bottom-0 top-[15vh] md:top-[10vh] bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden"
+        className="fixed inset-x-0 bottom-0 top-[15vh] bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden"
       >
         <div 
-            className={`p-4 border-b border-white/5 flex flex-col items-center bg-white/5 cursor-pointer transition-colors hover:bg-white/10 ${!isOpen ? 'h-[60px] justify-center' : ''}`}
+            className="p-4 border-b border-white/5 flex flex-col items-center bg-white/5 cursor-pointer transition-colors hover:bg-white/10"
             onClick={toggleOpen}
         >
           {isOpen && <div className="w-12 h-1.5 bg-white/20 rounded-full mb-4" />}
@@ -149,11 +145,18 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
           <div className="w-full flex justify-between items-center px-2">
             <div className="flex items-center gap-4">
                 {!isOpen ? (
-                    <div className="flex items-center gap-2 text-cyan-400 animate-pulse">
-                         <ScanLine size={20} />
-                         <span className="text-sm font-bold tracking-widest uppercase">
-                            {displayMessages.length} {t('feed.signals_detected')}
-                         </span>
+                    <div className="flex items-center gap-2">
+                         <div className={`p-1 rounded-full ${isRefreshing ? 'animate-spin' : ''}`}>
+                             <ScanLine size={20} className="text-cyan-400" />
+                         </div>
+                         <div className="flex flex-col">
+                             <span className="text-sm font-bold tracking-widest uppercase text-white">
+                                {feedTitle}
+                             </span>
+                             <span className="text-[10px] text-cyan-400 font-mono">
+                                {displayMessages.length} {t('feed.signals_detected')}
+                             </span>
+                         </div>
                     </div>
                 ) : (
                     <div>

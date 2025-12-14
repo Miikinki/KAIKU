@@ -10,18 +10,23 @@
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
     <style>
-      /* Fix for map loading: explicit container size */
-      html, body, #root {
-        height: 100vh;
-        width: 100vw;
+      /* FULL SCREEN RESET */
+      html, body {
+        height: 100%;
+        width: 100%;
         margin: 0;
         padding: 0;
         background-color: #0a0a12;
-        overflow: hidden; /* Prevent body scroll */
+        overflow: hidden;
+      }
+      #root {
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
       }
       .leaflet-container {
         height: 100%;
@@ -57,105 +62,37 @@
         display: none !important;
       }
 
-      .leaflet-overlay-pane canvas {
-        filter: blur(0.5px); 
+      /* --- KAIKU HEXAGONS --- */
+      .kaiku-hex-polygon {
+        transition: all 0.5s ease-out;
+        transform-origin: center;
+        /* "Plus Lighter" creates that intense neon overlap effect */
         mix-blend-mode: screen; 
+        stroke-linejoin: round;
       }
-
-      /* --- KAIKU LIVING MARKERS --- */
-      /* GPU OPTIMIZED: No width/height animation. Use transform for scaling. */
       
-      .marker-container {
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .marker-core {
-        border-radius: 50%;
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        transition: all 0.5s ease;
-      }
-
-      /* 1. HIGH ZOOM: Intense Pulse (User is close) */
-      .kaiku-pulse-intense::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        border: 2px solid rgba(34, 211, 238, 0.8);
-        transform: translate(-50%, -50%) scale(1);
-        animation: pulse-ring-gpu 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
-      }
-
-      /* 2. MID ZOOM: Steady Glow */
-      .kaiku-pulse-steady::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 100%;
-        height: 100%;
-        border-radius: 50%;
-        background-color: rgba(34, 211, 238, 0.3);
-        transform: translate(-50%, -50%) scale(1);
-        animation: pulse-dot-gpu 4s infinite ease-in-out;
-      }
-
-      /* 3. LOW ZOOM: Stardust (No heavy rings, just twinkle) */
-      .kaiku-pulse-stardust .marker-core {
-        animation: twinkle 3s infinite ease-in-out;
-      }
-
-      @keyframes pulse-ring-gpu {
-        0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
-        100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
-      }
-
-      @keyframes pulse-dot-gpu {
-        0% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
-        50% { transform: translate(-50%, -50%) scale(1.5); opacity: 0.1; }
-        100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
-      }
-
-      @keyframes twinkle {
-        0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
-        50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.2); }
+      /* The Breathing Effect */
+      .kaiku-hex-polygon:hover {
+        fill-opacity: 0.9 !important;
+        stroke: white !important;
+        stroke-width: 1.5px !important; /* Reduced for high-res grid */
+        filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.8));
+        z-index: 1000;
       }
 
       /* --- KAIKU ARCS (Transient) --- */
       .kaiku-arc-path {
         stroke-dasharray: 1000;
         stroke-dashoffset: 1000;
-        /* Animate: Draw line (1.5s) -> Hold (0.5s) -> Fade Out (0.5s) */
         animation: shoot-arc 2.5s ease-out forwards;
         will-change: stroke-dashoffset, opacity;
       }
 
       @keyframes shoot-arc {
-        0% {
-          stroke-dashoffset: 1000;
-          opacity: 0.8;
-        }
-        60% {
-          stroke-dashoffset: 0;
-          opacity: 0.8;
-        }
-        80% {
-          stroke-dashoffset: 0;
-          opacity: 0.8;
-        }
-        100% {
-          stroke-dashoffset: 0;
-          opacity: 0;
-        }
+        0% { stroke-dashoffset: 1000; opacity: 0.8; }
+        60% { stroke-dashoffset: 0; opacity: 0.8; }
+        80% { stroke-dashoffset: 0; opacity: 0.8; }
+        100% { stroke-dashoffset: 0; opacity: 0; }
       }
 
     </style>
@@ -163,7 +100,7 @@
 {
   "imports": {
     "react": "https://esm.sh/react@18.2.0",
-    "react/": "https://esm.sh/react@18.2.0/",
+    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
     "react-dom": "https://esm.sh/react-dom@18.2.0",
     "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
     "leaflet": "https://esm.sh/leaflet@1.9.4",
@@ -174,11 +111,11 @@
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.7",
     "h3-js": "https://esm.sh/h3-js@4.1.0",
     "@google/genai": "https://esm.sh/@google/genai",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.2/",
-    "leaflet/": "https://esm.sh/leaflet@^1.9.4/",
-    "react-i18next": "https://esm.sh/react-i18next@^16.5.0",
-    "i18next": "https://esm.sh/i18next@^25.7.2",
-    "i18next-browser-languagedetector": "https://esm.sh/i18next-browser-languagedetector@^8.2.0"
+    "react-i18next": "https://esm.sh/react-i18next@13.5.0?external=react,react-dom",
+    "i18next": "https://esm.sh/i18next@23.7.11",
+    "i18next-browser-languagedetector": "https://esm.sh/i18next-browser-languagedetector@7.2.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>

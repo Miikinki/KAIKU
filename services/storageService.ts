@@ -28,11 +28,11 @@ const SAMPLE_TEXTS = [
 ];
 
 const HUB_CITIES = [
-  { name: "Porvoo", lat: 60.39, lng: 25.66, weight: 15, country: "FI" },
-  { name: "Helsinki", lat: 60.16, lng: 24.93, weight: 10, country: "FI" },
-  { name: "New York", lat: 40.71, lng: -74.00, weight: 12, country: "US" },
-  { name: "London", lat: 51.50, lng: -0.12, weight: 8, country: "GB" },
-  { name: "Tokyo", lat: 35.67, lng: 139.65, weight: 10, country: "JP" }
+  { name: "Porvoo", lat: 60.39, lng: 25.66, weight: 35, country: "FI" },
+  { name: "Helsinki", lat: 60.16, lng: 24.93, weight: 30, country: "FI" },
+  { name: "New York", lat: 40.71, lng: -74.00, weight: 25, country: "US" },
+  { name: "London", lat: 51.50, lng: -0.12, weight: 20, country: "GB" },
+  { name: "Tokyo", lat: 35.67, lng: 139.65, weight: 25, country: "JP" }
 ];
 
 const extractTags = (text: string): string[] => {
@@ -48,12 +48,24 @@ const generateSeedData = (): ChatMessage[] => {
 
   HUB_CITIES.forEach(city => {
     for (let i = 0; i < city.weight; i++) {
-      const latJitter = (Math.random() - 0.5) * 0.05;
+      // Jitter for seed data
+      const latJitter = (Math.random() - 0.5) * 0.05; 
       const lngJitter = (Math.random() - 0.5) * 0.05;
-      const maxAge = MESSAGE_LIFESPAN_MS - 10000;
-      const timeOffset = Math.floor(Math.random() * maxAge);
-      const parentId = `seed-msg-${count}`;
       
+      const maxAge = MESSAGE_LIFESPAN_MS;
+      
+      let timeOffset;
+      const rand = Math.random();
+      
+      if (rand < 0.3) {
+          timeOffset = Math.floor(Math.random() * (30 * 60 * 1000)); // 0-30 mins
+      } else if (rand < 0.6) {
+          timeOffset = Math.floor(Math.random() * (12 * 60 * 60 * 1000)); // 30m - 12h
+      } else {
+          timeOffset = Math.floor(Math.random() * maxAge); // up to 48h
+      }
+
+      const parentId = `seed-msg-${count}`;
       const text = SAMPLE_TEXTS[Math.floor(Math.random() * SAMPLE_TEXTS.length)];
 
       messages.push({
@@ -276,7 +288,7 @@ export const saveMessage = async (
   const distKm = calculateDistance(userLat, userLng, targetLat, targetLng);
   const isRemote = distKm > 25; // 25km Threshold
   
-  // 3. GEOCODING
+  // 3. GEOCODING (Do this BEFORE Jitter to get correct City Name)
   const targetLocationData = await getCityName(targetLat, targetLng);
   
   let originCountry = "";
@@ -285,14 +297,26 @@ export const saveMessage = async (
       originCountry = (userLocationData.countryCode || "").toUpperCase();
   }
   
-  // 4. EXTRACT TAGS
+  // 4. PRIVACY JITTER (CRITICAL)
+  // We NEVER save the exact location. We add a random offset.
+  // 0.02 degrees is roughly ~2km at the equator.
+  // Range: +/- 1km to 2km offset.
+  const jitter = (coord: number) => {
+      const offset = (Math.random() - 0.5) * 0.04; // +/- 0.02
+      return coord + offset;
+  };
+
+  const finalLat = jitter(targetLat);
+  const finalLng = jitter(targetLng);
+
+  // 5. EXTRACT TAGS
   const tags = extractTags(text);
   
   const newMessage: ChatMessage = {
     id: generateUUID(), 
     text,
     timestamp: Date.now(),
-    location: { lat: targetLat, lng: targetLng }, 
+    location: { lat: finalLat, lng: finalLng }, // Use Jittered Coords
     city: targetLocationData.city,
     country: (targetLocationData.countryCode || "").toUpperCase(), 
     sessionId: userId,
