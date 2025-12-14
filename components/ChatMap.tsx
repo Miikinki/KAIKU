@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 
 interface ChatMapProps {
   messages: ChatMessage[];
-  signals: ChatMessage[]; // New prop for transient arcs
+  signals: ChatMessage[]; 
   onViewportChange: (bounds: ViewportBounds) => void;
   onMapClick: () => void;
   lastNewMessage: ChatMessage | null;
@@ -114,7 +114,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
 
-  const isMaxZoom = zoom >= 11;
+  // Changed from 11 to 13 to allow deeper zoom before locking interface
+  const isMaxZoom = zoom >= 13;
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
@@ -127,7 +128,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={4}
-        maxZoom={11}
+        // Increased from 11 to 14 to allow seeing neighborhoods/streets slightly better
+        maxZoom={14}
         maxBounds={[[-90, -220], [90, 220]]} 
         maxBoundsViscosity={1.0} 
         preferCanvas={true}

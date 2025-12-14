@@ -16,7 +16,6 @@ const SCAN_RADIUS_PX = 142;
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
-  // Signals are transient events (arcs) that might not appear in the feed (replies)
   const [signals, setSignals] = useState<ChatMessage[]>([]);
   
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
@@ -31,6 +30,7 @@ function App() {
   const [isMuted, setIsMuted] = useState(SoundService.getMuteStatus());
   const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number, name: string} | null>(null);
   
+  // Use a ref for location to ensure we always have the absolute latest coords without re-renders
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
 
   const [rateLimit, setRateLimit] = useState<{ isLimited: boolean; cooldownUntil: number | null }>({
@@ -44,16 +44,32 @@ function App() {
       setRateLimit(await getRateLimitStatus());
   };
 
+  // CONTINUOUS GPS TRACKING
+  // This replaces the one-off getCurrentPosition to ensure accuracy (e.g. Porvoo vs Helsinki)
   useEffect(() => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => { 
+    let watchId: number;
+
+    if ('geolocation' in navigator) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
           if (pos.coords.latitude !== 0 || pos.coords.longitude !== 0) {
-            locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude }; 
+             locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           }
-      },
-      (err) => console.warn("GPS Warm-up failed", err),
-      { timeout: 20000, maximumAge: 60000, enableHighAccuracy: true }
-    );
+        },
+        (err) => {
+          console.warn("GPS tracking error", err);
+        },
+        { 
+          enableHighAccuracy: true, 
+          maximumAge: 10000, 
+          timeout: 20000 
+        }
+      );
+    }
+
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
   useEffect(() => {
@@ -64,7 +80,6 @@ function App() {
         if (type === 'DELETE') {
             next = prev.filter(m => m.id !== id);
         } else if (message) {
-             // 1. Handle Feed Logic
              const exists = prev.findIndex(p => p.id === message.id);
              if (exists !== -1) {
                  next[exists] = { ...next[exists], ...message };
@@ -74,7 +89,6 @@ function App() {
                      setLastNewMessage(message); 
                      SoundService.playScan();
                  } else {
-                     // Update reply count for parents
                      const parentIndex = prev.findIndex(p => p.id === message.parentId);
                      if (parentIndex !== -1) {
                          const parent = next[parentIndex];
@@ -86,9 +100,7 @@ function App() {
                  }
              }
 
-             // 2. Handle Arc Signal Logic (Replies Only)
              if (message.parentId && message.isRemote) {
-                 // Push to signals queue to trigger ArcLayer
                  setSignals(prevSignals => [...prevSignals.slice(-10), message]);
                  SoundService.playScan();
              }
@@ -99,7 +111,6 @@ function App() {
     return () => { if (sub) sub.unsubscribe(); };
   }, []);
 
-  // Filter Messages based on SECTOR SCAN (Distance from Center)
   useEffect(() => {
     if (!currentBounds) return;
     
@@ -125,7 +136,8 @@ function App() {
       return dist <= radiusKm;
     });
 
-    if (currentBounds.zoom < 9) {
+    // Sort strategy changes based on zoom level
+    if (currentBounds.zoom < 10) {
         visible = visible.sort((a, b) => b.score - a.score);
     } else {
         visible = visible.sort((a, b) => b.timestamp - a.timestamp);
@@ -151,24 +163,22 @@ function App() {
   };
 
   const getLocation = async (): Promise<{lat: number, lng: number}> => {
+     // 1. Prefer cached high-accuracy watch position
      if (locationCache.current) return locationCache.current;
+     
+     // 2. Fallback to one-shot
      return new Promise((resolve) => {
         navigator.geolocation.getCurrentPosition(
             (pos) => {
-                if (pos.coords.latitude === 0 && pos.coords.longitude === 0) {
-                    const fallback = { lat: 60.1699, lng: 24.9384 };
-                    resolve(fallback);
-                    return;
-                }
                 const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                 locationCache.current = loc; 
                 resolve(loc);
             },
             () => {
-                const fallback = { lat: 60.1699, lng: 24.9384 };
-                resolve(fallback);
+                // Last resort fallback (Helsinki)
+                resolve({ lat: 60.1699, lng: 24.9384 });
             },
-            { timeout: 10000, enableHighAccuracy: true }
+            { timeout: 5000, enableHighAccuracy: true }
         );
      });
   };
@@ -200,26 +210,24 @@ function App() {
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
+      // Force get latest location for the arc origin
       const userLoc = await getLocation(); 
+      
       let targetLat = userLoc.lat;
       let targetLng = userLoc.lng;
 
-      // Reply Target is the Parent Message Location
       if (selectedMessage) {
           targetLat = selectedMessage.location.lat;
           targetLng = selectedMessage.location.lng;
       }
 
-      // Check distance for visual effect
       const dist = calculateDistance(userLoc.lat, userLoc.lng, targetLat, targetLng);
-      const isRemote = dist > 25;
+      // If > 25km, it's considered remote enough to warrant an arc
+      const isRemote = dist > 25; 
 
-      // 1. Save to DB
       await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
       
-      // 2. IMMEDIATE LOCAL VISUAL FEEDBACK (The "Perfect Arc")
-      // If it's a remote reply, we inject a transient signal with EXACT coordinates
-      // This ensures the line goes from "Porvoo" (userLoc) to "Paris" (targetLat)
+      // VISUAL FEEDBACK
       if (isRemote) {
           const tempSignal: ChatMessage = {
               id: `local-echo-${Date.now()}`,
@@ -231,8 +239,9 @@ function App() {
               score: 0,
               parentId: parentId,
               isRemote: true,
-              originCountry: "ME", // Placeholder
-              customOrigin: { lat: userLoc.lat, lng: userLoc.lng } // <--- THE MAGIC
+              originCountry: "ME",
+              // CRITICAL: Inject EXACT user GPS for the Arc start point
+              customOrigin: { lat: userLoc.lat, lng: userLoc.lng } 
           };
           setSignals(prev => [...prev, tempSignal]);
       }
@@ -271,7 +280,7 @@ function App() {
       
       <ChatMap 
         messages={messages} 
-        signals={signals} // Pass the separate signals queue
+        signals={signals}
         onViewportChange={handleViewportChange}
         onMapClick={handleMapClick}
         lastNewMessage={lastNewMessage}
