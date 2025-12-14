@@ -22,32 +22,36 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       return;
     }
 
+    // STRATEGY: SPEED FIRST ("Salamannopeasti")
+    // We use enableHighAccuracy: FALSE for the Welcome Screen.
+    // This uses Wifi/Cell towers which is instant (ms) vs GPS (10s+).
+    // The main app (App.tsx) upgrades to High Accuracy in the background automatically.
+    
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        onStart({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude
-        });
+          onStart({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          });
       },
       (err) => {
-        // Explicitly logging code and message because the error object is often empty in logs
-        console.warn("GPS Start Error:", err.code, err.message);
-        setIsLoading(false);
-        
-        if (err.code === 1) {
-            setError("Sijainti estetty. Salli GPS selaimen asetuksista.");
-        } else if (err.code === 2) {
-            setError("Sijaintia ei löydy. Tarkista GPS-asetukset.");
-        } else if (err.code === 3) {
-            setError("Haku aikakatkaistiin. Yritä uudelleen.");
-        } else {
-            setError(`GPS Virhe: ${err.message}`);
-        }
+          console.warn("GPS Start Error:", err.code, err.message);
+          setIsLoading(false);
+          
+          if (err.code === 1) {
+              setError("Sijainti estetty. Salli GPS selaimen asetuksista.");
+          } else if (err.code === 2) {
+              setError("Sijaintia ei löydy. Tarkista verkkoyhteys.");
+          } else if (err.code === 3) {
+              setError("Haku aikakatkaistiin. Yritä uudelleen.");
+          } else {
+              setError(`GPS Virhe: ${err.message}`);
+          }
       },
       {
-        enableHighAccuracy: true,
-        timeout: 20000,     // Increased to 20s
-        maximumAge: Infinity // Accept any cached position to speed up start
+        enableHighAccuracy: false, // <--- CHANGED: False ensures instant network location
+        timeout: 15000, 
+        maximumAge: Infinity // <--- Accept any cached position immediately
       }
     );
   };
