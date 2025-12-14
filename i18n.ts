@@ -11,7 +11,7 @@ const resources = {
         "regional_intercept": "REGIONAL INTERCEPT",
         "local_signals": "LOCAL SIGNALS",
         "filtering": "Filtering",
-        "no_signals": "No signals detected.",
+        "no_signals": "Scanning sector...",
         "clear_tag_hint": "Try clearing the tag filter.",
         "move_radar_hint": "Move the radar to a new location.",
         "replies": "Replies",
@@ -40,7 +40,8 @@ const resources = {
         "error_send_reply": "Failed to send reply. Please try again."
       },
       "map": {
-        "sector_scan_active": "Sector Scan Active"
+        "sector_scan_active": "Sector Scan Active",
+        "signal_locked": "SIGNAL LOCKED"
       }
     }
   },
@@ -51,8 +52,8 @@ const resources = {
         "regional_intercept": "ALUEELLINEN SIEPPAUS",
         "local_signals": "PAIKALLISET SIGNAALIT",
         "filtering": "Suodatus",
-        "no_signals": "Ei signaaleja havaittu.",
-        "clear_tag_hint": "Tyhjennä aihetunniste.",
+        "no_signals": "Etsitään signaalia...",
+        "clear_tag_hint": "Siirrä sektoria löytääksesi lähetyksiä.",
         "move_radar_hint": "Siirrä tutkaa uudelle alueelle.",
         "replies": "Vastausta",
         "delete_confirm": "Haluatko varmasti poistaa tämän signaalin?",
@@ -80,7 +81,8 @@ const resources = {
         "error_send_reply": "Vastauksen lähetys epäonnistui. Yritä uudelleen."
       },
       "map": {
-        "sector_scan_active": "SEKTORISKANNAUS AKTIIVINEN"
+        "sector_scan_active": "SEKTORISKANNAUS AKTIIVINEN",
+        "signal_locked": "SIGNAALI LUKITTU"
       }
     }
   }

@@ -11,8 +11,8 @@ import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './consta
 import { AnimatePresence, motion } from 'framer-motion';
 
 // Radius of the visual ring in pixels (w-64 = 256px diam => 128px radius)
-// We set it slightly larger (150px) to provide a forgiving "hit box" for the user.
-const SCAN_RADIUS_PX = 150; 
+// Setting this exactly to 128px ensures what you see is what you scan.
+const SCAN_RADIUS_PX = 128; 
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
