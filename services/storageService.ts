@@ -4,36 +4,26 @@ import { supabase } from './supabaseClient';
 import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, MESSAGE_LIFESPAN_MS, SCORE_THRESHOLD_HIDE, SPAM_RATE_LIMIT_MS, PRIVACY_JITTER_DEG } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
 
-const STORAGE_KEY = 'global_local_talk_data';
+const STORAGE_KEY = 'kaiku_local_data'; // Renamed from global_local_talk_data
 const USER_ID_KEY = 'kaiku_session_id'; 
-const USER_VOTES_KEY = 'global_local_talk_user_votes';
+const USER_VOTES_KEY = 'kaiku_user_votes';
 const LAST_POST_TIMESTAMP_KEY = 'kaiku_last_post_ts';
 const DELETED_IDS_KEY = 'kaiku_deleted_ids'; 
 
-// --- MASSIVE SEED DATA GENERATOR (For Local Mode) ---
+// --- SEED DATA (Minimal, KAIKU branded) ---
 
 const SAMPLE_TEXTS = [
-  "Traffic is completely stopped here #traffic",
-  "Did anyone else see those lights in the sky? #ufo",
-  "Quiet night in the city. #chill",
-  "Police activity near the main station. #alert",
-  "Just found a lost drone. #lostandfound",
-  "The fog is getting really thick. #weather",
-  "Anyone want to meet up? #coffee",
-  "Hearing sirens everywhere.",
-  "Internet is down in the whole sector. #outage",
-  "Beautiful sunset tonight. #photography",
-  "Construction noise is unbearable. #noise",
-  "Is the bridge open? #traffic",
-  "Signals are weird tonight. #kaiku"
+  "Signals are strong tonight. #kaiku",
+  "Sector scan complete. Nothing found.",
+  "Hearing strange echoes on this frequency.",
+  "Connection stable. Broadcasting.",
+  "Anyone else seeing this interference? #glitch"
 ];
 
 const HUB_CITIES = [
-  { name: "Porvoo", lat: 60.39, lng: 25.66, weight: 35, country: "FI" },
-  { name: "Helsinki", lat: 60.16, lng: 24.93, weight: 30, country: "FI" },
-  { name: "New York", lat: 40.71, lng: -74.00, weight: 25, country: "US" },
-  { name: "London", lat: 51.50, lng: -0.12, weight: 20, country: "GB" },
-  { name: "Tokyo", lat: 35.67, lng: 139.65, weight: 25, country: "JP" }
+  { name: "Helsinki", lat: 60.16, lng: 24.93, weight: 10, country: "FI" },
+  { name: "New York", lat: 40.71, lng: -74.00, weight: 10, country: "US" },
+  { name: "Tokyo", lat: 35.67, lng: 139.65, weight: 10, country: "JP" }
 ];
 
 const extractTags = (text: string): string[] => {
@@ -44,6 +34,7 @@ const extractTags = (text: string): string[] => {
 };
 
 // Helper: Process tags to find hidden location data
+// This is the magic that allows precise arcs for everyone
 const processTags = (rawTags: string[] | null) => {
     const tags = rawTags || [];
     let preciseOrigin: { lat: number, lng: number } | undefined = undefined;
@@ -76,30 +67,14 @@ const generateSeedData = (): ChatMessage[] => {
 
   HUB_CITIES.forEach(city => {
     for (let i = 0; i < city.weight; i++) {
-      // Jitter for seed data
       const latJitter = (Math.random() - 0.5) * 0.05; 
       const lngJitter = (Math.random() - 0.5) * 0.05;
-      
-      const maxAge = MESSAGE_LIFESPAN_MS;
-      
-      let timeOffset;
-      const rand = Math.random();
-      
-      if (rand < 0.3) {
-          timeOffset = Math.floor(Math.random() * (30 * 60 * 1000)); // 0-30 mins
-      } else if (rand < 0.6) {
-          timeOffset = Math.floor(Math.random() * (12 * 60 * 60 * 1000)); // 30m - 12h
-      } else {
-          timeOffset = Math.floor(Math.random() * maxAge); // up to 48h
-      }
-
-      const parentId = `seed-msg-${count}`;
       const text = SAMPLE_TEXTS[Math.floor(Math.random() * SAMPLE_TEXTS.length)];
 
       messages.push({
-        id: parentId,
+        id: `seed-msg-${count}`,
         text: text,
-        timestamp: Date.now() - timeOffset,
+        timestamp: Date.now() - Math.floor(Math.random() * MESSAGE_LIFESPAN_MS),
         location: { 
           lat: city.lat + latJitter, 
           lng: city.lng + lngJitter 
@@ -107,10 +82,10 @@ const generateSeedData = (): ChatMessage[] => {
         city: city.name,
         country: city.country,
         sessionId: `seed-user-${Math.floor(Math.random() * 100)}`,
-        score: Math.floor(Math.random() * 10) - 2,
-        replyCount: Math.random() > 0.7 ? Math.floor(Math.random() * 5) : 0,
-        isRemote: Math.random() > 0.9,
-        originCountry: Math.random() > 0.9 ? (Math.random() > 0.5 ? "JP" : "US") : city.country,
+        score: 0,
+        replyCount: 0,
+        isRemote: Math.random() > 0.8,
+        originCountry: city.country,
         tags: extractTags(text)
       });
       count++;
@@ -144,15 +119,13 @@ export const getAnonymousID = (): string => {
   return id;
 };
 
-// Returns URL to flag image. Fixes Windows rendering issues with Emojis.
 export const getFlagUrl = (countryCode?: string) => {
   if (!countryCode) return null;
   return `https://flagcdn.com/w20/${countryCode.toLowerCase()}.png`;
 };
 
-// Haversine formula to calculate distance between two points in km
 export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-  const R = 6371; // Radius of the earth in km
+  const R = 6371; 
   const dLat = deg2rad(lat2 - lat1);
   const dLng = deg2rad(lng2 - lng1);
   const a =
@@ -160,18 +133,11 @@ export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2
     Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
     Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const d = R * c; // Distance in km
-  return d;
+  return R * c;
 };
 
 const deg2rad = (deg: number): number => {
   return deg * (Math.PI / 180);
-};
-
-export const getRandomLocation = () => {
-  const lat = (Math.random() * 130) - 60;
-  const lng = (Math.random() * 360) - 180;
-  return { lat, lng };
 };
 
 const getDeletedIds = (): Set<string> => {
@@ -216,7 +182,6 @@ export const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
 };
 
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
-  // Supabase Fetch
   let query = supabase
     .from('kaiku_posts')
     .select('*, replies:kaiku_posts!parent_post_id(count)')
@@ -233,12 +198,12 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
     console.warn('KAIKU: Supabase fetch error (offline?), using local.', error);
     return getLocalMessages(onlyRoot);
   } else {
-    // Merge with Local Deletions
     const deleted = getDeletedIds();
     
     return data
         .filter((d: any) => !deleted.has(d.id))
         .map((d: any) => {
+            // CRITICAL: Extract location from tags here
             const { tags, preciseOrigin } = processTags(d.tags);
             return {
                 id: d.id,
@@ -304,27 +269,24 @@ export const saveMessage = async (
     userLng: number, 
     parentId?: string
 ): Promise<ChatMessage> => {
-  // 1. RATE LIMIT CHECK
+  // Rate Limit
   const lastPostTimeStr = localStorage.getItem(LAST_POST_TIMESTAMP_KEY);
   if (lastPostTimeStr) {
-      const lastPostTime = parseInt(lastPostTimeStr, 10);
-      const diff = Date.now() - lastPostTime;
+      const diff = Date.now() - parseInt(lastPostTimeStr, 10);
       if (diff < SPAM_RATE_LIMIT_MS) {
-          throw new Error("You are sending messages too fast. Please wait a moment.");
+          throw new Error("You are sending messages too fast.");
       }
   }
 
   const userId = getAnonymousID();
 
   if (!moderateContent(text)) {
-    throw new Error("Message blocked by automated moderation.");
+    throw new Error("Message blocked by moderation.");
   }
 
-  // 2. REMOTE CHECK
   const distKm = calculateDistance(userLat, userLng, targetLat, targetLng);
-  const isRemote = distKm > 25; // 25km Threshold
+  const isRemote = distKm > 25; 
   
-  // 3. GEOCODING (Do this BEFORE Jitter to get correct City Name)
   const targetLocationData = await getCityName(targetLat, targetLng);
   
   let originCountry = "";
@@ -333,11 +295,8 @@ export const saveMessage = async (
       originCountry = (userLocationData.countryCode || "").toUpperCase();
   }
   
-  // 4. PRIVACY JITTER (CRITICAL)
-  // We NEVER save the exact location (neither GPS nor IP-based).
-  // We add a random offset to ensure user privacy.
+  // JITTER (Privacy)
   const jitter = (coord: number) => {
-      // Offset by approx 2-4km
       const offset = (Math.random() - 0.5) * (PRIVACY_JITTER_DEG * 2); 
       return coord + offset;
   };
@@ -345,22 +304,20 @@ export const saveMessage = async (
   const finalLat = jitter(targetLat);
   const finalLng = jitter(targetLng);
   
-  // 5. EXTRACT TAGS & INJECT PRECISE ORIGIN (JITTERED)
-  const tags = extractTags(text);
-  
-  // Create a jittered version of the sender's location to store in metadata
-  // This allows accurate arcs for everyone without exposing exact user home.
+  // CRITICAL: Jitter the Sender Location and inject into tags
+  // This preserves privacy (exact home not shown) but gives a precise-enough start point for arcs.
   const senderLatJitter = jitter(userLat);
   const senderLngJitter = jitter(userLng);
   
-  // Inject into tags as a hidden metadata field
+  const tags = extractTags(text);
+  // HIDDEN METADATA
   tags.push(`__loc:${senderLatJitter.toFixed(5)},${senderLngJitter.toFixed(5)}`);
 
   const newMessage: ChatMessage = {
     id: generateUUID(), 
     text,
     timestamp: Date.now(),
-    location: { lat: finalLat, lng: finalLng }, // Use Jittered Coords
+    location: { lat: finalLat, lng: finalLng },
     city: targetLocationData.city,
     country: (targetLocationData.countryCode || "").toUpperCase(), 
     sessionId: userId,
@@ -373,9 +330,7 @@ export const saveMessage = async (
     preciseOrigin: { lat: senderLatJitter, lng: senderLngJitter }
   };
 
-  // Supabase Insert
-  // NOTE: We do NOT store IP addresses here. Only the fuzzed coordinates and session ID.
-  const { data, error } = await supabase
+  const { error } = await supabase
       .from('kaiku_posts')
       .insert([{
           id: newMessage.id,
@@ -388,9 +343,8 @@ export const saveMessage = async (
           parent_post_id: newMessage.parentId,
           origin_country: newMessage.originCountry,
           is_remote: newMessage.isRemote,
-          tags: newMessage.tags // Save Tags with hidden loc
-      }])
-      .select();
+          tags: newMessage.tags // Saves the __loc tag!
+      }]);
 
   if (error) {
       console.warn("Supabase insert failed, saving locally", error);
@@ -408,12 +362,8 @@ export const saveMessage = async (
 export const deleteMessage = async (msgId: string) => {
     markAsDeleted(msgId);
     try {
-        const { error } = await supabase
-            .from('kaiku_posts')
-            .delete()
-            .eq('id', msgId);
-        if (error) console.warn("Supabase delete failed, local block active.", error);
-    } catch (err) { console.warn("Delete exception", err); }
+        await supabase.from('kaiku_posts').delete().eq('id', msgId);
+    } catch (err) {}
     
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
@@ -433,11 +383,10 @@ export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
     const lastPostTimeStr = localStorage.getItem(LAST_POST_TIMESTAMP_KEY);
     if (!lastPostTimeStr) return { isLimited: false, cooldownUntil: null };
     
-    const lastPostTime = parseInt(lastPostTimeStr, 10);
-    const diff = Date.now() - lastPostTime;
+    const diff = Date.now() - parseInt(lastPostTimeStr, 10);
     
     if (diff < SPAM_RATE_LIMIT_MS) {
-        return { isLimited: true, cooldownUntil: lastPostTime + SPAM_RATE_LIMIT_MS };
+        return { isLimited: true, cooldownUntil: parseInt(lastPostTimeStr, 10) + SPAM_RATE_LIMIT_MS };
     }
     return { isLimited: false, cooldownUntil: null };
 };
@@ -464,7 +413,7 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
                     isRemote: d.is_remote,
                     originCountry: d.origin_country,
                     tags: tags,
-                    preciseOrigin: preciseOrigin
+                    preciseOrigin: preciseOrigin // This ensures real-time arcs are accurate
                 };
                 callback({ type: 'INSERT', message: msg });
             } else if (payload.eventType === 'DELETE') {

@@ -1,3 +1,1 @@
-import React from 'react';
-const DreamDetailPopup = () => null;
-export default DreamDetailPopup;
+export default function DreamDetailPopup() { return null; }
