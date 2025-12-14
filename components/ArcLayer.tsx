@@ -8,7 +8,7 @@ interface ArcLayerProps {
 }
 
 interface ActiveArc {
-  id: string;
+  id: string; // Message ID (or pseudo-ID for replays)
   origin: [number, number];
   target: [number, number];
   startTime: number;
@@ -27,27 +27,24 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     return () => { isMounted.current = false; };
   }, []);
 
+  // 1. HANDLE NEW INCOMING MESSAGES
   useEffect(() => {
     const newArcs: ActiveArc[] = [];
     const now = Date.now();
 
-    // 1. Filter for RECENT remote messages
-    // Only animate messages younger than 10 seconds (for real-time feel)
-    // Or, on initial load, maybe allow the last 5 to animate so it's not empty.
-    const recentMessages = messages.filter(m => {
-        // Only process if we haven't seen this ID yet
+    // Filter for RECENT remote messages that we haven't animated yet
+    const newRemoteMessages = messages.filter(m => {
         if (processedIds.current.has(m.id)) return false;
         
-        // Mark as processed immediately
+        // Mark as processed immediately so we don't animate again in this block
         processedIds.current.add(m.id);
 
-        // Check conditions: Remote + Valid Country Origin
+        // Strict validation: Must be remote, have origin country and known coordinates
         return m.isRemote && m.originCountry && COUNTRY_COORDINATES[m.originCountry];
     });
 
-    // 2. Limit the batch to prevent explosion on first load
-    // We take the last 5 "new" ones (if bulk loaded)
-    const batch = recentMessages.slice(0, 5);
+    // Limit initial burst to avoids chaos on page load
+    const batch = newRemoteMessages.slice(0, 5);
 
     batch.forEach(msg => {
        const origin = COUNTRY_COORDINATES[msg.originCountry!];
@@ -62,20 +59,54 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     });
 
     if (newArcs.length > 0) {
-        setActiveArcs(prev => [...prev, ...newArcs]);
-
-        // Schedule cleanup: The animation is 2.5s long in CSS.
-        // We remove them from React state after 3s to be safe.
-        setTimeout(() => {
-            if (!isMounted.current) return;
-            
-            // Remove the specific IDs we just added
-            const idsToRemove = new Set(newArcs.map(a => a.id));
-            setActiveArcs(prev => prev.filter(arc => !idsToRemove.has(arc.id)));
-        }, 3000);
+        addArcs(newArcs);
     }
-
   }, [messages]);
+
+  // 2. AMBIENT REPLAY LOOP (Strictly Real Data)
+  useEffect(() => {
+      // Run periodically to keep the map feeling alive with valid data
+      const interval = setInterval(() => {
+          if (!isMounted.current) return;
+
+          const candidates = messages.filter(m => 
+            m.isRemote && m.originCountry && COUNTRY_COORDINATES[m.originCountry]
+          );
+          
+          if (candidates.length > 0) {
+               // Pick a random REAL message to replay
+               const randomMsg = candidates[Math.floor(Math.random() * candidates.length)];
+               const origin = COUNTRY_COORDINATES[randomMsg.originCountry!];
+               const target: [number, number] = [randomMsg.location.lat, randomMsg.location.lng];
+               
+               // Unique ID for this replay instance
+               const replayId = `${randomMsg.id}-replay-${Date.now()}`;
+               
+               addArcs([{
+                   id: replayId,
+                   origin,
+                   target,
+                   startTime: Date.now()
+               }]);
+          }
+          // NOTE: Simulation/Random mode removed to ensure accuracy.
+          // Only actual message paths are visualized.
+
+      }, 2500); // Frequency: Every 2.5 seconds
+
+      return () => clearInterval(interval);
+  }, [messages, activeArcs.length]); 
+
+  const addArcs = (arcs: ActiveArc[]) => {
+      setActiveArcs(prev => [...prev, ...arcs]);
+
+      // Schedule removal matching CSS animation time
+      setTimeout(() => {
+          if (!isMounted.current) return;
+          const idsToRemove = new Set(arcs.map(a => a.id));
+          setActiveArcs(prev => prev.filter(arc => !idsToRemove.has(arc.id)));
+      }, 3000); 
+  };
 
   // Re-render trigger for map moves
   const [frame, setFrame] = useState(0);
@@ -101,7 +132,8 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
             width: '100%', 
             height: '100%', 
             pointerEvents: 'none', 
-            zIndex: 400 
+            zIndex: 550, // High Z-Index to stay on top
+            overflow: 'visible' // Allow arcs to curve outside viewport
         }}
     >
         <defs>
@@ -111,7 +143,7 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
                 <stop offset="100%" style={{ stopColor: THEME_COLOR_GLOW, stopOpacity: 0 }} />
             </linearGradient>
              <filter id="arc-glow">
-                <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+                <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
                 <feMerge>
                     <feMergeNode in="coloredBlur"/>
                     <feMergeNode in="SourceGraphic"/>
@@ -119,36 +151,41 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
             </filter>
         </defs>
         {activeArcs.map(arc => {
-            // Calculate Path Projection on every render (cheap for < 10 items)
-            const startPoint = map.latLngToContainerPoint(arc.origin);
-            const endPoint = map.latLngToContainerPoint(arc.target);
+            try {
+                const startPoint = map.latLngToContainerPoint(arc.origin);
+                const endPoint = map.latLngToContainerPoint(arc.target);
 
-            const midX = (startPoint.x + endPoint.x) / 2;
-            const midY = (startPoint.y + endPoint.y) / 2;
-            
-            const dist = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
-            const curvature = 0.25; 
-            
-            // Arc logic:
-            // We want the arc to always bow "upwards" relative to the map (negative Y),
-            // OR simply perpendicular. Let's do simple vertical lob for global feel.
-            const cpX = midX;
-            const cpY = midY - (dist * curvature);
+                if (startPoint.x === endPoint.x && startPoint.y === endPoint.y) return null;
 
-            const d = `M ${startPoint.x},${startPoint.y} Q ${cpX},${cpY} ${endPoint.x},${endPoint.y}`;
+                const midX = (startPoint.x + endPoint.x) / 2;
+                const midY = (startPoint.y + endPoint.y) / 2;
+                
+                const dist = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
+                
+                // Consistent curvature
+                const curvature = 0.4;
+                
+                // Arc always bows "up" relative to screen Y
+                const cpX = midX;
+                const cpY = midY - (dist * curvature);
 
-            return (
-                <path
-                    key={arc.id}
-                    d={d}
-                    fill="none"
-                    stroke="url(#arc-grad)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    filter="url(#arc-glow)"
-                    className="kaiku-arc-path"
-                />
-            );
+                const d = `M ${startPoint.x},${startPoint.y} Q ${cpX},${cpY} ${endPoint.x},${endPoint.y}`;
+
+                return (
+                    <path
+                        key={arc.id}
+                        d={d}
+                        fill="none"
+                        stroke="url(#arc-grad)"
+                        strokeWidth="3" 
+                        strokeLinecap="round"
+                        filter="url(#arc-glow)"
+                        className="kaiku-arc-path"
+                    />
+                );
+            } catch(e) {
+                return null;
+            }
         })}
     </svg>
   );
