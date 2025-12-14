@@ -4,7 +4,7 @@ import { ChatMessage } from '../types';
 import { COUNTRY_COORDINATES, THEME_COLOR_GLOW } from '../constants';
 
 interface ArcLayerProps {
-  messages: ChatMessage[]; // Now receives "Signals" (replies/events) instead of root messages
+  messages: ChatMessage[]; // Represents the Signal Queue
 }
 
 interface ActiveArc {
@@ -18,6 +18,8 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
   const map = useMap();
   const [activeArcs, setActiveArcs] = useState<ActiveArc[]>([]);
   const processedIds = useRef<Set<string>>(new Set());
+  
+  // Ref for cleanup to avoid setting state on unmounted component
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -25,23 +27,22 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     return () => { isMounted.current = false; };
   }, []);
 
-  // 1. HANDLE NEW SIGNALS (Replies Only)
+  // 1. HANDLE NEW SIGNALS ONLY
+  // Strictly visualizes new events exactly once.
   useEffect(() => {
     const newArcs: ActiveArc[] = [];
     const now = Date.now();
 
-    // The 'messages' prop here now represents the SIGNAL QUEUE from App.tsx
-    // It contains incoming remote replies AND local echo replies.
     const newSignals = messages.filter(m => {
-        // Skip if already drawn
+        // Prevent re-animating the same signal ID
         if (processedIds.current.has(m.id)) return false;
         
         processedIds.current.add(m.id);
 
-        // REQUIREMENT: Must be a REPLY (parentId exists)
+        // Strict validation: 
+        // 1. Must be a reply (parentId exists)
+        // 2. Must be remote OR have a custom origin (local user replying)
         if (!m.parentId) return false;
-
-        // REQUIREMENT: Must be REMOTE (or have explicit custom origin)
         if (!m.isRemote && !m.customOrigin) return false;
 
         return true;
@@ -50,11 +51,11 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     newSignals.forEach(msg => {
        let origin: [number, number] | undefined;
 
-       // 1. PRIORITY: Custom Origin (For "My" messages - precise Porvoo -> Paris)
+       // A. User's own reply (Precise Location)
        if (msg.customOrigin) {
            origin = [msg.customOrigin.lat, msg.customOrigin.lng];
        } 
-       // 2. FALLBACK: Country Center (For others' messages)
+       // B. Remote reply (Country Center)
        else if (msg.originCountry && COUNTRY_COORDINATES[msg.originCountry]) {
            origin = COUNTRY_COORDINATES[msg.originCountry];
        }
@@ -76,47 +77,10 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     }
   }, [messages]);
 
-  // 2. AMBIENT REPLAY (Strictly Replies)
-  useEffect(() => {
-      const interval = setInterval(() => {
-          if (!isMounted.current) return;
-
-          // Only replay messages that are actually REPLIES and REMOTE
-          const candidates = messages.filter(m => 
-             m.parentId && 
-             (m.isRemote || m.customOrigin) &&
-             (m.customOrigin || (m.originCountry && COUNTRY_COORDINATES[m.originCountry]))
-          );
-          
-          if (candidates.length > 0) {
-               const randomMsg = candidates[Math.floor(Math.random() * candidates.length)];
-               
-               let origin: [number, number] = [0,0];
-               if (randomMsg.customOrigin) {
-                   origin = [randomMsg.customOrigin.lat, randomMsg.customOrigin.lng];
-               } else if (randomMsg.originCountry) {
-                   origin = COUNTRY_COORDINATES[randomMsg.originCountry];
-               }
-
-               const target: [number, number] = [randomMsg.location.lat, randomMsg.location.lng];
-               const replayId = `${randomMsg.id}-replay-${Date.now()}`;
-               
-               if (activeArcs.length < 3) {
-                   addArcs([{
-                       id: replayId,
-                       origin,
-                       target,
-                       startTime: Date.now()
-                   }]);
-               }
-          }
-      }, 4000); 
-
-      return () => clearInterval(interval);
-  }, [messages, activeArcs.length]); 
-
   const addArcs = (arcs: ActiveArc[]) => {
       setActiveArcs(prev => [...prev, ...arcs]);
+
+      // Remove the arc strictly after animation finishes (2.5s CSS animation + buffer)
       setTimeout(() => {
           if (!isMounted.current) return;
           const idsToRemove = new Set(arcs.map(a => a.id));
@@ -124,6 +88,7 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
       }, 3000); 
   };
 
+  // Re-render trigger for map moves
   const [frame, setFrame] = useState(0);
   useEffect(() => {
       const handler = () => setFrame(f => f + 1);
@@ -185,21 +150,14 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
 
                 return (
                     <g key={arc.id}>
-                         <circle 
-                            cx={startPoint.x} 
-                            cy={startPoint.y} 
-                            r="3" 
-                            fill={THEME_COLOR_GLOW}
-                            className="animate-[ping_1s_cubic-bezier(0,0,0.2,1)_infinite]"
-                            style={{ opacity: 0.8 }}
-                         />
+                        {/* Clean Line Only - No Circles */}
                         <path
                             d={d}
                             fill="none"
                             stroke="url(#arc-grad)"
                             strokeWidth="3" 
                             strokeLinecap="round"
-                            strokeDasharray="2000" 
+                            strokeDasharray="2000" // Long dasharray to support animation
                             filter="url(#arc-glow)"
                             className="kaiku-arc-path"
                         />
