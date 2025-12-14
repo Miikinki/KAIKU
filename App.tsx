@@ -11,7 +11,8 @@ import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './consta
 import { AnimatePresence, motion } from 'framer-motion';
 
 // Radius of the visual ring in pixels (w-64 = 256px diam => 128px radius)
-const SCAN_RADIUS_PX = 140; 
+// We set it slightly larger (150px) to provide a forgiving "hit box" for the user.
+const SCAN_RADIUS_PX = 150; 
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
@@ -82,10 +83,12 @@ function App() {
     const now = Date.now();
     const cutoff = now - MESSAGE_LIFESPAN_MS;
 
+    // USE SECTOR CENTER (Visual Crosshair) if available, otherwise Map Center
+    const centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
+    const centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
+
     // Calculate Dynamic Scan Radius in KM based on Zoom Level
-    // Formula: (MetersPerPixel * PxRadius) / 1000
-    // MetersPerPx approx = 156543 * cos(lat) / 2^zoom
-    const metersPerPx = 156543.03 * Math.cos(currentBounds.center.lat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
+    const metersPerPx = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
     const radiusKm = (metersPerPx * SCAN_RADIUS_PX) / 1000;
 
     let visible = messages.filter(m => {
@@ -94,8 +97,8 @@ function App() {
 
       // 2. Distance Filter (Sector Scan)
       const dist = calculateDistance(
-          currentBounds.center.lat, 
-          currentBounds.center.lng, 
+          centerLat, 
+          centerLng, 
           m.location.lat, 
           m.location.lng
       );

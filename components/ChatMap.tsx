@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
 import { Crosshair, Lock } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
@@ -43,6 +43,7 @@ const MapController: React.FC<{
 }> = ({ onViewportChange, setZoom }) => {
   
   const map = useMap();
+  const lastUpdateRef = useRef(0);
 
   useEffect(() => {
       const invalidate = () => map.invalidateSize();
@@ -59,23 +60,58 @@ const MapController: React.FC<{
       };
   }, [map]);
 
+  const handleMove = useCallback(() => {
+      const bounds = map.getBounds();
+      const center = map.getCenter();
+      const z = map.getZoom();
+      const size = map.getSize();
+
+      // CALCULATION FIX:
+      // The UI has 'pb-48' (192px padding bottom).
+      // This shifts the visual center of the flex container UP by exactly half that amount (96px).
+      // We must calculate the LatLng at that specific pixel point to match the crosshair.
+      const visualOffsetY = 96; 
+      const sectorPoint = [size.x / 2, (size.y / 2) - visualOffsetY];
+      
+      // Safety check for initialization
+      let sectorLatLng = center;
+      try {
+          // @ts-ignore - Leaflet types handle array tuple for point
+          sectorLatLng = map.containerPointToLatLng(sectorPoint);
+      } catch (e) {
+          // Fallback to center if map not ready
+      }
+
+      setZoom(z); 
+      onViewportChange({
+          north: bounds.getNorth(),
+          south: bounds.getSouth(),
+          east: bounds.getEast(),
+          west: bounds.getWest(),
+          zoom: z,
+          center: { lat: center.lat, lng: center.lng },
+          sectorCenter: { lat: sectorLatLng.lat, lng: sectorLatLng.lng }
+      });
+  }, [map, onViewportChange, setZoom]);
+
   useMapEvents({
+    // REAL-TIME SCANNING: Handle 'move' with throttle
+    move: () => {
+        const now = Date.now();
+        // Update roughly every 40ms (25fps) to keep UI responsive but not overload React
+        if (now - lastUpdateRef.current > 40) {
+            handleMove();
+            lastUpdateRef.current = now;
+        }
+    },
+    // Ensure final precise position is set when movement stops
     moveend: () => {
-        const bounds = map.getBounds();
-        const center = map.getCenter();
-        const z = map.getZoom();
-        setZoom(z); 
-        onViewportChange({
-            north: bounds.getNorth(),
-            south: bounds.getSouth(),
-            east: bounds.getEast(),
-            west: bounds.getWest(),
-            zoom: z,
-            center: { lat: center.lat, lng: center.lng }
-        });
+        handleMove();
+        lastUpdateRef.current = Date.now();
     },
     zoomend: () => {
         setZoom(map.getZoom());
+        handleMove(); 
     }
   });
 
@@ -122,27 +158,28 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
       </MapContainer>
 
       {/* VIEWPORT TUNER CROSSHAIR OVERLAY */}
+      {/* pb-48 shifts the visual center UP by 96px */}
       <div className="pointer-events-none absolute inset-0 z-[400] flex flex-col items-center justify-center pb-48">
           
           {/* Wrapper for Circle and Crosshair */}
-          <div className="relative flex items-center justify-center transition-all duration-500">
+          <div className="relative flex items-center justify-center transition-all duration-200">
               {/* Animated Target HUD */}
-              <div className={`absolute flex items-center justify-center w-64 h-64 transition-all duration-500 ${hasSignal ? 'opacity-100 scale-105' : 'opacity-20 scale-100'}`}>
+              <div className={`absolute flex items-center justify-center w-64 h-64 transition-all duration-200 ease-out ${hasSignal ? 'opacity-100 scale-105' : 'opacity-20 scale-100'}`}>
                    {/* Outer Ring */}
-                   <div className={`absolute inset-0 border rounded-full animate-[spin_10s_linear_infinite] transition-colors duration-500 ${hasSignal ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]' : 'border-cyan-500/30'}`} />
+                   <div className={`absolute inset-0 border rounded-full animate-[spin_10s_linear_infinite] transition-colors duration-200 ${hasSignal ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]' : 'border-cyan-500/30'}`} />
                    
                    {/* Inner Dashed Ring */}
-                   <div className={`absolute inset-4 border rounded-full border-dashed animate-[spin_15s_linear_infinite_reverse] transition-colors duration-500 ${hasSignal ? 'border-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'border-cyan-500/20'}`} />
+                   <div className={`absolute inset-4 border rounded-full border-dashed animate-[spin_15s_linear_infinite_reverse] transition-colors duration-200 ${hasSignal ? 'border-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'border-cyan-500/20'}`} />
               </div>
               
               {/* Center Crosshair */}
-              <div className={`transition-all duration-300 z-10 ${hasSignal ? 'text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.9)] scale-110' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]'}`}>
+              <div className={`transition-all duration-200 z-10 ${hasSignal ? 'text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.9)] scale-110' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]'}`}>
                   {hasSignal ? <Lock size={32} strokeWidth={2} /> : <Crosshair size={32} strokeWidth={1.5} />}
               </div>
           </div>
 
           {/* HUD Text */}
-          <div className={`mt-36 flex items-center gap-2 text-[10px] font-mono tracking-[0.2em] uppercase px-4 py-2 rounded backdrop-blur-md border shadow-lg transition-all duration-500 ${
+          <div className={`mt-36 flex items-center gap-2 text-[10px] font-mono tracking-[0.2em] uppercase px-4 py-2 rounded backdrop-blur-md border shadow-lg transition-all duration-200 ${
               hasSignal 
                 ? 'bg-cyan-500/20 border-cyan-400 text-white shadow-[0_0_20px_rgba(34,211,238,0.4)]' 
                 : 'bg-black/60 border-cyan-500/20 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]'

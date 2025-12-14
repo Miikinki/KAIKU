@@ -25,6 +25,7 @@ export interface ViewportBounds {
   west: number;
   zoom: number;
   center: { lat: number; lng: number };
+  sectorCenter?: { lat: number; lng: number }; // The ACTUAL visual center under the crosshair
 }
 
 export interface RateLimitStatus {
