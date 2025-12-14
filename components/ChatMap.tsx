@@ -5,6 +5,7 @@ import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
 import HeatmapLayer from './HeatmapLayer';
+import { useTranslation } from 'react-i18next';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -61,6 +62,7 @@ const MapController: React.FC<{
 // --- MAIN CHAT MAP ---
 const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange, onMapClick, lastNewMessage }) => {
   const [zoom, setZoom] = useState(5);
+  const { t } = useTranslation();
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
@@ -113,7 +115,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
 
           {/* HUD Text */}
           <div className="absolute mt-24 text-[10px] font-mono text-cyan-500/50 tracking-[0.2em] uppercase bg-black/40 px-2 py-1 rounded backdrop-blur-sm border border-white/5">
-              Sector Scan Active
+              {t('map.sector_scan_active')}
           </div>
       </div>
     </div>

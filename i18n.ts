@@ -38,6 +38,9 @@ const resources = {
         "post_reply_placeholder": "Post a reply...",
         "delete_signal_tooltip": "Delete your signal",
         "error_send_reply": "Failed to send reply. Please try again."
+      },
+      "map": {
+        "sector_scan_active": "Sector Scan Active"
       }
     }
   },
@@ -75,6 +78,9 @@ const resources = {
         "post_reply_placeholder": "Kirjoita vastaus...",
         "delete_signal_tooltip": "Poista signaali",
         "error_send_reply": "Vastauksen lähetys epäonnistui. Yritä uudelleen."
+      },
+      "map": {
+        "sector_scan_active": "SEKTORISKANNAUS AKTIIVINEN"
       }
     }
   }

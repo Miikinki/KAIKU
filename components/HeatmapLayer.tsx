@@ -14,14 +14,18 @@ interface HeatmapLayerProps {
 const GlowLayer = L.Layer.extend({
     initialize: function (data: ChatMessage[]) {
         this._data = data;
+        this._points = []; // Cache for screen coordinates
         this._animating = false;
         this._rafId = null;
     },
 
     setData: function (data: ChatMessage[]) {
         this._data = data;
-        // If not animating (e.g. static mode or paused), force a redraw to update positions
-        if (!this._animating) this._redraw();
+        // Update points immediately if map is available, otherwise waiting for onAdd
+        if (this._map) {
+             this._updatePoints();
+             if (!this._animating) this._redraw();
+        }
     },
 
     onAdd: function (map: L.Map) {
@@ -37,38 +41,31 @@ const GlowLayer = L.Layer.extend({
             map.getPanes().overlayPane.appendChild(this._canvas);
         }
 
-        // --- CRITICAL FIX FOR FLOATING DOTS ---
-        // We MUST pause the animation loop during 'drag' and 'zoom' interactions.
-        // Why? Because during drag, Leaflet moves the canvas container using CSS Transforms.
-        // If we try to redraw the points using coordinate calculations during this transform,
-        // we apply the movement twice (Double Transformation), causing the dots to "slide" or "float".
-        // By pausing, we let CSS handle the movement perfectly, and resume pulsing when stopped.
-
-        this._pauseBound = this._pause.bind(this);
-        this._resumeBound = this._resume.bind(this);
         this._resetBound = this._reset.bind(this);
         this._animateZoomBound = this._animateZoom.bind(this);
+        this._pauseBound = this._pause.bind(this);
+        this._resumeBound = this._resume.bind(this);
 
-        // Stop on interaction start
-        map.on('movestart', this._pauseBound);
-        map.on('zoomstart', this._pauseBound);
-
-        // Resume and Reset on interaction end
-        map.on('moveend', this._resetBound);
-        map.on('moveend', this._resumeBound);
-        map.on('zoomend', this._resetBound);
+        // Events
+        map.on('zoomstart', this._pauseBound); // Pause during zoom for perf
         map.on('zoomend', this._resumeBound);
+        map.on('zoomend', this._resetBound);
+        
+        // CRITICAL FIX: We recalculate points ONLY when map stops moving.
+        // During drag (move), we let the CSS transform handle the position.
+        // We do NOT pause animation during drag anymore, as cached points prevent drift.
+        map.on('moveend', this._resetBound); 
 
         if (map.options.zoomAnimation && L.Browser.any3d) {
             map.on('zoomanim', this._animateZoomBound);
         }
 
         this._reset();
-        this._resume(); // Start loop
+        this._resume(); 
     },
 
     onRemove: function (map: L.Map) {
-        this._pause(); // Stop loop
+        this._pause(); 
 
         if (this.options.pane) {
             this.getPane().removeChild(this._canvas);
@@ -76,12 +73,10 @@ const GlowLayer = L.Layer.extend({
             map.getPanes().overlayPane.removeChild(this._canvas);
         }
 
-        map.off('movestart', this._pauseBound);
         map.off('zoomstart', this._pauseBound);
-        map.off('moveend', this._resetBound);
-        map.off('moveend', this._resumeBound);
-        map.off('zoomend', this._resetBound);
         map.off('zoomend', this._resumeBound);
+        map.off('zoomend', this._resetBound);
+        map.off('moveend', this._resetBound);
 
         if (map.options.zoomAnimation) {
             map.off('zoomanim', this._animateZoomBound);
@@ -101,17 +96,30 @@ const GlowLayer = L.Layer.extend({
             (canvas.style as any)[originProp] = '0 0';
         }
 
-        // CRITICAL: Screen blending for additive light
         canvas.style.mixBlendMode = 'screen'; 
         
-        const size = this._map.getSize();
-        canvas.width = size.x;
-        canvas.height = size.y;
-        canvas.style.width = size.x + 'px';
-        canvas.style.height = size.y + 'px';
-
         const animated = this._map.options.zoomAnimation && L.Browser.any3d;
         L.DomUtil.addClass(canvas, 'leaflet-zoom-' + (animated ? 'animated' : 'hide'));
+    },
+
+    _updatePoints: function() {
+        if (!this._map) return;
+        
+        // Cache screen coordinates to decouple from map state during animation frames
+        const bounds = this._map.getBounds().pad(0.1); // Small padding for edge smoothness
+        this._points = [];
+
+        for (const msg of this._data) {
+            if (bounds.contains([msg.location.lat, msg.location.lng])) {
+                const p = this._map.latLngToContainerPoint([msg.location.lat, msg.location.lng]);
+                this._points.push({
+                    x: p.x,
+                    y: p.y,
+                    timestamp: msg.timestamp,
+                    score: msg.score
+                });
+            }
+        }
     },
 
     _reset: function () {
@@ -119,16 +127,20 @@ const GlowLayer = L.Layer.extend({
         L.DomUtil.setPosition(this._canvas, topLeft);
 
         const size = this._map.getSize();
+        const dpr = window.devicePixelRatio || 1;
 
-        if (this._canvas.width !== size.x) {
-            this._canvas.width = size.x;
+        if (this._canvas.width !== size.x * dpr) {
+            this._canvas.width = size.x * dpr;
+            this._canvas.height = size.y * dpr;
             this._canvas.style.width = size.x + 'px';
-        }
-        if (this._canvas.height !== size.y) {
-            this._canvas.height = size.y;
             this._canvas.style.height = size.y + 'px';
+            
+            // Apply scale to context to work with logical pixels
+            const ctx = this._canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
         }
 
+        this._updatePoints();
         this._redraw();
     },
 
@@ -160,10 +172,13 @@ const GlowLayer = L.Layer.extend({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Clear using logical pixels (scale is already set in _reset)
+        const size = this._map.getSize();
+        ctx.clearRect(0, 0, size.x, size.y);
+        
+        // Composite op reset (just in case)
         ctx.globalCompositeOperation = 'screen';
 
-        const bounds = this._map.getBounds();
         const zoom = this._map.getZoom();
         const now = Date.now();
 
@@ -176,30 +191,24 @@ const GlowLayer = L.Layer.extend({
         else if (zoom < 12) { baseRadius = 25; baseIntensity = 0.3; }
         else { baseRadius = 60; baseIntensity = 0.2; } 
 
-        this._data.forEach((msg: ChatMessage) => {
-            // Cull off-screen
-            if (!bounds.contains([msg.location.lat, msg.location.lng])) return;
-
-            const p = this._map.latLngToContainerPoint([msg.location.lat, msg.location.lng]);
-
+        // Draw from CACHED points
+        this._points.forEach((p: any) => {
             // --- PULSE ANIMATION ---
-            const phase = (msg.timestamp % 5000) / 5000 * (Math.PI * 2);
-            
-            // Pulse logic
+            const phase = (p.timestamp % 5000) / 5000 * (Math.PI * 2);
             const breathing = 1.0 + Math.sin(now * 0.002 + phase) * 0.2;
 
             let radius = baseRadius * breathing;
             let intensity = baseIntensity * breathing;
             
-            if (msg.score > 5) { radius *= 1.5; intensity += 0.2; }
-            if (msg.score > 20) { radius *= 2.0; intensity = 0.8; }
+            if (p.score > 5) { radius *= 1.5; intensity += 0.2; }
+            if (p.score > 20) { radius *= 2.0; intensity = 0.8; }
             
-            const ageHours = (Date.now() - msg.timestamp) / (1000 * 60 * 60);
+            const ageHours = (Date.now() - p.timestamp) / (1000 * 60 * 60);
             if (ageHours < 1) intensity += 0.2;
 
             intensity = Math.min(intensity, 1.0);
 
-            // Draw
+            // Draw Gradient
             const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
             grad.addColorStop(0, `rgba(34, 211, 238, ${intensity})`);
             grad.addColorStop(0.4, `rgba(34, 211, 238, ${intensity * 0.5})`);
@@ -234,10 +243,6 @@ const HeatmapLayer: React.FC<HeatmapLayerProps> = ({ messages }) => {
     } else {
         layerRef.current.setData(messages);
     }
-
-    return () => {
-        // Cleanup handled by onRemove in the layer itself
-    };
   }, [map, messages]);
 
   // Clean up on unmount
