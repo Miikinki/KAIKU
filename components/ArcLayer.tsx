@@ -36,18 +36,20 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
         processedIds.current.add(m.id);
 
         if (!m.parentId) return false;
-        // Must be remote OR have precise origin info
-        if (!m.isRemote && !m.customOrigin && !m.preciseOrigin) return false;
 
-        // FILTER DUPLICATES FOR SENDER:
-        // If it's MY message coming from server (sessionId match)
-        // AND it doesn't have customOrigin (meaning it's the server echo, not local)
-        // AND I already showed the local echo...
-        // Actually, with preciseOrigin, the server echo is MORE accurate than the country fallback.
-        // But to avoid a visual "double flash" if the local echo is still playing, we might filter.
-        // However, if the local echo finished, we might want to show this? 
-        // For simplicity: If it's me, and no customOrigin, skip it to rely on the instant local feedback only.
-        if (m.sessionId === mySessionId && !m.customOrigin) return false;
+        // CHECK 1: Local Echo (Transient)
+        // If this message has a custom origin (meaning it was created locally by the user just now),
+        // we ALWAYS want to show it, regardless of other rules.
+        if (m.customOrigin) return true;
+
+        // CHECK 2: Remote / Metadata
+        // If it's not a local echo, it must be remote or have precise origin metadata.
+        if (!m.isRemote && !m.preciseOrigin) return false;
+
+        // CHECK 3: Server Echo De-duplication
+        // If it's a message from ME (mySessionId) but it's coming from the server (no customOrigin),
+        // we generally hide it to avoid double-drawing the line (Local Echo + Server Echo).
+        if (m.sessionId === mySessionId) return false;
 
         return true;
     });

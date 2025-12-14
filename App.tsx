@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Radio, Zap, Volume2, VolumeX, AlertCircle } from 'lucide-react';
+import { Radio, Zap, Volume2, VolumeX } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
+import WelcomeScreen from './components/WelcomeScreen';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, generateUUID } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance } from './services/storageService';
 import { getCityName } from './services/moderationService';
 import { SoundService } from './services/soundService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
@@ -15,6 +16,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 const SCAN_RADIUS_PX = 142; 
 
 function App() {
+  const [hasStarted, setHasStarted] = useState(false); // New state for Welcome Screen
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
   const [signals, setSignals] = useState<ChatMessage[]>([]);
   
@@ -38,15 +40,28 @@ function App() {
     cooldownUntil: null
   });
 
+  // START HANDLER
+  const handleStart = (startLoc: { lat: number, lng: number }) => {
+      // 1. Initialize location cache immediately with the fresh GPS data
+      locationCache.current = startLoc;
+      
+      // 2. Play startup sound (now allowed because of user interaction)
+      SoundService.playScan();
+      
+      // 3. Mount the app
+      setHasStarted(true);
+  };
+
   const loadData = async () => {
       const data = await fetchMessages(true);
       setMessages(data);
       setRateLimit(await getRateLimitStatus());
   };
 
-  // CONTINUOUS GPS TRACKING
-  // This replaces the one-off getCurrentPosition to ensure accuracy (e.g. Porvoo vs Helsinki)
+  // CONTINUOUS GPS TRACKING (Only activates after start)
   useEffect(() => {
+    if (!hasStarted) return; // Don't track until started
+
     let watchId: number;
 
     if ('geolocation' in navigator) {
@@ -61,7 +76,7 @@ function App() {
         },
         { 
           enableHighAccuracy: true, 
-          maximumAge: 10000, 
+          maximumAge: 5000, 
           timeout: 20000 
         }
       );
@@ -70,10 +85,12 @@ function App() {
     return () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
-  }, []);
+  }, [hasStarted]);
 
   useEffect(() => {
+    if (!hasStarted) return;
     loadData();
+    
     const sub = subscribeToMessages(({ type, message, id }) => {
       setMessages(prev => {
         let next = [...prev];
@@ -109,7 +126,7 @@ function App() {
       });
     });
     return () => { if (sub) sub.unsubscribe(); };
-  }, []);
+  }, [hasStarted]);
 
   useEffect(() => {
     if (!currentBounds) return;
@@ -136,7 +153,6 @@ function App() {
       return dist <= radiusKm;
     });
 
-    // Sort strategy changes based on zoom level
     if (currentBounds.zoom < 10) {
         visible = visible.sort((a, b) => b.score - a.score);
     } else {
@@ -163,31 +179,22 @@ function App() {
   };
 
   const getLocation = async (): Promise<{lat: number, lng: number}> => {
-     // 1. Prefer cached high-accuracy watch position
      if (locationCache.current) return locationCache.current;
      
-     // 2. Try explicit current position (wait up to 10s)
-     // STRICT MODE: No IP fallback, No Hardcoded fallback.
+     // Fallback if cache is empty (unlikely with WelcomeScreen)
      return new Promise((resolve, reject) => {
          if (!navigator.geolocation) {
              reject(new Error("Geolocation not supported"));
              return;
          }
-
          navigator.geolocation.getCurrentPosition(
              (pos) => {
                  const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                  locationCache.current = loc;
                  resolve(loc);
              }, 
-             (err) => {
-                 console.warn("GPS failed", err);
-                 reject(new Error("GPS signal required."));
-             }, 
-             { 
-                 timeout: 10000, 
-                 enableHighAccuracy: true 
-             }
+             (err) => reject(new Error("GPS signal required.")), 
+             { timeout: 10000, enableHighAccuracy: true }
          );
      });
   };
@@ -205,7 +212,7 @@ function App() {
           setTargetLocation({ lat, lng, name: nameData.city });
           setIsInputOpen(true);
       } catch (e) {
-          alert("GPS Signal Lost. Cannot broadcast without precise location.");
+          alert("GPS Signal Lost. Cannot broadcast.");
       }
   };
 
@@ -224,7 +231,6 @@ function App() {
   
   const handleReplyMessage = async (text: string, parentId: string) => {
       try {
-          // Force get latest location for the arc origin
           const userLoc = await getLocation(); 
           
           let targetLat = userLoc.lat;
@@ -236,30 +242,28 @@ function App() {
           }
 
           const dist = calculateDistance(userLoc.lat, userLoc.lng, targetLat, targetLng);
-          // If > 25km, it's considered remote enough to warrant an arc
           const isRemote = dist > 25; 
 
+          // Save to DB
           await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
           
-          // VISUAL FEEDBACK
-          // Because we have the exact userLoc here, this arc will be precise.
-          if (isRemote) {
-              const tempSignal: ChatMessage = {
-                  id: `local-echo-${Date.now()}`,
-                  text: text,
-                  timestamp: Date.now(),
-                  location: { lat: targetLat, lng: targetLng },
-                  city: "Target",
-                  sessionId: "me", // Marker for ArcLayer to recognize as local
-                  score: 0,
-                  parentId: parentId,
-                  isRemote: true,
-                  originCountry: "ME",
-                  // CRITICAL: Inject EXACT user GPS for the Arc start point
-                  customOrigin: { lat: userLoc.lat, lng: userLoc.lng } 
-              };
-              setSignals(prev => [...prev, tempSignal]);
-          }
+          // ALWAYS TRIGGER LOCAL ECHO for replies
+          // The WelcomeScreen ensures userLoc is valid, so this will draw a line.
+          const tempSignal: ChatMessage = {
+              id: `local-echo-${Date.now()}`,
+              text: text,
+              timestamp: Date.now(),
+              location: { lat: targetLat, lng: targetLng },
+              city: "Target",
+              sessionId: "me", 
+              score: 0,
+              parentId: parentId,
+              isRemote: true,
+              originCountry: "ME",
+              customOrigin: { lat: userLoc.lat, lng: userLoc.lng } 
+          };
+          
+          setSignals(prev => [...prev, tempSignal]);
 
           await loadData();
       } catch (e) {
@@ -293,6 +297,12 @@ function App() {
 
   const hasSignal = visibleMessages.length > 0;
 
+  // --- RENDER ---
+
+  if (!hasStarted) {
+      return <WelcomeScreen onStart={handleStart} />;
+  }
+
   return (
     <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
       
@@ -303,6 +313,7 @@ function App() {
         onMapClick={handleMapClick}
         lastNewMessage={lastNewMessage}
         hasSignal={hasSignal}
+        initialCenter={locationCache.current || undefined}
       />
 
       <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">

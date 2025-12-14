@@ -14,6 +14,7 @@ interface ChatMapProps {
   onMapClick: () => void;
   lastNewMessage: ChatMessage | null;
   hasSignal: boolean;
+  initialCenter?: { lat: number; lng: number }; // NEW PROP
 }
 
 // --- ANIMATED ELLIPSIS COMPONENT (Sequential) ---
@@ -110,29 +111,29 @@ const MapController: React.FC<{
 };
 
 // --- MAIN CHAT MAP ---
-const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal }) => {
+const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter }) => {
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
 
-  // "Security Protocol" Warning Threshold
-  // Triggers just before max zoom to warn user.
+  const startPosition = initialCenter ? [initialCenter.lat, initialCenter.lng] : [60.1, 24.9];
+  const startZoom = initialCenter ? 8 : 4; // Zoom closer if we have user loc
+
   const isMaxZoom = zoom >= 12;
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
       <MapContainer
-        center={[25, 0]} 
-        zoom={4}
+        // @ts-ignore
+        center={startPosition} 
+        zoom={startZoom}
         scrollWheelZoom={true}
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={4}
-        // Precision Zoom: 12.5
-        // Just enough to distinguish neighborhoods, but not street details.
         maxZoom={12.5}
-        zoomSnap={0.5} // Allow half-step zooming
+        zoomSnap={0.5} 
         maxBounds={[[-90, -220], [90, 220]]} 
         maxBoundsViscosity={1.0} 
         preferCanvas={true}
