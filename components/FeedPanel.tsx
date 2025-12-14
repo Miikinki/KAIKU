@@ -116,28 +116,33 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   
   // VARIANTS
   // open: Full screen (mostly)
-  // peek: Half screen (Tuner Mode) - 60vh offset from top means 40vh height (approx 40% of screen)
+  // peek: Half screen (Tuner Mode) 
+  // collapsed: Only header visible (approx 60-70px from bottom)
   const variants = {
       open: { y: 0 },
-      closed: { y: '100%' },
-      peek: { y: '55%' } 
+      peek: { y: '55%' },
+      collapsed: { y: 'calc(100% - 76px)' } 
   };
 
-  // Always 'peek' if not explicitly open, unless absolutely no messages (then close to show map)
-  // Actually for Tuner model, we want it to stay up even if empty to show "No Signals"
-  const currentState = isOpen ? 'open' : 'peek';
+  // Logic: 
+  // 1. If explicitly Open -> Open
+  // 2. If 0 messages -> Collapsed (Show only header to maximize map)
+  // 3. Otherwise -> Peek (Show some messages)
+  const currentState = isOpen 
+    ? 'open' 
+    : (displayMessages.length === 0 ? 'collapsed' : 'peek');
 
   return (
     <>
       <motion.div
-        initial="peek"
+        initial="collapsed"
         animate={currentState}
         variants={variants}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         className="fixed inset-x-0 bottom-0 top-[15vh] bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden"
       >
         <div 
-            className="p-4 border-b border-white/5 flex flex-col items-center bg-white/5 cursor-pointer transition-colors hover:bg-white/10"
+            className="p-4 border-b border-white/5 flex flex-col items-center bg-white/5 cursor-pointer transition-colors hover:bg-white/10 shrink-0"
             onClick={toggleOpen}
         >
           {isOpen && <div className="w-12 h-1.5 bg-white/20 rounded-full mb-4" />}
@@ -145,17 +150,19 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
           <div className="w-full flex justify-between items-center px-2">
             <div className="flex items-center gap-4">
                 {!isOpen ? (
-                    <div className="flex items-center gap-2">
-                         <div className={`p-1 rounded-full ${isRefreshing ? 'animate-spin' : ''}`}>
-                             <ScanLine size={20} className="text-cyan-400" />
+                    <div className="flex items-center gap-3">
+                         <div className={`p-1.5 rounded-full bg-cyan-500/10 ${isRefreshing ? 'animate-spin' : ''}`}>
+                             <ScanLine size={18} className="text-cyan-400" />
                          </div>
                          <div className="flex flex-col">
                              <span className="text-sm font-bold tracking-widest uppercase text-white">
                                 {feedTitle}
                              </span>
-                             <span className="text-[10px] text-cyan-400 font-mono">
-                                {displayMessages.length} {t('feed.signals_detected')}
-                             </span>
+                             <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-mono ${displayMessages.length === 0 ? 'text-gray-500' : 'text-cyan-400'}`}>
+                                    {displayMessages.length} {t('feed.signals_detected')}
+                                </span>
+                             </div>
                          </div>
                     </div>
                 ) : (
@@ -193,7 +200,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    className="bg-cyan-900/30 border-b border-cyan-500/30 overflow-hidden"
+                    className="bg-cyan-900/30 border-b border-cyan-500/30 overflow-hidden shrink-0"
                 >
                     <div className="flex items-center justify-between px-6 py-2">
                         <div className="flex items-center gap-2 text-cyan-400 text-sm font-mono">

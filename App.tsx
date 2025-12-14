@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Radio } from 'lucide-react';
+import { Plus, Radio, Zap } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -8,6 +8,7 @@ import { ChatMessage, ViewportBounds } from './types';
 import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance } from './services/storageService';
 import { getCityName } from './services/moderationService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
+import { AnimatePresence, motion } from 'framer-motion';
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
@@ -213,6 +214,7 @@ function App() {
         lastNewMessage={lastNewMessage}
       />
 
+      {/* HEADER LOGO */}
       <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none">
          <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 w-fit pointer-events-auto shadow-lg">
             <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
@@ -231,16 +233,31 @@ function App() {
         zoomLevel={currentBounds?.zoom}
       />
 
-      {!isFeedOpen && (
-        <div className="fixed bottom-28 right-6 z-[400]">
-            <button
-            onClick={handleOpenInput}
-            className="flex items-center justify-center w-14 h-14 bg-white text-black rounded-full shadow-[0_0_20px_rgba(255,255,255,0.4)] hover:scale-105 transition-transform"
+      {/* NEW BROADCAST BUTTON - CENTER BOTTOM */}
+      {/* Positioned just above the collapsed feed panel */}
+      {/* Fixed z-index to 500 to ensure visibility over the feed panel */}
+      <AnimatePresence>
+        {!isFeedOpen && !isInputOpen && (
+            <motion.div 
+                initial={{ opacity: 0, scale: 0.5, y: 50 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.5, y: 50 }}
+                className="fixed bottom-24 left-0 right-0 z-[500] flex justify-center pointer-events-none"
             >
-            <Plus size={24} />
-            </button>
-        </div>
-      )}
+                <button
+                    onClick={handleOpenInput}
+                    className="pointer-events-auto group relative flex items-center justify-center w-16 h-16 bg-[#0f0f18] rounded-full border border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-95 transition-all overflow-hidden"
+                >
+                    {/* Ripple Effect */}
+                    <div className="absolute inset-0 rounded-full border border-cyan-500/30 animate-[ping_2s_infinite]" />
+                    <div className="absolute inset-0 bg-cyan-500/10 group-hover:bg-cyan-500/20 transition-colors" />
+                    
+                    {/* Icon */}
+                    <Zap size={28} className="text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,1)]" />
+                </button>
+            </motion.div>
+        )}
+      </AnimatePresence>
 
       <ChatInputModal 
         isOpen={isInputOpen}

@@ -14,6 +14,29 @@ interface ChatMapProps {
   lastNewMessage: ChatMessage | null;
 }
 
+// --- ANIMATED ELLIPSIS COMPONENT (Sequential) ---
+// Cycles: "." -> ".." -> "..." -> "" -> "."
+const AnimatedEllipsis = () => {
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots(prev => {
+        if (prev === '...') return '';
+        return prev + '.';
+      });
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fixed width container to prevent layout shift
+  return (
+    <span className="inline-block w-6 text-left font-bold text-cyan-400">
+      {dots}
+    </span>
+  );
+};
+
 // --- MAP CONTROLLER ---
 const MapController: React.FC<{ 
     onViewportChange: (b: ViewportBounds) => void, 
@@ -114,8 +137,11 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
           </div>
 
           {/* HUD Text */}
-          <div className="absolute mt-24 text-[10px] font-mono text-cyan-500/50 tracking-[0.2em] uppercase bg-black/40 px-2 py-1 rounded backdrop-blur-sm border border-white/5">
-              {t('map.sector_scan_active')}
+          <div className="absolute mt-24 flex items-center gap-2 text-[10px] font-mono tracking-[0.2em] uppercase bg-black/60 px-4 py-2 rounded backdrop-blur-md border border-cyan-500/20 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]">
+              <span className="drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse">
+                {t('map.sector_scan_active')}
+              </span>
+              <AnimatedEllipsis />
           </div>
       </div>
     </div>
