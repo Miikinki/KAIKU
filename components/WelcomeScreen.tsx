@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Radio, MapPin, Zap, Shield, Globe, Loader2, ChevronRight } from 'lucide-react';
-import { THEME_COLOR } from '../constants';
+import { Radio, MapPin, Zap, Shield, Globe, Loader2, ChevronRight, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface WelcomeScreenProps {
@@ -9,11 +8,13 @@ interface WelcomeScreenProps {
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [statusText, setStatusText] = useState("Käynnistetään GPS...");
   const [error, setError] = useState<string | null>(null);
 
   const handleConnect = () => {
     setIsLoading(true);
     setError(null);
+    setStatusText("Haetaan tarkkaa sijaintia...");
 
     if (!navigator.geolocation) {
       setError("Selaimesi ei tue paikannusta.");
@@ -21,30 +22,35 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       return;
     }
 
-    // "Warm up" the GPS
+    // SIMPLIFIED LOGIC: Force High Accuracy, Long Timeout.
+    // We do not fallback to IP (Helsinki) anymore. We wait for the real signal.
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        // Success - Pass coords to App
+        // Success
         onStart({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude
         });
       },
       (err) => {
-        console.warn(err);
+        console.warn("GPS Init failed", err);
         setIsLoading(false);
+        
         if (err.code === 1) {
-            setError("Sijaintitiedot estetty. Salli paikannus selaimen asetuksista käyttääksesi Kaikua.");
+            setError("Sijaintitiedot estetty. Salli paikannus selaimen asetuksista.");
         } else if (err.code === 2) {
-            setError("GPS-signaalia ei löydy. Oletko sisätiloissa tai tunnelissa?");
+            setError("GPS-signaalia ei löydy. Siirry lähemmäs ikkunaa tai ulos.");
+        } else if (err.code === 3) {
+            setError("Haku aikakatkaistiin. GPS vastaa hitaasti. Yritä uudelleen.");
         } else {
-            setError("Yhteysvirhe paikannuksessa. Yritä uudelleen.");
+            setError(`Virhe: ${err.message}. Yritä uudelleen.`);
         }
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 0
+        // Increased to 20s to allow "cold start" of GPS like before.
+        timeout: 20000, 
+        maximumAge: 0   
       }
     );
   };
@@ -119,12 +125,12 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                 {isLoading ? (
                     <>
                         <Loader2 className="animate-spin" />
-                        <span>Etsitään satelliitteja...</span>
+                        <span>{statusText}</span>
                     </>
                 ) : (
                     <>
-                        <Zap size={20} className="fill-white" />
-                        <span>Yhdistä Verkkoon</span>
+                        {error ? <RefreshCw size={20} className="fill-white" /> : <Zap size={20} className="fill-white" />}
+                        <span>{error ? "Yritä Uudelleen" : "Yhdistä Verkkoon"}</span>
                         <ChevronRight className="group-hover:translate-x-1 transition-transform" />
                     </>
                 )}
@@ -137,7 +143,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         </button>
 
         <p className="mt-6 text-[10px] text-gray-600 font-mono">
-            v1.0.4 • SECURE CONNECTION REQUIRED
+            v1.0.7 • SECURE CONNECTION REQUIRED
         </p>
 
       </motion.div>
