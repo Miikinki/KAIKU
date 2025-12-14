@@ -91,6 +91,7 @@ function App() {
     if (!hasStarted) return;
     loadData();
     
+    // NETWORK EVENT LISTENER (The "Socket" Logic)
     const sub = subscribeToMessages(({ type, message, id }) => {
       // 1. UPDATE HEATMAP DATA (MESSAGES)
       setMessages(prev => {
@@ -121,13 +122,12 @@ function App() {
         return next;
       });
 
-      // 2. TRIGGER ARC ANIMATION (SIGNALS)
-      // Moved outside the setMessages to ensure independent execution.
-      // We RELAXED the condition: Any reply is a candidate signal. 
-      // We let ArcLayer decide if it has enough data (coordinates) to draw it.
+      // 2. TRIGGER ARC ANIMATION (SIGNALS) via NETWORK BROADCAST
+      // This is the ONLY place where signals are generated now.
+      // It relies purely on the server pushing the new message event to all clients (including sender).
       if (message && message.parentId) {
            setSignals(prevSignals => {
-               // Prevent duplicates in the signal queue if possible, though ArcLayer also checks
+               // Deduplicate to avoid re-animating same signal
                if (prevSignals.some(s => s.id === message.id)) return prevSignals;
                return [...prevSignals.slice(-10), message];
            });
@@ -251,26 +251,11 @@ function App() {
           }
 
           // Save to DB
+          // Note: We removed the local echo animation here.
+          // We now wait for the Supabase Realtime event (subscribeToMessages) to fire
+          // which will carry the 'preciseOrigin' back to us and everyone else.
           await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
           
-          // ALWAYS TRIGGER LOCAL ECHO for replies
-          // The WelcomeScreen ensures userLoc is valid, so this will draw a line immediately.
-          const tempSignal: ChatMessage = {
-              id: `local-echo-${Date.now()}`,
-              text: text,
-              timestamp: Date.now(),
-              location: { lat: targetLat, lng: targetLng },
-              city: "Target",
-              sessionId: "me", 
-              score: 0,
-              parentId: parentId,
-              isRemote: true, // Force true for local echo effect
-              originCountry: "ME",
-              customOrigin: { lat: userLoc.lat, lng: userLoc.lng } 
-          };
-          
-          setSignals(prev => [...prev, tempSignal]);
-
           await loadData();
       } catch (e) {
           alert("GPS Signal Lost. Cannot send reply.");

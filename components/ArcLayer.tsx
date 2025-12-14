@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useMap } from 'react-leaflet';
 import { ChatMessage } from '../types';
 import { COUNTRY_COORDINATES, THEME_COLOR_GLOW } from '../constants';
-import { getAnonymousID } from '../services/storageService';
 
 interface ArcLayerProps {
   messages: ChatMessage[]; 
@@ -29,43 +28,32 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
   useEffect(() => {
     const newArcs: ActiveArc[] = [];
     const now = Date.now();
-    const mySessionId = getAnonymousID();
 
-    // FILTER LOGIC:
-    // We want to show arcs for ANY reply message that has coordinate data.
+    // SERVER-DRIVEN FILTER LOGIC:
+    // Any message passed into this prop (via App.tsx -> signals) is considered a valid signal.
+    // We only check if we've already processed it locally to avoid double-drawing.
     const newSignals = messages.filter(m => {
         // 1. Only process new messages we haven't drawn yet
         if (processedIds.current.has(m.id)) return false;
         processedIds.current.add(m.id);
 
-        // 2. Must be a reply (have a parent)
+        // 2. Must be a reply
         if (!m.parentId) return false;
 
-        // 3. De-duplicate my own server echoes.
-        // If I sent the message, I already saw the "Local Echo" arc (via m.customOrigin).
-        // I don't need to see the server version again.
-        // Everyone else (receivers) DOES need to see the server version.
-        if (m.sessionId === mySessionId && !m.customOrigin) return false;
-        
         return true;
     });
 
     newSignals.forEach(msg => {
        let origin: [number, number] | undefined;
 
-       // PRIORITY 1: Precise Origin
+       // PRIORITY 1: Precise Origin (From Server Metadata)
        // This comes from the hidden __loc tag saved with every message.
-       // This allows us to draw lines between precise points even for local messages.
+       // It allows accurate lines for everyone, anywhere.
        if (msg.preciseOrigin) {
            origin = [msg.preciseOrigin.lat, msg.preciseOrigin.lng];
        }
-       // PRIORITY 2: Custom Origin (Local Echo)
-       // This is for the sender's immediate visual feedback.
-       else if (msg.customOrigin) {
-           origin = [msg.customOrigin.lat, msg.customOrigin.lng];
-       } 
-       // PRIORITY 3: Country Fallback
-       // Used for older messages or if precise data is stripped.
+       // PRIORITY 2: Country Fallback
+       // Used for older messages if precise data is stripped.
        else if (msg.originCountry && COUNTRY_COORDINATES[msg.originCountry]) {
            origin = COUNTRY_COORDINATES[msg.originCountry];
        }
