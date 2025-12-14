@@ -39,25 +39,26 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
 
         // CHECK 1: Local Echo (Transient)
         // If this message has a custom origin (meaning it was created locally by the user just now),
-        // we ALWAYS want to show it, regardless of other rules.
+        // we ALWAYS want to show it.
         if (m.customOrigin) return true;
 
-        // CHECK 2: Remote / Metadata
-        // If it's not a local echo, it must be remote or have precise origin metadata.
-        if (!m.isRemote && !m.preciseOrigin) return false;
-
-        // CHECK 3: Server Echo De-duplication
+        // CHECK 2: Server Echo De-duplication
         // If it's a message from ME (mySessionId) but it's coming from the server (no customOrigin),
-        // we generally hide it to avoid double-drawing the line (Local Echo + Server Echo).
-        if (m.sessionId === mySessionId) return false;
+        // we hide it because the Local Echo logic above already drew it.
+        if (m.sessionId === mySessionId && !m.customOrigin) return false;
 
+        // REMOVED CHECK 3: Strict Remote/Precise check.
+        // Previously we returned false if (!m.isRemote && !m.preciseOrigin).
+        // We now allow ALL other messages to pass through. 
+        // We will try to find an origin below. If we can't find one, we just won't draw it.
+        
         return true;
     });
 
     newSignals.forEach(msg => {
        let origin: [number, number] | undefined;
 
-       // 1. Precise Origin (From hidden tags - Works for everyone)
+       // 1. Precise Origin (From hidden tags - Works for everyone, even for local messages)
        if (msg.preciseOrigin) {
            origin = [msg.preciseOrigin.lat, msg.preciseOrigin.lng];
        }
@@ -65,7 +66,7 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
        else if (msg.customOrigin) {
            origin = [msg.customOrigin.lat, msg.customOrigin.lng];
        } 
-       // 3. Country Fallback (Only for very old messages without tags)
+       // 3. Country Fallback (For old messages or where tags failed)
        else if (msg.originCountry && COUNTRY_COORDINATES[msg.originCountry]) {
            origin = COUNTRY_COORDINATES[msg.originCountry];
        }
@@ -133,14 +134,15 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
                 const startPoint = map.latLngToContainerPoint(arc.origin);
                 const endPoint = map.latLngToContainerPoint(arc.target);
                 
-                // Skip if off-screen/invalid
-                if (startPoint.x === endPoint.x && startPoint.y === endPoint.y) return null;
+                // Skip if entirely invalid points
+                if (isNaN(startPoint.x) || isNaN(endPoint.x)) return null;
 
                 const midX = (startPoint.x + endPoint.x) / 2;
                 const midY = (startPoint.y + endPoint.y) / 2;
                 const dist = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
                 
-                const curvature = 0.4;
+                // Adjust curvature based on distance to look good both locally and globally
+                const curvature = dist < 200 ? 0.2 : 0.4;
                 const cpX = midX;
                 const cpY = midY - (dist * curvature);
                 const d = `M ${startPoint.x},${startPoint.y} Q ${cpX},${cpY} ${endPoint.x},${endPoint.y}`;

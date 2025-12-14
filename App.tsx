@@ -92,6 +92,7 @@ function App() {
     loadData();
     
     const sub = subscribeToMessages(({ type, message, id }) => {
+      // 1. UPDATE HEATMAP DATA (MESSAGES)
       setMessages(prev => {
         let next = [...prev];
         if (type === 'DELETE') {
@@ -116,17 +117,22 @@ function App() {
                      }
                  }
              }
-
-             // TRIGGER ARC ANIMATION (Signal)
-             // We allow the arc if it's a reply AND (it's remote OR we have precise location data)
-             // This ensures local replies (same room/city) also flash the arc if metadata is present.
-             if (message.parentId && (message.isRemote || message.preciseOrigin)) {
-                 setSignals(prevSignals => [...prevSignals.slice(-10), message]);
-                 SoundService.playScan();
-             }
         }
         return next;
       });
+
+      // 2. TRIGGER ARC ANIMATION (SIGNALS)
+      // Moved outside the setMessages to ensure independent execution.
+      // We RELAXED the condition: Any reply is a candidate signal. 
+      // We let ArcLayer decide if it has enough data (coordinates) to draw it.
+      if (message && message.parentId) {
+           setSignals(prevSignals => {
+               // Prevent duplicates in the signal queue if possible, though ArcLayer also checks
+               if (prevSignals.some(s => s.id === message.id)) return prevSignals;
+               return [...prevSignals.slice(-10), message];
+           });
+           SoundService.playScan();
+      }
     });
     return () => { if (sub) sub.unsubscribe(); };
   }, [hasStarted]);
