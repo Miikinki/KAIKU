@@ -14,7 +14,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const handleConnect = () => {
     setIsLoading(true);
     setError(null);
-    setStatusText("Haetaan tarkkaa satelliittiyhteyttä...");
+    setStatusText("Haetaan sijaintia...");
 
     if (!navigator.geolocation) {
       setError("Laitteesi ei tue GPS-paikannusta.");
@@ -22,11 +22,11 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       return;
     }
 
-    // STRICT GPS MODE: No timeout limit, High Accuracy ONLY.
-    // This forces the device to use hardware GPS (Porvoo) instead of IP guessing (Helsinki).
+    // FIX: Relaxed constraints to prevent Timeouts
+    // maximumAge: 10000 allows using a GPS fix from the last 10 seconds (much faster).
+    // timeout: 15000 gives the device reasonable time without hanging forever.
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        // Success - we have a real lock.
         onStart({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude
@@ -36,11 +36,10 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         console.warn("GPS Error", err);
         setIsLoading(false);
         
-        // Detailed error messages for the user
         if (err.code === 1) {
             setError("Sijainti estetty. Salli GPS selaimen asetuksista.");
         } else if (err.code === 2) {
-            setError("GPS-signaalia ei löydy. Oletko sisätiloissa? Mene ikkunan lähelle.");
+            setError("Sijaintia ei löydy. Tarkista GPS-asetukset.");
         } else if (err.code === 3) {
             setError("Haku aikakatkaistiin. Yritä uudelleen.");
         } else {
@@ -49,8 +48,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       },
       {
         enableHighAccuracy: true,
-        timeout: 60000, // Give it 60 seconds to find satellites if needed
-        maximumAge: 0   // Do not use cached positions
+        timeout: 15000, 
+        maximumAge: 10000 
       }
     );
   };
@@ -86,7 +85,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                 <MapPin className="text-cyan-400 shrink-0 mt-1" size={18} />
                 <div>
                     <h3 className="text-white font-bold text-sm">Tarkka Sijainti</h3>
-                    <p className="text-gray-400 text-xs mt-1">Vaadimme tarkan GPS-signaalin toimiaksemme. Emme käytä epätarkkaa verkkopaikannusta.</p>
+                    <p className="text-gray-400 text-xs mt-1">Vaadimme GPS-yhteyden toimiaksemme. Emme käytä epätarkkaa verkkopaikannusta.</p>
                 </div>
             </div>
             <div className="flex items-start gap-3">
@@ -143,7 +142,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         </button>
 
         <p className="mt-6 text-[10px] text-gray-600 font-mono">
-            v1.0.8 • HIGH ACCURACY GPS REQUIRED
+            v1.0.9 • GPS SIGNAL REQUIRED
         </p>
 
       </motion.div>

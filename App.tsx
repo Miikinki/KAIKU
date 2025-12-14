@@ -91,7 +91,9 @@ function App() {
     if (!hasStarted) return;
     loadData();
     
-    // NETWORK EVENT LISTENER (The "Socket" Logic)
+    // SERVER-DRIVEN EVENT LISTENER
+    // This is the core of the "Network Logic".
+    // We listen for messages broadcast by the server.
     const sub = subscribeToMessages(({ type, message, id }) => {
       // 1. UPDATE HEATMAP DATA (MESSAGES)
       setMessages(prev => {
@@ -123,11 +125,11 @@ function App() {
       });
 
       // 2. TRIGGER ARC ANIMATION (SIGNALS) via NETWORK BROADCAST
-      // This is the ONLY place where signals are generated now.
-      // It relies purely on the server pushing the new message event to all clients (including sender).
+      // The ArcLayer is now driven 100% by this server event.
+      // When ANY user (including me) receives this INSERT event, we draw the arc.
       if (message && message.parentId) {
            setSignals(prevSignals => {
-               // Deduplicate to avoid re-animating same signal
+               // Deduplicate based on ID to ensure clean animation
                if (prevSignals.some(s => s.id === message.id)) return prevSignals;
                return [...prevSignals.slice(-10), message];
            });
@@ -250,10 +252,10 @@ function App() {
               targetLng = selectedMessage.location.lng;
           }
 
-          // Save to DB
-          // Note: We removed the local echo animation here.
-          // We now wait for the Supabase Realtime event (subscribeToMessages) to fire
-          // which will carry the 'preciseOrigin' back to us and everyone else.
+          // SERVER-DRIVEN LOGIC ENFORCEMENT:
+          // We save the message to Supabase. 
+          // We DO NOT call setSignals() here locally.
+          // We rely on the subscribeToMessages() listener in useEffect to catch the echo from the server.
           await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
           
           await loadData();
