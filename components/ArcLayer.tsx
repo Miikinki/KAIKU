@@ -31,26 +31,21 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     const now = Date.now();
     const mySessionId = getAnonymousID();
 
+    // FILTER LOGIC:
+    // We want to show arcs for ANY reply message that has coordinate data.
     const newSignals = messages.filter(m => {
+        // 1. Only process new messages we haven't drawn yet
         if (processedIds.current.has(m.id)) return false;
         processedIds.current.add(m.id);
 
+        // 2. Must be a reply (have a parent)
         if (!m.parentId) return false;
 
-        // CHECK 1: Local Echo (Transient)
-        // If this message has a custom origin (meaning it was created locally by the user just now),
-        // we ALWAYS want to show it.
-        if (m.customOrigin) return true;
-
-        // CHECK 2: Server Echo De-duplication
-        // If it's a message from ME (mySessionId) but it's coming from the server (no customOrigin),
-        // we hide it because the Local Echo logic above already drew it.
+        // 3. De-duplicate my own server echoes.
+        // If I sent the message, I already saw the "Local Echo" arc (via m.customOrigin).
+        // I don't need to see the server version again.
+        // Everyone else (receivers) DOES need to see the server version.
         if (m.sessionId === mySessionId && !m.customOrigin) return false;
-
-        // REMOVED CHECK 3: Strict Remote/Precise check.
-        // Previously we returned false if (!m.isRemote && !m.preciseOrigin).
-        // We now allow ALL other messages to pass through. 
-        // We will try to find an origin below. If we can't find one, we just won't draw it.
         
         return true;
     });
@@ -58,19 +53,24 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     newSignals.forEach(msg => {
        let origin: [number, number] | undefined;
 
-       // 1. Precise Origin (From hidden tags - Works for everyone, even for local messages)
+       // PRIORITY 1: Precise Origin
+       // This comes from the hidden __loc tag saved with every message.
+       // This allows us to draw lines between precise points even for local messages.
        if (msg.preciseOrigin) {
            origin = [msg.preciseOrigin.lat, msg.preciseOrigin.lng];
        }
-       // 2. Custom Origin (Local Echo - Works for sender)
+       // PRIORITY 2: Custom Origin (Local Echo)
+       // This is for the sender's immediate visual feedback.
        else if (msg.customOrigin) {
            origin = [msg.customOrigin.lat, msg.customOrigin.lng];
        } 
-       // 3. Country Fallback (For old messages or where tags failed)
+       // PRIORITY 3: Country Fallback
+       // Used for older messages or if precise data is stripped.
        else if (msg.originCountry && COUNTRY_COORDINATES[msg.originCountry]) {
            origin = COUNTRY_COORDINATES[msg.originCountry];
        }
 
+       // If we absolutely cannot find where it came from, we can't draw a line.
        if (!origin) return;
 
        const target: [number, number] = [msg.location.lat, msg.location.lng];
@@ -85,6 +85,8 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
 
     if (newArcs.length > 0) {
         setActiveArcs(prev => [...prev, ...newArcs]);
+        
+        // Remove arc after animation completes (3 seconds)
         setTimeout(() => {
             if (!isMounted.current) return;
             const idsToRemove = new Set(newArcs.map(a => a.id));
@@ -93,7 +95,7 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     }
   }, [messages]);
 
-  // Re-render on map move
+  // Re-render on map move to keep lines attached to coordinates
   const [, setFrame] = useState(0);
   useEffect(() => {
       const handler = () => setFrame(f => f + 1);
@@ -145,6 +147,8 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
                 const curvature = dist < 200 ? 0.2 : 0.4;
                 const cpX = midX;
                 const cpY = midY - (dist * curvature);
+                
+                // SVG Path: Quadratic Bezier
                 const d = `M ${startPoint.x},${startPoint.y} Q ${cpX},${cpY} ${endPoint.x},${endPoint.y}`;
 
                 return (

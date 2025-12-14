@@ -14,43 +14,43 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const handleConnect = () => {
     setIsLoading(true);
     setError(null);
-    setStatusText("Haetaan tarkkaa sijaintia...");
+    setStatusText("Haetaan tarkkaa satelliittiyhteyttä...");
 
     if (!navigator.geolocation) {
-      setError("Selaimesi ei tue paikannusta.");
+      setError("Laitteesi ei tue GPS-paikannusta.");
       setIsLoading(false);
       return;
     }
 
-    // SIMPLIFIED LOGIC: Force High Accuracy, Long Timeout.
-    // We do not fallback to IP (Helsinki) anymore. We wait for the real signal.
+    // STRICT GPS MODE: No timeout limit, High Accuracy ONLY.
+    // This forces the device to use hardware GPS (Porvoo) instead of IP guessing (Helsinki).
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        // Success
+        // Success - we have a real lock.
         onStart({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude
         });
       },
       (err) => {
-        console.warn("GPS Init failed", err);
+        console.warn("GPS Error", err);
         setIsLoading(false);
         
+        // Detailed error messages for the user
         if (err.code === 1) {
-            setError("Sijaintitiedot estetty. Salli paikannus selaimen asetuksista.");
+            setError("Sijainti estetty. Salli GPS selaimen asetuksista.");
         } else if (err.code === 2) {
-            setError("GPS-signaalia ei löydy. Siirry lähemmäs ikkunaa tai ulos.");
+            setError("GPS-signaalia ei löydy. Oletko sisätiloissa? Mene ikkunan lähelle.");
         } else if (err.code === 3) {
-            setError("Haku aikakatkaistiin. GPS vastaa hitaasti. Yritä uudelleen.");
+            setError("Haku aikakatkaistiin. Yritä uudelleen.");
         } else {
-            setError(`Virhe: ${err.message}. Yritä uudelleen.`);
+            setError(`GPS Virhe: ${err.message}`);
         }
       },
       {
         enableHighAccuracy: true,
-        // Increased to 20s to allow "cold start" of GPS like before.
-        timeout: 20000, 
-        maximumAge: 0   
+        timeout: 60000, // Give it 60 seconds to find satellites if needed
+        maximumAge: 0   // Do not use cached positions
       }
     );
   };
@@ -85,22 +85,22 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
             <div className="flex items-start gap-3">
                 <MapPin className="text-cyan-400 shrink-0 mt-1" size={18} />
                 <div>
-                    <h3 className="text-white font-bold text-sm">Hyper-paikallinen</h3>
-                    <p className="text-gray-400 text-xs mt-1">Näet vain viestit, jotka ovat fyysisesti lähelläsi (140km säde).</p>
+                    <h3 className="text-white font-bold text-sm">Tarkka Sijainti</h3>
+                    <p className="text-gray-400 text-xs mt-1">Vaadimme tarkan GPS-signaalin toimiaksemme. Emme käytä epätarkkaa verkkopaikannusta.</p>
                 </div>
             </div>
             <div className="flex items-start gap-3">
                 <Shield className="text-cyan-400 shrink-0 mt-1" size={18} />
                 <div>
                     <h3 className="text-white font-bold text-sm">Yksityisyys edellä</h3>
-                    <p className="text-gray-400 text-xs mt-1">Tarkkaa sijaintiasi ei koskaan näytetä kartalla. Viestit sijoitetaan satunnaisesti lähialueelle.</p>
+                    <p className="text-gray-400 text-xs mt-1">Tarkkaa sijaintiasi ei koskaan näytetä muille. Olet vain signaali kartalla.</p>
                 </div>
             </div>
             <div className="flex items-start gap-3">
-                <Globe className="text-cyan-400 shrink-0 mt-1" size={18} />
+                <Zap className="text-cyan-400 shrink-0 mt-1" size={18} />
                 <div>
-                    <h3 className="text-white font-bold text-sm">Anonyymi</h3>
-                    <p className="text-gray-400 text-xs mt-1">Ei käyttäjätunnuksia. Ei salasanoja. Olet vain signaali pimeydessä.</p>
+                    <h3 className="text-white font-bold text-sm">Reaaliaikainen</h3>
+                    <p className="text-gray-400 text-xs mt-1">Näe signaalit ja vastaukset välittömästi, kun ne tapahtuvat.</p>
                 </div>
             </div>
         </div>
@@ -143,7 +143,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         </button>
 
         <p className="mt-6 text-[10px] text-gray-600 font-mono">
-            v1.0.7 • SECURE CONNECTION REQUIRED
+            v1.0.8 • HIGH ACCURACY GPS REQUIRED
         </p>
 
       </motion.div>
