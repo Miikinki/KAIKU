@@ -23,9 +23,12 @@ export const SoundService = {
     if (isMuted) return;
     clickSound.play();
   },
-  playScan: () => {
+  playScan: (volumeScale: number = 1.0) => {
     if (isMuted) return;
-    scanSound.play();
+    // Base volume is 0.15, we scale it down based on distance
+    const vol = 0.15 * Math.max(0, Math.min(1, volumeScale));
+    const id = scanSound.play();
+    scanSound.volume(vol, id);
   },
   playSuccess: () => {
       if (isMuted) return;

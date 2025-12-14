@@ -104,6 +104,22 @@ function App() {
     // This is the core of the "Network Logic".
     // We listen for messages broadcast by the server.
     const sub = subscribeToMessages(({ type, message, id }) => {
+      
+      // --- AUDIO SPAM PREVENTION LOGIC ---
+      // Check distance before playing sound.
+      // 140km range. Linear volume dropoff.
+      if (type === 'INSERT' && message && locationCache.current) {
+          const userLoc = locationCache.current;
+          const msgLoc = message.location;
+          const distKm = calculateDistance(userLoc.lat, userLoc.lng, msgLoc.lat, msgLoc.lng);
+          const MAX_AUDIBLE_RANGE = 140;
+
+          if (distKm < MAX_AUDIBLE_RANGE) {
+              const volume = 1 - (distKm / MAX_AUDIBLE_RANGE);
+              SoundService.playScan(volume);
+          }
+      }
+
       // 1. UPDATE HEATMAP DATA (MESSAGES)
       setMessages(prev => {
         let next = [...prev];
@@ -117,7 +133,7 @@ function App() {
                  if (!message.parentId) {
                      next = [message, ...prev];
                      setLastNewMessage(message); 
-                     SoundService.playScan();
+                     // Sound handled above in Audio Logic block
                  } else {
                      const parentIndex = prev.findIndex(p => p.id === message.parentId);
                      if (parentIndex !== -1) {
@@ -142,7 +158,7 @@ function App() {
                if (prevSignals.some(s => s.id === message.id)) return prevSignals;
                return [...prevSignals.slice(-10), message];
            });
-           SoundService.playScan();
+           // Sound handled above in Audio Logic block
       }
     });
     return () => { if (sub) sub.unsubscribe(); };
