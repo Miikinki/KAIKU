@@ -63,26 +63,35 @@ function App() {
     if (!hasStarted) return; // Don't track until started
 
     let watchId: number;
+    let timerId: any;
 
-    if ('geolocation' in navigator) {
-      watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          if (pos.coords.latitude !== 0 || pos.coords.longitude !== 0) {
-             locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          }
-        },
-        (err) => {
-          console.warn("GPS tracking error", err);
-        },
-        { 
-          enableHighAccuracy: true, 
-          maximumAge: 5000, 
-          timeout: 20000 
+    // DELAYED START to prevent "Double Permission Prompt" or Race Conditions.
+    // We already got a fresh location from WelcomeScreen, so we can afford to wait.
+    timerId = setTimeout(() => {
+        if ('geolocation' in navigator) {
+            watchId = navigator.geolocation.watchPosition(
+                (pos) => {
+                    if (pos.coords.latitude !== 0 || pos.coords.longitude !== 0) {
+                        locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    }
+                },
+                (err) => {
+                    // Suppress timeout errors in background tracking to avoid console spam
+                    if (err.code !== 3) {
+                         console.warn("Background GPS tracking warning:", err.code, err.message);
+                    }
+                },
+                { 
+                    enableHighAccuracy: true, 
+                    maximumAge: 30000, // Use cached locations up to 30s old to save battery/resources
+                    timeout: 20000 
+                }
+            );
         }
-      );
-    }
+    }, 2000); // 2 second delay
 
     return () => {
+      clearTimeout(timerId);
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
   }, [hasStarted]);

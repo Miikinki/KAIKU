@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Radio, MapPin, Zap, Shield, Globe, Loader2, ChevronRight, RefreshCw } from 'lucide-react';
+import { Radio, MapPin, Zap, Shield, Loader2, ChevronRight, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface WelcomeScreenProps {
@@ -22,9 +22,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       return;
     }
 
-    // FIX: Relaxed constraints to prevent Timeouts
-    // maximumAge: 10000 allows using a GPS fix from the last 10 seconds (much faster).
-    // timeout: 15000 gives the device reasonable time without hanging forever.
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         onStart({
@@ -33,7 +30,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         });
       },
       (err) => {
-        console.warn("GPS Error", err);
+        // Explicitly logging code and message because the error object is often empty in logs
+        console.warn("GPS Start Error:", err.code, err.message);
         setIsLoading(false);
         
         if (err.code === 1) {
@@ -48,8 +46,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000, 
-        maximumAge: 10000 
+        timeout: 20000,     // Increased to 20s
+        maximumAge: Infinity // Accept any cached position to speed up start
       }
     );
   };
@@ -57,8 +55,24 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   return (
     <div className="fixed inset-0 bg-[#050508] flex flex-col items-center justify-center p-6 text-center z-[9999]">
       
-      {/* Background Ambience */}
+      {/* Background Ambience & Textures */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {/* Subtle Cyber Grid */}
+          <div 
+            className="absolute inset-0 opacity-[0.15]" 
+            style={{ 
+                backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h40v40H0V0zm1 1h38v38H1V1z' fill='%2306b6d4' fill-opacity='0.1' fill-rule='evenodd'/%3E%3C/svg%3E")` 
+            }} 
+          />
+          
+          {/* Digital Noise */}
+          <div 
+             className="absolute inset-0 opacity-[0.04]"
+             style={{
+                 backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`
+             }}
+          />
+
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[100px] animate-pulse" />
       </div>
 
@@ -76,30 +90,39 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         </div>
 
         <h1 className="text-4xl font-black tracking-[0.2em] text-white mb-2">KAIKU</h1>
-        <p className="text-cyan-500/80 font-mono text-sm tracking-widest uppercase mb-8">
-            Global Local Chat Grid
+        <p className="text-cyan-500/80 font-mono text-sm tracking-[0.3em] uppercase mb-8">
+            HYPERLOCAL SIGNAL GRID
         </p>
 
-        <div className="space-y-4 mb-10 text-left bg-white/5 p-6 rounded-2xl border border-white/10 backdrop-blur-md">
-            <div className="flex items-start gap-3">
-                <MapPin className="text-cyan-400 shrink-0 mt-1" size={18} />
+        <div className="space-y-5 mb-10 text-left bg-white/5 p-6 rounded-2xl border border-white/10 backdrop-blur-md relative overflow-hidden">
+            {/* Tech Scan Line decoration */}
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-cyan-500/30 to-transparent animate-[scan_4s_linear_infinite]" />
+
+            <div className="flex items-start gap-4">
+                <div className="mt-1 p-1 bg-cyan-500/10 rounded border border-cyan-500/20">
+                    <MapPin className="text-cyan-400" size={16} />
+                </div>
                 <div>
-                    <h3 className="text-white font-bold text-sm">Tarkka Sijainti</h3>
-                    <p className="text-gray-400 text-xs mt-1">Vaadimme GPS-yhteyden toimiaksemme. Emme käytä epätarkkaa verkkopaikannusta.</p>
+                    <h3 className="text-white font-bold text-xs font-mono tracking-widest uppercase">Hyper-paikallinen</h3>
+                    <p className="text-gray-400 text-xs mt-1 leading-relaxed">Vain kantaman sisällä. 140km säde. Ei poikkeuksia.</p>
                 </div>
             </div>
-            <div className="flex items-start gap-3">
-                <Shield className="text-cyan-400 shrink-0 mt-1" size={18} />
+            <div className="flex items-start gap-4">
+                 <div className="mt-1 p-1 bg-cyan-500/10 rounded border border-cyan-500/20">
+                    <Shield className="text-cyan-400" size={16} />
+                </div>
                 <div>
-                    <h3 className="text-white font-bold text-sm">Yksityisyys edellä</h3>
-                    <p className="text-gray-400 text-xs mt-1">Tarkkaa sijaintiasi ei koskaan näytetä muille. Olet vain signaali kartalla.</p>
+                    <h3 className="text-white font-bold text-xs font-mono tracking-widest uppercase">Yksityisyys edellä</h3>
+                    <p className="text-gray-400 text-xs mt-1 leading-relaxed">Ei tallennusta. Ei seurantaa.</p>
                 </div>
             </div>
-            <div className="flex items-start gap-3">
-                <Zap className="text-cyan-400 shrink-0 mt-1" size={18} />
+            <div className="flex items-start gap-4">
+                 <div className="mt-1 p-1 bg-cyan-500/10 rounded border border-cyan-500/20">
+                    <Zap className="text-cyan-400" size={16} />
+                </div>
                 <div>
-                    <h3 className="text-white font-bold text-sm">Reaaliaikainen</h3>
-                    <p className="text-gray-400 text-xs mt-1">Näe signaalit ja vastaukset välittömästi, kun ne tapahtuvat.</p>
+                    <h3 className="text-white font-bold text-xs font-mono tracking-widest uppercase">Anonyymi</h3>
+                    <p className="text-gray-400 text-xs mt-1 leading-relaxed">Ei tunnuksia. Ei jälkiä. Olet vain signaali pimeydessä.</p>
                 </div>
             </div>
         </div>
@@ -108,7 +131,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
             <motion.div 
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
-                className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-200 text-sm flex items-center gap-3"
+                className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-200 text-sm flex items-center gap-3 font-mono"
             >
                 <Shield className="shrink-0" size={20} />
                 {error}
@@ -124,12 +147,12 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                 {isLoading ? (
                     <>
                         <Loader2 className="animate-spin" />
-                        <span>{statusText}</span>
+                        <span className="font-mono">{statusText}</span>
                     </>
                 ) : (
                     <>
                         {error ? <RefreshCw size={20} className="fill-white" /> : <Zap size={20} className="fill-white" />}
-                        <span>{error ? "Yritä Uudelleen" : "Yhdistä Verkkoon"}</span>
+                        <span className="font-mono tracking-[0.2em]">{error ? "YRITÄ UUDELLEEN" : "MUODOSTA YHTEYS"}</span>
                         <ChevronRight className="group-hover:translate-x-1 transition-transform" />
                     </>
                 )}
@@ -141,8 +164,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
             )}
         </button>
 
-        <p className="mt-6 text-[10px] text-gray-600 font-mono">
-            v1.0.9 • GPS SIGNAL REQUIRED
+        <p className="mt-6 text-[10px] text-gray-600 font-mono tracking-widest">
+            v1.1.0 • SECURE CONNECTION
         </p>
 
       </motion.div>
