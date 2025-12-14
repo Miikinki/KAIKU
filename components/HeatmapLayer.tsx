@@ -131,14 +131,29 @@ const GlowLayer = L.Layer.extend({
         const bounds = this._map.getBounds(); // Cull off-screen points
         const now = Date.now();
 
-        // Scale tuning
+        // Scale tuning based on Zoom
         let baseRadius = 15 * dpr;
         let baseIntensity = 0.4;
 
-        if (zoom < 5) { baseRadius = 4 * dpr; baseIntensity = 0.6; }
-        else if (zoom < 8) { baseRadius = 8 * dpr; baseIntensity = 0.5; }
-        else if (zoom < 12) { baseRadius = 25 * dpr; baseIntensity = 0.3; }
-        else { baseRadius = 60 * dpr; baseIntensity = 0.2; } 
+        if (zoom < 5) { 
+            baseRadius = 4 * dpr; 
+            baseIntensity = 0.6; 
+        }
+        else if (zoom < 8) { 
+            baseRadius = 10 * dpr; 
+            baseIntensity = 0.5; 
+        }
+        else if (zoom < 10) { 
+            // Regional
+            baseRadius = 25 * dpr; 
+            baseIntensity = 0.35; 
+        }
+        else { 
+            // Max Zoom (10-11)
+            // Render a large, soft "privacy blob" that obscures precise street location
+            baseRadius = 55 * dpr; 
+            baseIntensity = 0.25; 
+        } 
 
         // Draw loop
         this._data.forEach((msg: ChatMessage) => {

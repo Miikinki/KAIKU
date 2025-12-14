@@ -4,7 +4,7 @@
     "regional_intercept": "REGIONAL INTERCEPT",
     "local_signals": "LOCAL SIGNALS",
     "filtering": "Filtering",
-    "no_signals": "No signals detected.",
+    "no_signals": "Scanning sector...",
     "clear_tag_hint": "Try clearing the tag filter.",
     "move_radar_hint": "Move the radar to a new location.",
     "replies": "Replies",
@@ -33,6 +33,7 @@
     "error_send_reply": "Failed to send reply. Please try again."
   },
   "map": {
-    "sector_scan_active": "Sector Scan Active"
+    "sector_scan_active": "Sector Scan Active",
+    "signal_locked": "SIGNAL LOCKED"
   }
 }

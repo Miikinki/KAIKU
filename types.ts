@@ -24,6 +24,7 @@ export interface ViewportBounds {
   east: number;
   west: number;
   zoom: number;
+  center: { lat: number; lng: number };
 }
 
 export interface RateLimitStatus {

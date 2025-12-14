@@ -10,6 +10,9 @@ import { getCityName } from './services/moderationService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
 
+// Radius of the visual ring in pixels (w-64 = 256px diam => 128px radius)
+const SCAN_RADIUS_PX = 140; 
+
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
@@ -72,21 +75,33 @@ function App() {
     return () => { if (sub) sub.unsubscribe(); };
   }, []);
 
-  // Filter and Sort Messages based on Viewport and Zoom
+  // Filter Messages based on SECTOR SCAN (Distance from Center)
   useEffect(() => {
     if (!currentBounds) return;
     
     const now = Date.now();
     const cutoff = now - MESSAGE_LIFESPAN_MS;
 
-    let visible = messages.filter(m => 
-      m.location.lat <= currentBounds.north &&
-      m.location.lat >= currentBounds.south &&
-      m.location.lng <= currentBounds.east &&
-      m.location.lng >= currentBounds.west &&
-      m.score > SCORE_THRESHOLD_HIDE &&
-      m.timestamp > cutoff
-    );
+    // Calculate Dynamic Scan Radius in KM based on Zoom Level
+    // Formula: (MetersPerPixel * PxRadius) / 1000
+    // MetersPerPx approx = 156543 * cos(lat) / 2^zoom
+    const metersPerPx = 156543.03 * Math.cos(currentBounds.center.lat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
+    const radiusKm = (metersPerPx * SCAN_RADIUS_PX) / 1000;
+
+    let visible = messages.filter(m => {
+      // 1. Basic Age/Score Filter
+      if (m.timestamp <= cutoff || m.score <= SCORE_THRESHOLD_HIDE) return false;
+
+      // 2. Distance Filter (Sector Scan)
+      const dist = calculateDistance(
+          currentBounds.center.lat, 
+          currentBounds.center.lng, 
+          m.location.lat, 
+          m.location.lng
+      );
+      
+      return dist <= radiusKm;
+    });
 
     // Sort: High zoom = Latest, Low zoom = Top Rated
     if (currentBounds.zoom < 9) {
@@ -111,22 +126,17 @@ function App() {
      return new Promise((resolve) => {
         navigator.geolocation.getCurrentPosition(
             (pos) => {
-                // Reject 0,0 (Null Island) which is often an error
                 if (pos.coords.latitude === 0 && pos.coords.longitude === 0) {
                     const fallback = { lat: 60.1699, lng: 24.9384 };
-                    console.warn("GPS returned (0,0), using fallback:", fallback);
                     resolve(fallback);
                     return;
                 }
-
                 const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                locationCache.current = loc; // Cache it
+                locationCache.current = loc; 
                 resolve(loc);
             },
             () => {
-                // FALLBACK: Default to Helsinki
                 const fallback = { lat: 60.1699, lng: 24.9384 };
-                console.warn("GPS failed, using fallback:", fallback);
                 resolve(fallback);
             },
             { timeout: 10000, enableHighAccuracy: true }
@@ -134,32 +144,24 @@ function App() {
      });
   };
 
-  // Pre-calculate location when opening the modal
   const handleOpenInput = async () => {
       setIsInputOpen(true);
-      setTargetLocation(null); // Clear previous
+      setTargetLocation(null); 
 
-      // STRICTLY use User Location only. 
-      // Removed logic that defaulted to Map Center if looking far away.
       const userLoc = await getLocation();
-      
       const lat = userLoc.lat;
       const lng = userLoc.lng;
 
-      // Resolve Name for UI
       const nameData = await getCityName(lat, lng);
       setTargetLocation({ lat, lng, name: nameData.city });
   };
 
   const handleSaveMessage = async (text: string) => {
-    // Use the pre-calculated target location from handleOpenInput
     if (!targetLocation) return;
-
-    const userLoc = await getLocation(); // Always get fresh User GPS for origin check
-    
+    const userLoc = await getLocation(); 
     await saveMessage(
         text, 
-        targetLocation.lat, // Target is strictly where the user IS (from handleOpenInput)
+        targetLocation.lat, 
         targetLocation.lng, 
         userLoc.lat, 
         userLoc.lng
@@ -169,17 +171,13 @@ function App() {
   
   const handleReplyMessage = async (text: string, parentId: string) => {
       const userLoc = await getLocation(); 
-      
       let targetLat = userLoc.lat;
       let targetLng = userLoc.lng;
 
-      // Replies still go to the parent message location (standard forum behavior)
-      // or should they? Usually replies stay in the thread.
       if (selectedMessage) {
           targetLat = selectedMessage.location.lat;
           targetLng = selectedMessage.location.lng;
       }
-
       await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
       await loadData();
   };
@@ -197,12 +195,11 @@ function App() {
 
   const handleDelete = async (msgId: string, parentId?: string | null) => {
     setMessages(prev => prev.filter(m => m.id !== msgId));
-    
-    if (selectedMessage?.id === msgId) {
-        setSelectedMessage(null);
-    }
+    if (selectedMessage?.id === msgId) setSelectedMessage(null);
     await deleteMessage(msgId);
   };
+
+  const hasSignal = visibleMessages.length > 0;
 
   return (
     <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
@@ -212,9 +209,10 @@ function App() {
         onViewportChange={handleViewportChange}
         onMapClick={handleMapClick}
         lastNewMessage={lastNewMessage}
+        hasSignal={hasSignal}
       />
 
-      {/* HEADER LOGO */}
+      {/* HEADER LOGO (Top Left) */}
       <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none">
          <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 w-fit pointer-events-auto shadow-lg">
             <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
@@ -233,27 +231,22 @@ function App() {
         zoomLevel={currentBounds?.zoom}
       />
 
-      {/* NEW BROADCAST BUTTON - CENTER BOTTOM */}
-      {/* Positioned just above the collapsed feed panel */}
-      {/* Fixed z-index to 500 to ensure visibility over the feed panel */}
+      {/* BROADCAST BUTTON - TOP RIGHT */}
       <AnimatePresence>
         {!isFeedOpen && !isInputOpen && (
             <motion.div 
-                initial={{ opacity: 0, scale: 0.5, y: 50 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.5, y: 50 }}
-                className="fixed bottom-24 left-0 right-0 z-[500] flex justify-center pointer-events-none"
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.5 }}
+                className="fixed top-5 right-5 z-[500] pointer-events-none"
             >
                 <button
                     onClick={handleOpenInput}
-                    className="pointer-events-auto group relative flex items-center justify-center w-16 h-16 bg-[#0f0f18] rounded-full border border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-95 transition-all overflow-hidden"
+                    className="pointer-events-auto group relative flex items-center justify-center w-14 h-14 bg-[#0f0f18] rounded-full border border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-95 transition-all overflow-hidden"
                 >
-                    {/* Ripple Effect */}
                     <div className="absolute inset-0 rounded-full border border-cyan-500/30 animate-[ping_2s_infinite]" />
                     <div className="absolute inset-0 bg-cyan-500/10 group-hover:bg-cyan-500/20 transition-colors" />
-                    
-                    {/* Icon */}
-                    <Zap size={28} className="text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,1)]" />
+                    <Zap size={24} className="text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,1)]" />
                 </button>
             </motion.div>
         )}

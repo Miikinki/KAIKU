@@ -4,8 +4,8 @@
     "regional_intercept": "ALUEELLINEN SIEPPAUS",
     "local_signals": "PAIKALLISET SIGNAALIT",
     "filtering": "Suodatus",
-    "no_signals": "Ei signaaleja havaittu.",
-    "clear_tag_hint": "Tyhjennä aihetunniste.",
+    "no_signals": "Etsitään signaalia...",
+    "clear_tag_hint": "Siirrä sektoria löytääksesi lähetyksiä.",
     "move_radar_hint": "Siirrä tutkaa uudelle alueelle.",
     "replies": "Vastausta",
     "delete_confirm": "Haluatko varmasti poistaa tämän signaalin?",
@@ -33,6 +33,7 @@
     "error_send_reply": "Vastauksen lähetys epäonnistui. Yritä uudelleen."
   },
   "map": {
-    "sector_scan_active": "SEKTORISKANNAUS AKTIIVINEN"
+    "sector_scan_active": "SEKTORISKANNAUS AKTIIVINEN",
+    "signal_locked": "SIGNAALI LUKITTU"
   }
 }
