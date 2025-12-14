@@ -25,21 +25,68 @@ export const JITTER_CONFIG = {
   LOCAL: 0.045     // ~5km
 };
 
-// Approximate centers for arc generation
+// Approximate POPULATION centers for arc generation (Not geographic centers)
+// This ensures arcs look like they come from where people actually are.
 export const COUNTRY_COORDINATES: Record<string, [number, number]> = {
-  'FI': [64.0, 26.0],
-  'JP': [36.2, 138.2],
-  'US': [37.0, -95.7],
-  'GB': [55.3, -3.4],
+  // Nordics & Baltics
+  'FI': [61.9, 25.7], // Shifted South (Jyväskylä/Lahti axis) instead of Lapland
+  'SE': [59.3, 18.0], // Stockholm region
+  'NO': [59.9, 10.7], // Oslo region
+  'DK': [56.2, 9.5],
+  'EE': [58.8, 25.5],
+  'LV': [56.9, 24.1],
+  'LT': [55.1, 23.8],
+  
+  // Europe
+  'GB': [51.5, -0.1], // London centric
   'DE': [51.1, 10.4],
-  'BR': [-14.2, -51.9],
-  'CN': [35.8, 104.1],
-  'FR': [46.2, 2.2],
+  'FR': [46.6, 2.2], // Central France
   'ES': [40.4, -3.7],
-  'IT': [41.8, 12.5],
-  'RU': [61.5, 105.3],
-  'AU': [-25.2, 133.7],
+  'IT': [41.9, 12.6],
+  'NL': [52.1, 5.2],
+  'BE': [50.8, 4.4],
+  'CH': [46.8, 8.2],
+  'AT': [47.5, 14.5],
+  'PL': [51.9, 19.1],
+  'CZ': [49.8, 15.4],
+  'PT': [39.5, -8.0],
+  'GR': [38.2, 23.7],
+  'RO': [45.9, 24.9],
+  'UA': [48.3, 31.1],
+  'HU': [47.1, 19.0],
+  'IE': [53.1, -7.6],
+  
+  // Americas
+  'US': [39.8, -98.5], // Geographic center, works best for wide coverage
   'CA': [56.1, -106.3],
+  'BR': [-23.5, -46.6], // Sao Paulo centric (Population)
+  'MX': [19.4, -99.1], // Mexico City
+  'AR': [-34.6, -58.3], // Buenos Aires
+  'CL': [-33.4, -70.6], // Santiago
+  'CO': [4.7, -74.0], // Bogota
+  'PE': [-12.0, -77.0], // Lima
+
+  // Asia / Pacific
+  'JP': [35.6, 139.6], // Tokyo centric
+  'CN': [31.2, 121.4], // Shanghai/East coast centric
+  'KR': [37.5, 126.9], // Seoul
+  'TW': [23.6, 120.9],
   'IN': [20.5, 78.9],
-  'ZA': [-30.5, 22.9]
+  'TH': [13.7, 100.5],
+  'VN': [21.0, 105.8],
+  'ID': [-6.2, 106.8], // Jakarta
+  'MY': [3.1, 101.6], // KL
+  'PH': [12.8, 121.7],
+  'AU': [-33.8, 151.2], // Sydney/East coast
+  'NZ': [-40.9, 174.8],
+
+  // Others
+  'RU': [55.7, 37.6], // Moscow centric
+  'TR': [39.9, 32.8],
+  'ZA': [-26.2, 28.0], // Johannesburg
+  'EG': [30.0, 31.2], // Cairo
+  'NG': [9.0, 7.4],
+  'SA': [24.7, 46.6],
+  'AE': [25.2, 55.3],
+  'IL': [31.0, 35.0]
 };

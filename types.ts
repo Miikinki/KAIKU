@@ -16,6 +16,7 @@ export interface ChatMessage {
   isRemote?: boolean; // Signal Origin Indicator
   originCountry?: string; // ISO Country Code (e.g. "FI", "US") - Where the User IS
   tags?: string[]; // Array of hashtags found in the text (e.g. ["#summer", "#helsinki"])
+  customOrigin?: { lat: number, lng: number }; // TRANSIENT: For animating "My" outgoing messages precisely
 }
 
 export interface ViewportBounds {

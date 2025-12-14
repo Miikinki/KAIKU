@@ -5,20 +5,20 @@ import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, generateUUID } from './services/storageService';
 import { getCityName } from './services/moderationService';
 import { SoundService } from './services/soundService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
 
 // Radius of the visual ring in pixels.
-// Visual ring is w-64 (256px) -> 128px radius.
-// We set this slightly higher (142px) to account for the ring's thickness and glow,
-// making the "lock" feel more responsive when the dot touches the outer edge.
 const SCAN_RADIUS_PX = 142; 
 
 function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
+  // Signals are transient events (arcs) that might not appear in the feed (replies)
+  const [signals, setSignals] = useState<ChatMessage[]>([]);
+  
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
   const [lastNewMessage, setLastNewMessage] = useState<ChatMessage | null>(null);
   
@@ -27,13 +27,8 @@ function App() {
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
   
-  // -- HASHTAG SYSTEM STATE --
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  
-  // -- SOUND STATE --
   const [isMuted, setIsMuted] = useState(SoundService.getMuteStatus());
-
-  // New state to show user where they are posting
   const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number, name: string} | null>(null);
   
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
@@ -50,7 +45,6 @@ function App() {
   };
 
   useEffect(() => {
-    // Location warm-up
     navigator.geolocation.getCurrentPosition(
       (pos) => { 
           if (pos.coords.latitude !== 0 || pos.coords.longitude !== 0) {
@@ -70,19 +64,17 @@ function App() {
         if (type === 'DELETE') {
             next = prev.filter(m => m.id !== id);
         } else if (message) {
+             // 1. Handle Feed Logic
              const exists = prev.findIndex(p => p.id === message.id);
              if (exists !== -1) {
                  next[exists] = { ...next[exists], ...message };
              } else {
-                 // FIX: Ensure replies (messages with parentId) are NOT added to the main feed.
                  if (!message.parentId) {
                      next = [message, ...prev];
-                     // Trigger Shockwave & Sound for truly new messages
                      setLastNewMessage(message); 
                      SoundService.playScan();
                  } else {
-                     // If it is a reply, find the parent in the feed and increment its replyCount
-                     // This gives immediate visual feedback in the feed without cluttering it
+                     // Update reply count for parents
                      const parentIndex = prev.findIndex(p => p.id === message.parentId);
                      if (parentIndex !== -1) {
                          const parent = next[parentIndex];
@@ -90,10 +82,15 @@ function App() {
                              ...parent,
                              replyCount: (parent.replyCount || 0) + 1
                          };
-                         // Also play sound for replies if desired, or keep silent for lower noise
-                         SoundService.playScan();
                      }
                  }
+             }
+
+             // 2. Handle Arc Signal Logic (Replies Only)
+             if (message.parentId && message.isRemote) {
+                 // Push to signals queue to trigger ArcLayer
+                 setSignals(prevSignals => [...prevSignals.slice(-10), message]);
+                 SoundService.playScan();
              }
         }
         return next;
@@ -109,19 +106,15 @@ function App() {
     const now = Date.now();
     const cutoff = now - MESSAGE_LIFESPAN_MS;
 
-    // USE SECTOR CENTER (Visual Crosshair) if available, otherwise Map Center
     const centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
     const centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
 
-    // Calculate Dynamic Scan Radius in KM based on Zoom Level
     const metersPerPx = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
     const radiusKm = (metersPerPx * SCAN_RADIUS_PX) / 1000;
 
     let visible = messages.filter(m => {
-      // 1. Basic Age/Score Filter
       if (m.timestamp <= cutoff || m.score <= SCORE_THRESHOLD_HIDE) return false;
 
-      // 2. Distance Filter (Sector Scan)
       const dist = calculateDistance(
           centerLat, 
           centerLng, 
@@ -132,7 +125,6 @@ function App() {
       return dist <= radiusKm;
     });
 
-    // Sort: High zoom = Latest, Low zoom = Top Rated
     if (currentBounds.zoom < 9) {
         visible = visible.sort((a, b) => b.score - a.score);
     } else {
@@ -154,8 +146,8 @@ function App() {
   const handleTagClick = (tag: string) => {
       SoundService.playClick();
       setActiveTag(tag);
-      setIsFeedOpen(true); // Open feed to show results
-      setSelectedMessage(null); // Close thread if open
+      setIsFeedOpen(true);
+      setSelectedMessage(null);
   };
 
   const getLocation = async (): Promise<{lat: number, lng: number}> => {
@@ -212,11 +204,39 @@ function App() {
       let targetLat = userLoc.lat;
       let targetLng = userLoc.lng;
 
+      // Reply Target is the Parent Message Location
       if (selectedMessage) {
           targetLat = selectedMessage.location.lat;
           targetLng = selectedMessage.location.lng;
       }
+
+      // Check distance for visual effect
+      const dist = calculateDistance(userLoc.lat, userLoc.lng, targetLat, targetLng);
+      const isRemote = dist > 25;
+
+      // 1. Save to DB
       await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
+      
+      // 2. IMMEDIATE LOCAL VISUAL FEEDBACK (The "Perfect Arc")
+      // If it's a remote reply, we inject a transient signal with EXACT coordinates
+      // This ensures the line goes from "Porvoo" (userLoc) to "Paris" (targetLat)
+      if (isRemote) {
+          const tempSignal: ChatMessage = {
+              id: `local-echo-${Date.now()}`,
+              text: text,
+              timestamp: Date.now(),
+              location: { lat: targetLat, lng: targetLng },
+              city: "Target",
+              sessionId: "me",
+              score: 0,
+              parentId: parentId,
+              isRemote: true,
+              originCountry: "ME", // Placeholder
+              customOrigin: { lat: userLoc.lat, lng: userLoc.lng } // <--- THE MAGIC
+          };
+          setSignals(prev => [...prev, tempSignal]);
+      }
+
       await loadData();
   };
 
@@ -241,7 +261,7 @@ function App() {
   const toggleMute = () => {
       const newState = SoundService.toggleMute();
       setIsMuted(newState);
-      if (!newState) SoundService.playClick(); // Play sound to confirm unmute
+      if (!newState) SoundService.playClick();
   };
 
   const hasSignal = visibleMessages.length > 0;
@@ -251,22 +271,20 @@ function App() {
       
       <ChatMap 
         messages={messages} 
+        signals={signals} // Pass the separate signals queue
         onViewportChange={handleViewportChange}
         onMapClick={handleMapClick}
         lastNewMessage={lastNewMessage}
         hasSignal={hasSignal}
       />
 
-      {/* HEADER LOGO & CONTROLS (Top Left) */}
       <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">
-         
          <div className="flex items-center gap-2 pointer-events-auto">
              <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg">
                 <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
                 <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
              </div>
              
-             {/* MUTE BUTTON */}
              <button 
                 onClick={toggleMute}
                 className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-colors shadow-lg"
@@ -274,7 +292,6 @@ function App() {
                  {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
              </button>
          </div>
-
       </div>
 
       <FeedPanel 
@@ -291,7 +308,6 @@ function App() {
         onClearTag={() => { SoundService.playClick(); setActiveTag(null); }}
       />
 
-      {/* BROADCAST BUTTON - TOP RIGHT */}
       <AnimatePresence>
         {!isFeedOpen && !isInputOpen && (
             <motion.div 

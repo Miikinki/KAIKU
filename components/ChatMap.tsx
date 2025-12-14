@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 
 interface ChatMapProps {
   messages: ChatMessage[];
+  signals: ChatMessage[]; // New prop for transient arcs
   onViewportChange: (bounds: ViewportBounds) => void;
   onMapClick: () => void;
   lastNewMessage: ChatMessage | null;
@@ -66,21 +67,14 @@ const MapController: React.FC<{
       const z = map.getZoom();
       const size = map.getSize();
 
-      // CALCULATION FIX:
-      // The UI has 'pb-48' (192px padding bottom).
-      // This shifts the visual center of the flex container UP by exactly half that amount (96px).
-      // We must calculate the LatLng at that specific pixel point to match the crosshair.
       const visualOffsetY = 96; 
       const sectorPoint = [size.x / 2, (size.y / 2) - visualOffsetY];
       
-      // Safety check for initialization
       let sectorLatLng = center;
       try {
-          // @ts-ignore - Leaflet types handle array tuple for point
+          // @ts-ignore
           sectorLatLng = map.containerPointToLatLng(sectorPoint);
-      } catch (e) {
-          // Fallback to center if map not ready
-      }
+      } catch (e) {}
 
       setZoom(z); 
       onViewportChange({
@@ -95,16 +89,13 @@ const MapController: React.FC<{
   }, [map, onViewportChange, setZoom]);
 
   useMapEvents({
-    // REAL-TIME SCANNING: Handle 'move' with throttle
     move: () => {
         const now = Date.now();
-        // Update roughly every 40ms (25fps) to keep UI responsive but not overload React
         if (now - lastUpdateRef.current > 40) {
             handleMove();
             lastUpdateRef.current = now;
         }
     },
-    // Ensure final precise position is set when movement stops
     moveend: () => {
         handleMove();
         lastUpdateRef.current = Date.now();
@@ -119,11 +110,10 @@ const MapController: React.FC<{
 };
 
 // --- MAIN CHAT MAP ---
-const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange, onMapClick, lastNewMessage, hasSignal }) => {
+const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal }) => {
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
 
-  // 11 is the maxZoom set in MapContainer.
   const isMaxZoom = zoom >= 11;
 
   return (
@@ -138,8 +128,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
         minZoom={4}
         maxZoom={11}
-        // Expanded Bounds to allow scrolling past 180/-180 meridian (e.g. Russia/Alaska)
-        // This solves the "wall" issue on wide screens.
         maxBounds={[[-90, -220], [90, 220]]} 
         maxBoundsViscosity={1.0} 
         preferCanvas={true}
@@ -157,22 +145,17 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
             setZoom={setZoom}
         />
 
-        <ArcLayer messages={messages} />
+        <ArcLayer messages={signals} />
         <HeatmapLayer messages={messages} />
         
       </MapContainer>
 
-      {/* VIEWPORT TUNER CROSSHAIR OVERLAY */}
-      {/* pb-48 shifts the visual center UP by 96px */}
       <div className="pointer-events-none absolute inset-0 z-[400] flex flex-col items-center justify-center pb-48">
           
-          {/* Wrapper for Circle and Crosshair */}
           <div className="relative flex items-center justify-center transition-all duration-200">
-              {/* Animated Target HUD */}
               <div className={`absolute flex items-center justify-center w-64 h-64 transition-all duration-200 ease-out 
                   ${isMaxZoom ? 'opacity-100 scale-110' : (hasSignal ? 'opacity-100 scale-105' : 'opacity-20 scale-100')}
               `}>
-                   {/* Outer Ring */}
                    <div className={`absolute inset-0 border rounded-full animate-[spin_10s_linear_infinite] transition-colors duration-300 
                        ${isMaxZoom 
                             ? 'border-red-500 shadow-[0_0_25px_rgba(239,68,68,0.6)]' 
@@ -180,7 +163,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
                        }`} 
                    />
                    
-                   {/* Inner Dashed Ring */}
                    <div className={`absolute inset-4 border rounded-full border-dashed animate-[spin_15s_linear_infinite_reverse] transition-colors duration-300 
                        ${isMaxZoom 
                             ? 'border-red-400/50 shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
@@ -189,7 +171,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
                    />
               </div>
               
-              {/* Center Crosshair */}
               <div className={`transition-all duration-300 z-10 
                   ${isMaxZoom 
                       ? 'text-red-500 drop-shadow-[0_0_12px_rgba(239,68,68,1)] scale-125' 
@@ -199,7 +180,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
               </div>
           </div>
 
-          {/* HUD Text */}
           <div className={`mt-36 flex items-center gap-2 text-[10px] font-mono tracking-[0.2em] uppercase px-4 py-2 rounded backdrop-blur-md border shadow-lg transition-all duration-300 ${
               isMaxZoom
                 ? 'bg-red-950/80 border-red-500 text-red-500 shadow-[0_0_30px_rgba(220,38,38,0.5)] animate-pulse'
@@ -220,6 +200,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, onViewportChange
   );
 }, (prevProps, nextProps) => {
     return prevProps.messages === nextProps.messages && 
+           prevProps.signals === nextProps.signals && 
            prevProps.lastNewMessage === nextProps.lastNewMessage &&
            prevProps.hasSignal === nextProps.hasSignal;
 });

@@ -4,11 +4,11 @@ import { ChatMessage } from '../types';
 import { COUNTRY_COORDINATES, THEME_COLOR_GLOW } from '../constants';
 
 interface ArcLayerProps {
-  messages: ChatMessage[];
+  messages: ChatMessage[]; // Now receives "Signals" (replies/events) instead of root messages
 }
 
 interface ActiveArc {
-  id: string; // Message ID (or pseudo-ID for replays)
+  id: string; 
   origin: [number, number];
   target: [number, number];
   startTime: number;
@@ -18,8 +18,6 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
   const map = useMap();
   const [activeArcs, setActiveArcs] = useState<ActiveArc[]>([]);
   const processedIds = useRef<Set<string>>(new Set());
-  
-  // Ref for cleanup to avoid setting state on unmounted component
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -27,27 +25,42 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     return () => { isMounted.current = false; };
   }, []);
 
-  // 1. HANDLE NEW INCOMING MESSAGES
+  // 1. HANDLE NEW SIGNALS (Replies Only)
   useEffect(() => {
     const newArcs: ActiveArc[] = [];
     const now = Date.now();
 
-    // Filter for RECENT remote messages that we haven't animated yet
-    const newRemoteMessages = messages.filter(m => {
+    // The 'messages' prop here now represents the SIGNAL QUEUE from App.tsx
+    // It contains incoming remote replies AND local echo replies.
+    const newSignals = messages.filter(m => {
+        // Skip if already drawn
         if (processedIds.current.has(m.id)) return false;
         
-        // Mark as processed immediately so we don't animate again in this block
         processedIds.current.add(m.id);
 
-        // Strict validation: Must be remote, have origin country and known coordinates
-        return m.isRemote && m.originCountry && COUNTRY_COORDINATES[m.originCountry];
+        // REQUIREMENT: Must be a REPLY (parentId exists)
+        if (!m.parentId) return false;
+
+        // REQUIREMENT: Must be REMOTE (or have explicit custom origin)
+        if (!m.isRemote && !m.customOrigin) return false;
+
+        return true;
     });
 
-    // Limit initial burst to avoids chaos on page load
-    const batch = newRemoteMessages.slice(0, 5);
+    newSignals.forEach(msg => {
+       let origin: [number, number] | undefined;
 
-    batch.forEach(msg => {
-       const origin = COUNTRY_COORDINATES[msg.originCountry!];
+       // 1. PRIORITY: Custom Origin (For "My" messages - precise Porvoo -> Paris)
+       if (msg.customOrigin) {
+           origin = [msg.customOrigin.lat, msg.customOrigin.lng];
+       } 
+       // 2. FALLBACK: Country Center (For others' messages)
+       else if (msg.originCountry && COUNTRY_COORDINATES[msg.originCountry]) {
+           origin = COUNTRY_COORDINATES[msg.originCountry];
+       }
+
+       if (!origin) return;
+
        const target: [number, number] = [msg.location.lat, msg.location.lng];
        
        newArcs.push({
@@ -63,44 +76,47 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
     }
   }, [messages]);
 
-  // 2. AMBIENT REPLAY LOOP (Strictly Real Data)
+  // 2. AMBIENT REPLAY (Strictly Replies)
   useEffect(() => {
-      // Run periodically to keep the map feeling alive with valid data
       const interval = setInterval(() => {
           if (!isMounted.current) return;
 
+          // Only replay messages that are actually REPLIES and REMOTE
           const candidates = messages.filter(m => 
-            m.isRemote && m.originCountry && COUNTRY_COORDINATES[m.originCountry]
+             m.parentId && 
+             (m.isRemote || m.customOrigin) &&
+             (m.customOrigin || (m.originCountry && COUNTRY_COORDINATES[m.originCountry]))
           );
           
           if (candidates.length > 0) {
-               // Pick a random REAL message to replay
                const randomMsg = candidates[Math.floor(Math.random() * candidates.length)];
-               const origin = COUNTRY_COORDINATES[randomMsg.originCountry!];
-               const target: [number, number] = [randomMsg.location.lat, randomMsg.location.lng];
                
-               // Unique ID for this replay instance
+               let origin: [number, number] = [0,0];
+               if (randomMsg.customOrigin) {
+                   origin = [randomMsg.customOrigin.lat, randomMsg.customOrigin.lng];
+               } else if (randomMsg.originCountry) {
+                   origin = COUNTRY_COORDINATES[randomMsg.originCountry];
+               }
+
+               const target: [number, number] = [randomMsg.location.lat, randomMsg.location.lng];
                const replayId = `${randomMsg.id}-replay-${Date.now()}`;
                
-               addArcs([{
-                   id: replayId,
-                   origin,
-                   target,
-                   startTime: Date.now()
-               }]);
+               if (activeArcs.length < 3) {
+                   addArcs([{
+                       id: replayId,
+                       origin,
+                       target,
+                       startTime: Date.now()
+                   }]);
+               }
           }
-          // NOTE: Simulation/Random mode removed to ensure accuracy.
-          // Only actual message paths are visualized.
-
-      }, 2500); // Frequency: Every 2.5 seconds
+      }, 4000); 
 
       return () => clearInterval(interval);
   }, [messages, activeArcs.length]); 
 
   const addArcs = (arcs: ActiveArc[]) => {
       setActiveArcs(prev => [...prev, ...arcs]);
-
-      // Schedule removal matching CSS animation time
       setTimeout(() => {
           if (!isMounted.current) return;
           const idsToRemove = new Set(arcs.map(a => a.id));
@@ -108,7 +124,6 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
       }, 3000); 
   };
 
-  // Re-render trigger for map moves
   const [frame, setFrame] = useState(0);
   useEffect(() => {
       const handler = () => setFrame(f => f + 1);
@@ -132,8 +147,8 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
             width: '100%', 
             height: '100%', 
             pointerEvents: 'none', 
-            zIndex: 550, // High Z-Index to stay on top
-            overflow: 'visible' // Allow arcs to curve outside viewport
+            zIndex: 550, 
+            overflow: 'visible' 
         }}
     >
         <defs>
@@ -143,7 +158,7 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
                 <stop offset="100%" style={{ stopColor: THEME_COLOR_GLOW, stopOpacity: 0 }} />
             </linearGradient>
              <filter id="arc-glow">
-                <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
                 <feMerge>
                     <feMergeNode in="coloredBlur"/>
                     <feMergeNode in="SourceGraphic"/>
@@ -162,26 +177,33 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
                 
                 const dist = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
                 
-                // Consistent curvature
                 const curvature = 0.4;
-                
-                // Arc always bows "up" relative to screen Y
                 const cpX = midX;
                 const cpY = midY - (dist * curvature);
 
                 const d = `M ${startPoint.x},${startPoint.y} Q ${cpX},${cpY} ${endPoint.x},${endPoint.y}`;
 
                 return (
-                    <path
-                        key={arc.id}
-                        d={d}
-                        fill="none"
-                        stroke="url(#arc-grad)"
-                        strokeWidth="3" 
-                        strokeLinecap="round"
-                        filter="url(#arc-glow)"
-                        className="kaiku-arc-path"
-                    />
+                    <g key={arc.id}>
+                         <circle 
+                            cx={startPoint.x} 
+                            cy={startPoint.y} 
+                            r="3" 
+                            fill={THEME_COLOR_GLOW}
+                            className="animate-[ping_1s_cubic-bezier(0,0,0.2,1)_infinite]"
+                            style={{ opacity: 0.8 }}
+                         />
+                        <path
+                            d={d}
+                            fill="none"
+                            stroke="url(#arc-grad)"
+                            strokeWidth="3" 
+                            strokeLinecap="round"
+                            strokeDasharray="2000" 
+                            filter="url(#arc-glow)"
+                            className="kaiku-arc-path"
+                        />
+                    </g>
                 );
             } catch(e) {
                 return null;
