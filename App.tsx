@@ -117,7 +117,10 @@ function App() {
                  }
              }
 
-             if (message.parentId && message.isRemote) {
+             // TRIGGER ARC ANIMATION (Signal)
+             // We allow the arc if it's a reply AND (it's remote OR we have precise location data)
+             // This ensures local replies (same room/city) also flash the arc if metadata is present.
+             if (message.parentId && (message.isRemote || message.preciseOrigin)) {
                  setSignals(prevSignals => [...prevSignals.slice(-10), message]);
                  SoundService.playScan();
              }
@@ -241,14 +244,11 @@ function App() {
               targetLng = selectedMessage.location.lng;
           }
 
-          const dist = calculateDistance(userLoc.lat, userLoc.lng, targetLat, targetLng);
-          const isRemote = dist > 25; 
-
           // Save to DB
           await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
           
           // ALWAYS TRIGGER LOCAL ECHO for replies
-          // The WelcomeScreen ensures userLoc is valid, so this will draw a line.
+          // The WelcomeScreen ensures userLoc is valid, so this will draw a line immediately.
           const tempSignal: ChatMessage = {
               id: `local-echo-${Date.now()}`,
               text: text,
@@ -258,7 +258,7 @@ function App() {
               sessionId: "me", 
               score: 0,
               parentId: parentId,
-              isRemote: true,
+              isRemote: true, // Force true for local echo effect
               originCountry: "ME",
               customOrigin: { lat: userLoc.lat, lng: userLoc.lng } 
           };
