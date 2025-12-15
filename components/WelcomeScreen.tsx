@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Radio, Zap, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { getIpLocation } from '../services/moderationService';
 
 interface WelcomeScreenProps {
   onStart: (location: { lat: number; lng: number }) => void;
@@ -32,35 +33,71 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         if (stepIndex < steps.length) setStatusText(steps[stepIndex]);
     }, 600);
 
+    const handleSuccess = (lat: number, lng: number) => {
+        clearInterval(stepInterval);
+        onStart({ lat, lng });
+    };
+
+    const handleError = async (errCode: number, errMsg: string) => {
+        console.warn("GPS Start Error:", errCode, errMsg);
+        
+        // --- 1. LOCAL STORAGE FALLBACK (Last Known Good Location) ---
+        // This restores the "Lightning Fast" feeling for returning users.
+        const savedLoc = localStorage.getItem('kaiku_last_loc');
+        if (savedLoc) {
+            try {
+                const parsed = JSON.parse(savedLoc);
+                if (parsed.lat && parsed.lng) {
+                    clearInterval(stepInterval);
+                    setStatusText("USING LAST KNOWN VECTOR...");
+                    
+                    // Small delay to let user see status change
+                    setTimeout(() => {
+                        onStart(parsed);
+                    }, 800);
+                    return;
+                }
+            } catch (e) {}
+        }
+
+        // --- 2. IP FALLBACK (Only if no local history) ---
+        setStatusText("REROUTING VIA NETWORK NODE...");
+        
+        try {
+            const ipLoc = await getIpLocation();
+            if (ipLoc) {
+                clearInterval(stepInterval);
+                onStart(ipLoc);
+                return;
+            }
+        } catch (e) {
+            console.warn("IP Fallback failed", e);
+        }
+
+        // IF ALL FALLBACKS FAIL
+        clearInterval(stepInterval);
+        setIsLoading(false);
+        setStatusText("CONNECTION FAILED");
+        
+        if (errCode === 1) setError("LOCATION PERMISSION DENIED");
+        else if (errCode === 2) setError("SIGNAL LOST - CHECK NETWORK");
+        else setError("TIMEOUT - TRY AGAIN");
+    };
+
     if (!navigator.geolocation) {
       clearInterval(stepInterval);
-      setError("GPS HARDWARE NOT FOUND");
-      setIsLoading(false);
+      // Try fallback immediately
+      handleError(0, "Geolocation not supported");
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-          clearInterval(stepInterval);
-          onStart({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude
-          });
-      },
-      (err) => {
-          clearInterval(stepInterval);
-          console.warn("GPS Start Error:", err.code, err.message);
-          setIsLoading(false);
-          setStatusText("CONNECTION FAILED");
-          
-          if (err.code === 1) setError("LOCATION PERMISSION DENIED");
-          else if (err.code === 2) setError("SIGNAL LOST - CHECK NETWORK");
-          else setError("TIMEOUT - TRY AGAIN");
-      },
+      (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
+      (err) => handleError(err.code, err.message),
       {
-        enableHighAccuracy: false, 
-        timeout: 15000, 
-        maximumAge: Infinity
+        enableHighAccuracy: true, // Restored to TRUE for precision
+        timeout: 10000, // 10s is a reasonable balance
+        maximumAge: Infinity // Accept cached positions instantly
       }
     );
   };

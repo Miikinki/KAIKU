@@ -5,6 +5,7 @@ import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import WelcomeScreen from './components/WelcomeScreen';
+import BootSequence from './components/BootSequence';
 import { ChatMessage, ViewportBounds } from './types';
 import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, subscribeToPresence } from './services/storageService';
 import { getCityName } from './services/moderationService';
@@ -20,6 +21,16 @@ const SCAN_RADIUS_PX = 150;
 
 function App() {
   const [hasStarted, setHasStarted] = useState(false); // New state for Welcome Screen
+  
+  // BOOT SEQUENCE STATE
+  // We check sessionStorage to ensure it only runs once per session.
+  const [showBoot, setShowBoot] = useState(() => {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+          return !window.sessionStorage.getItem('kaiku_booted');
+      }
+      return false;
+  });
+
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
   const [signals, setSignals] = useState<ChatMessage[]>([]);
   
@@ -54,6 +65,9 @@ function App() {
       // 1. Initialize location cache immediately with the fresh GPS data
       locationCache.current = startLoc;
       
+      // Save initial start location as "Last Known" to help next boot be faster
+      localStorage.setItem('kaiku_last_loc', JSON.stringify(startLoc));
+      
       // 2. Play startup sound (now allowed because of user interaction)
       SoundService.playScan();
       
@@ -81,7 +95,10 @@ function App() {
             watchId = navigator.geolocation.watchPosition(
                 (pos) => {
                     if (pos.coords.latitude !== 0 || pos.coords.longitude !== 0) {
-                        locationCache.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        locationCache.current = newLoc;
+                        // Persist reliable location for next app start (Fast Resume)
+                        localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
                     }
                 },
                 (err) => {
@@ -383,98 +400,119 @@ function App() {
 
   // --- RENDER ---
 
-  if (!hasStarted) {
-      return <WelcomeScreen onStart={handleStart} />;
-  }
+  const handleBootComplete = () => {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+          window.sessionStorage.setItem('kaiku_booted', 'true');
+      }
+      setShowBoot(false);
+  };
 
   return (
-    <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
-      
-      <ChatMap 
-        messages={messages} 
-        signals={signals}
-        onViewportChange={handleViewportChange}
-        onMapClick={handleMapClick}
-        lastNewMessage={lastNewMessage}
-        hasSignal={hasSignal}
-        initialCenter={locationCache.current || undefined}
-        focusedMessage={focusedMessage}
-        onOpenThread={handleOpenThread}
-        onClosePopup={() => { SoundService.playClick(); setFocusedMessage(null); }}
-      />
-
-      <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">
-         <div className="flex items-center gap-2 pointer-events-auto">
-             <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg">
-                <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
-                <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
-             </div>
-             
-             <button 
-                onClick={toggleMute}
-                className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-colors shadow-lg"
-             >
-                 {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-             </button>
-         </div>
-      </div>
-
-      <FeedPanel 
-        visibleMessages={visibleMessages}
-        onMessageClick={handleMessageClick} 
-        isOpen={isFeedOpen}
-        toggleOpen={() => { SoundService.playClick(); setIsFeedOpen(!isFeedOpen); }}
-        onVote={handleVote}
-        onDelete={handleDelete}
-        onRefresh={() => { SoundService.playClick(); loadData(); }}
-        zoomLevel={currentBounds?.zoom}
-        activeTag={activeTag}
-        onTagClick={handleTagClick}
-        onClearTag={() => { SoundService.playClick(); setActiveTag(null); }}
-        nearbyTypingCount={nearbyTypingCount}
-      />
-
-      <AnimatePresence>
-        {!isFeedOpen && !isInputOpen && (
-            <motion.div 
-                initial={{ opacity: 0, scale: 0.5 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.5 }}
-                className="fixed top-5 right-5 z-[500] pointer-events-none"
-            >
-                <button
-                    onClick={handleOpenInput}
-                    className="pointer-events-auto group relative flex items-center justify-center w-14 h-14 bg-[#0f0f18] rounded-full border border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-95 transition-all overflow-hidden"
+    <>
+        <AnimatePresence>
+            {showBoot && (
+                <motion.div
+                    className="fixed inset-0 z-[10000] bg-[#0a0a12] flex items-center justify-center"
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 1.5, ease: "easeInOut" }}
                 >
-                    <div className="absolute inset-0 rounded-full border border-cyan-500/30 animate-[ping_2s_infinite]" />
-                    <div className="absolute inset-0 bg-cyan-500/10 group-hover:bg-cyan-500/20 transition-colors" />
-                    <Zap size={24} className="text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,1)]" />
-                </button>
-            </motion.div>
+                    <BootSequence onComplete={handleBootComplete} />
+                </motion.div>
+            )}
+        </AnimatePresence>
+
+        {!hasStarted ? (
+            <WelcomeScreen onStart={handleStart} />
+        ) : (
+            <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
+            
+            <ChatMap 
+                messages={messages} 
+                signals={signals}
+                onViewportChange={handleViewportChange}
+                onMapClick={handleMapClick}
+                lastNewMessage={lastNewMessage}
+                hasSignal={hasSignal}
+                initialCenter={locationCache.current || undefined}
+                focusedMessage={focusedMessage}
+                onOpenThread={handleOpenThread}
+                onClosePopup={() => { SoundService.playClick(); setFocusedMessage(null); }}
+            />
+
+            <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">
+                <div className="flex items-center gap-2 pointer-events-auto">
+                    <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg">
+                        <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
+                        <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
+                    </div>
+                    
+                    <button 
+                        onClick={toggleMute}
+                        className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-colors shadow-lg"
+                    >
+                        {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                    </button>
+                </div>
+            </div>
+
+            <FeedPanel 
+                visibleMessages={visibleMessages}
+                onMessageClick={handleMessageClick} 
+                isOpen={isFeedOpen}
+                toggleOpen={() => { SoundService.playClick(); setIsFeedOpen(!isFeedOpen); }}
+                onVote={handleVote}
+                onDelete={handleDelete}
+                onRefresh={() => { SoundService.playClick(); loadData(); }}
+                zoomLevel={currentBounds?.zoom}
+                activeTag={activeTag}
+                onTagClick={handleTagClick}
+                onClearTag={() => { SoundService.playClick(); setActiveTag(null); }}
+                nearbyTypingCount={nearbyTypingCount}
+            />
+
+            <AnimatePresence>
+                {!isFeedOpen && !isInputOpen && (
+                    <motion.div 
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                        className="fixed top-5 right-5 z-[500] pointer-events-none"
+                    >
+                        <button
+                            onClick={handleOpenInput}
+                            className="pointer-events-auto group relative flex items-center justify-center w-14 h-14 bg-[#0f0f18] rounded-full border border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-95 transition-all overflow-hidden"
+                        >
+                            <div className="absolute inset-0 rounded-full border border-cyan-500/30 animate-[ping_2s_infinite]" />
+                            <div className="absolute inset-0 bg-cyan-500/10 group-hover:bg-cyan-500/20 transition-colors" />
+                            <Zap size={24} className="text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,1)]" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <ChatInputModal 
+                isOpen={isInputOpen}
+                onClose={() => { SoundService.playClick(); setIsInputOpen(false); }}
+                onSave={handleSaveMessage}
+                cooldownUntil={rateLimit.cooldownUntil}
+                targetLocationName={targetLocation?.name}
+                onTypingStateChange={handleTypingChange}
+            />
+
+            {selectedMessage && (
+                <ThreadView 
+                    parentMessage={selectedMessage}
+                    onClose={() => { SoundService.playClick(); setSelectedMessage(null); }}
+                    onReply={handleReplyMessage}
+                    onVote={handleVote}
+                    onDelete={handleDelete}
+                    onTagClick={handleTagClick}
+                />
+            )}
+
+            </div>
         )}
-      </AnimatePresence>
-
-      <ChatInputModal 
-        isOpen={isInputOpen}
-        onClose={() => { SoundService.playClick(); setIsInputOpen(false); }}
-        onSave={handleSaveMessage}
-        cooldownUntil={rateLimit.cooldownUntil}
-        targetLocationName={targetLocation?.name}
-        onTypingStateChange={handleTypingChange}
-      />
-
-      {selectedMessage && (
-          <ThreadView 
-            parentMessage={selectedMessage}
-            onClose={() => { SoundService.playClick(); setSelectedMessage(null); }}
-            onReply={handleReplyMessage}
-            onVote={handleVote}
-            onDelete={handleDelete}
-            onTagClick={handleTagClick}
-          />
-      )}
-
-    </div>
+    </>
   );
 }
 

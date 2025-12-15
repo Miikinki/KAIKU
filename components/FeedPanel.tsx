@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { triggerHaptic } from '../services/hapticService';
@@ -78,12 +78,18 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   // --- NEW SIGNAL TOAST LOGIC ---
   useEffect(() => {
-    // If we have MORE messages than before (new arrival)
-    if (visibleMessages.length > prevMsgCountRef.current) {
+    const hasNewMessage = visibleMessages.length > prevMsgCountRef.current;
+    const newest = visibleMessages[0];
+
+    // Check if the newest message is actually RECENT (e.g. within last 60 seconds)
+    // This prevents the toast from appearing when panning the map into an area with old messages.
+    const isRecent = newest && (Date.now() - newest.timestamp) < 60000;
+
+    if (hasNewMessage && isRecent) {
         // AND we are currently open and scrolled down significantly
         if (isOpen && scrollRef.current && scrollRef.current.scrollTop > 150) {
             setShowNewMsgToast(true);
-            // Optional: Very subtle haptic to indicate background activity, or none to avoid annoyance
+            triggerHaptic('light'); // Subtle notification feeling
         }
     }
     prevMsgCountRef.current = visibleMessages.length;
@@ -340,7 +346,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             className="relative flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508]"
         >
             
-            {/* NEW SIGNAL TOAST */}
+            {/* NEW SIGNAL TOAST (Notification) */}
             <AnimatePresence>
                 {showNewMsgToast && (
                     <motion.div
@@ -352,14 +358,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     >
                          <button
                             onClick={scrollToTop}
-                            className="pointer-events-auto flex items-center gap-2 px-4 py-2 bg-[#0a0a12]/90 border border-cyan-500/50 rounded-full shadow-[0_0_15px_rgba(6,182,212,0.3)] backdrop-blur-md text-cyan-400 text-xs font-bold font-mono tracking-widest cursor-pointer hover:bg-cyan-950/50 transition-all active:scale-95 group"
+                            className="pointer-events-auto flex items-center gap-3 px-5 py-2.5 bg-[#0a0a12]/90 border border-cyan-500/50 rounded-full shadow-[0_0_25px_rgba(6,182,212,0.4)] backdrop-blur-xl text-cyan-400 text-xs font-bold font-mono tracking-widest cursor-pointer hover:bg-cyan-950/80 transition-all active:scale-95 group overflow-hidden"
                         >
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                            {/* Scanning Animation Background */}
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-500/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1s_infinite]" />
+
+                            <span className="relative flex items-center gap-2">
+                                <Radio size={14} className="animate-pulse" />
+                                📡 INCOMING TRANSMISSION
                             </span>
-                            NEW SIGNAL DETECTED
-                            <ArrowUp size={12} className="group-hover:-translate-y-0.5 transition-transform" />
+                            
+                            <ArrowUp size={14} className="group-hover:-translate-y-0.5 transition-transform text-white" />
                         </button>
                     </motion.div>
                 )}
