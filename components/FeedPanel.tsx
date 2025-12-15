@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { useTranslation } from 'react-i18next';
@@ -54,6 +54,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [showMyMessagesOnly, setShowMyMessagesOnly] = useState(false);
   
   const currentSessionId = getAnonymousID();
 
@@ -68,9 +69,26 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
     setUserVotes(getUserVotes());
   }, [visibleMessages, isOpen]);
 
+  // --- FILTERING LOGIC ---
+  const displayMessages = useMemo(() => {
+    let msgs = visibleMessages;
+    
+    // 1. Tag Filter
+    if (activeTag) {
+        msgs = msgs.filter(msg => msg.tags?.includes(activeTag) || msg.text.includes(activeTag));
+    }
+    
+    // 2. "My Messages" Filter
+    if (showMyMessagesOnly) {
+        msgs = msgs.filter(msg => msg.sessionId === currentSessionId);
+    }
+    
+    return msgs;
+  }, [visibleMessages, activeTag, showMyMessagesOnly, currentSessionId]);
+
   // --- TRENDING CALCULATION ---
   const trendingTags = useMemo(() => {
-      if (activeTag) return []; 
+      if (activeTag || showMyMessagesOnly) return []; 
 
       const timeWindow = 24 * 60 * 60 * 1000; 
       const counts: Record<string, number> = {};
@@ -87,7 +105,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
           .sort(([, a], [, b]) => b - a)
           .slice(0, 5) 
           .map(([tag, count]) => ({ tag, count }));
-  }, [visibleMessages, activeTag, now]);
+  }, [visibleMessages, activeTag, showMyMessagesOnly, now]);
 
 
   const handleBoostClick = (e: React.MouseEvent, msgId: string) => {
@@ -139,10 +157,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
           return <span key={index}>{part}</span>;
       });
   };
-
-  const displayMessages = activeTag 
-    ? visibleMessages.filter(msg => msg.tags?.includes(activeTag) || msg.text.includes(activeTag))
-    : visibleMessages;
 
   const renderVisitorBadge = (msg: ChatMessage) => {
     if (!msg.isRemote) return null;
@@ -217,13 +231,26 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     </div>
                 )}
 
-                {isOpen && onRefresh && (
-                    <button 
-                        onClick={handleRefresh} 
-                        className={`p-1 hover:bg-white/10 rounded-full transition-all ${isRefreshing ? 'animate-spin' : ''}`}
-                    >
-                        <RotateCcw size={12} className="text-gray-400" />
-                    </button>
+                {isOpen && (
+                    <div className="flex items-center gap-1">
+                        {/* FILTER: MY MESSAGES */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setShowMyMessagesOnly(!showMyMessagesOnly); }}
+                            className={`p-2 rounded-full transition-all ${showMyMessagesOnly ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-white/10 text-gray-400'}`}
+                            title="My Signals"
+                        >
+                            <User size={18} />
+                        </button>
+                        
+                        {onRefresh && (
+                            <button 
+                                onClick={handleRefresh} 
+                                className={`p-2 hover:bg-white/10 rounded-full transition-all ${isRefreshing ? 'animate-spin' : ''} text-gray-400`}
+                            >
+                                <RotateCcw size={18} />
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
             
@@ -264,7 +291,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508]">
             
             {/* TRENDING TOPICS */}
-            {isOpen && !activeTag && trendingTags.length > 0 && (
+            {isOpen && !activeTag && !showMyMessagesOnly && trendingTags.length > 0 && (
                 <motion.div 
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -303,13 +330,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             displayMessages.map((msg) => {
                 const { isCritical, isWeak } = getSignalHealth(msg);
                 const isBoosted = userVotes[msg.id] === 'up';
+                const isMe = msg.sessionId === currentSessionId;
 
-                // BORDER COLOR LOGIC: Strong (Default) -> Weak (Orange) -> Critical (Red)
-                // This communicates signal strength visually.
-                let borderClass = 'border-white/5 hover:border-cyan-500/30'; // Strong
+                // BORDER & BG COLOR LOGIC
+                // Priority: My Message (Cyan) > Critical (Red) > Weak (Orange) > Normal (White/Gray)
+                let borderClass = 'border-white/5 hover:border-cyan-500/30'; 
                 let bgClass = 'bg-white/5 hover:bg-white/10';
 
-                if (isCritical) {
+                if (isMe) {
+                    borderClass = 'border-cyan-500/60 hover:border-cyan-400';
+                    bgClass = 'bg-cyan-950/10 hover:bg-cyan-950/20';
+                } else if (isCritical) {
                     borderClass = 'border-red-500/50 hover:border-red-500';
                     bgClass = 'bg-red-950/10';
                 } else if (isWeak) {
@@ -348,10 +379,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         <div className="flex items-center gap-2">
                             {renderVisitorBadge(msg)}
 
+                            {/* "ME" BADGE */}
+                            {isMe && (
+                                <span className="text-[10px] font-bold bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30">
+                                    ME
+                                </span>
+                            )}
+
                             <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-gray-400">
                                 <Clock size={10} />
                                 {formatRelativeTime(msg.timestamp)}
-                                {isCritical && (
+                                {!isMe && isCritical && (
                                     <span className="text-red-500 ml-1 animate-pulse tracking-wider">FAILING</span>
                                 )}
                             </div>
