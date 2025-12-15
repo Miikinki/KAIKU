@@ -40,8 +40,11 @@ function App() {
   
   // Location Management
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
+  // Visual Rendering States
+  const [currentUserLocation, setCurrentUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); // NEW: Track accuracy for gating
+  
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
-  // Timestamp added to ensure every click triggers effect, even if coords are same
   const [flyToLocation, setFlyToLocation] = useState<{lat: number, lng: number, timestamp: number} | null>(null);
   const [isLocating, setIsLocating] = useState(false);
 
@@ -58,6 +61,7 @@ function App() {
   // START HANDLER
   const handleStart = (startLoc: { lat: number, lng: number }, isFallback: boolean) => {
       locationCache.current = startLoc;
+      setCurrentUserLocation(startLoc); // Set initial visual location
       setIsFallbackLocation(isFallback);
       
       // Save location
@@ -82,58 +86,53 @@ function App() {
       setRateLimit(await getRateLimitStatus());
   };
 
-  // CONTINUOUS GPS TRACKING & AUTO-CORRECTION
+  // CONTINUOUS GPS TRACKING - STRICT MODE
   useEffect(() => {
     if (!isRunning) return; 
 
     let watchId: number;
-    let timerId: any;
 
-    timerId = setTimeout(() => {
-        if ('geolocation' in navigator) {
-            watchId = navigator.geolocation.watchPosition(
-                (pos) => {
-                    if (pos.coords.latitude !== 0 || pos.coords.longitude !== 0) {
-                        const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                        
-                        // AUTO-CORRECTION LOGIC:
-                        // If we started in Fallback Mode (e.g. IP Location = Helsinki),
-                        // and now we got a real GPS fix, we should fly the map to the real location.
-                        if (isFallbackLocation && locationCache.current) {
-                            const dist = calculateDistance(
-                                locationCache.current.lat, locationCache.current.lng,
-                                newLoc.lat, newLoc.lng
-                            );
-                            // If distance > 2km, assume meaningful correction
-                            if (dist > 2) {
-                                console.log("KAIKU: Auto-correcting location from fallback to GPS");
-                                setFlyToLocation({ ...newLoc, timestamp: Date.now() }); // Force update with timestamp
-                                setIsFallbackLocation(false); // We are no longer in fallback mode
-                            }
-                        }
+    if ('geolocation' in navigator) {
+        watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                const { latitude, longitude, accuracy } = pos.coords;
 
-                        locationCache.current = newLoc;
-                        localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
+                // STRICT: Always update if we have coordinates. 
+                if (latitude !== 0 || longitude !== 0) {
+                    const newLoc = { lat: latitude, lng: longitude };
+                    
+                    // 1. Update Logic Cache
+                    locationCache.current = newLoc;
+                    
+                    // 2. Update Visual States
+                    setCurrentUserLocation(newLoc);
+                    setGpsAccuracy(accuracy); // Update accuracy
+                    
+                    // 3. Persist
+                    localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
+
+                    // Auto-correction from IP fallback to GPS
+                    if (isFallbackLocation) {
+                        console.log("KAIKU: GPS Lock Acquired. Switching to Precision Mode.");
+                        setFlyToLocation({ ...newLoc, timestamp: Date.now() }); 
+                        setIsFallbackLocation(false); 
                     }
-                },
-                (err) => {
-                    // Ignore simple timeouts in background tracking to avoid log spam
-                    if (err.code !== 3) {
-                         console.warn("Background GPS tracking warning:", err.code, err.message);
-                    }
-                },
-                { 
-                    // Use Standard Accuracy for background tracking to avoid timeout loops and battery drain
-                    enableHighAccuracy: false, 
-                    maximumAge: 30000, 
-                    timeout: 30000 
                 }
-            );
-        }
-    }, 2000); 
+            },
+            (err) => {
+                console.warn("GPS Watch Error:", err.code, err.message);
+                setGpsAccuracy(null); // Signal lost
+            },
+            { 
+                // CRITICAL: High Precision Settings
+                enableHighAccuracy: true, 
+                maximumAge: 0, // Do not use cached positions
+                timeout: 10000 // 10s timeout to force updates
+            }
+        );
+    }
 
     return () => {
-      clearTimeout(timerId);
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
   }, [isRunning, isFallbackLocation]);
@@ -280,44 +279,28 @@ function App() {
       setSelectedMessage(null);
   };
 
-  // UPDATED: Robust getLocation with failover chain
+  // UPDATED: Robust getLocation with strict rules
   const getLocation = useCallback(async (forceRefresh = false): Promise<{lat: number, lng: number}> => {
-     // 1. FAST PATH: Return cache if allowed and available
      if (locationCache.current && !forceRefresh) return locationCache.current;
      
      const getPos = (opts: PositionOptions): Promise<GeolocationPosition> => 
         new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, opts));
 
      try {
-         // 2. ATTEMPT HIGH ACCURACY (Only if forced, e.g. "Locate Me")
-         if (forceRefresh) {
-             // INCREASED TIMEOUT to 15s to allow better GPS lock
-             // maximumAge: 0 forces a fresh reading
-             const pos = await getPos({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
-             const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-             locationCache.current = loc;
-             return loc;
-         }
-         throw new Error("Skipping High Accuracy (Not Forced)");
+         // 2. ATTEMPT HIGH ACCURACY (Strict)
+         const pos = await getPos({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+         
+         locationCache.current = loc;
+         setCurrentUserLocation(loc); // Update visual
+         setGpsAccuracy(pos.coords.accuracy); // Update accuracy state from manual fetch too
+
+         return loc;
      } catch (e) {
-         // 3. FALLBACK: STANDARD ACCURACY
-         // If high accuracy fails or is skipped, try standard.
-         // This handles the "Timeout expired" error from high accuracy attempts.
-         console.warn("Switching to standard accuracy...");
-         try {
-             const pos = await getPos({ enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
-             const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-             locationCache.current = loc;
-             return loc;
-         } catch (e2) {
-             // 4. LAST RESORT: INTERNAL CACHE
-             if (locationCache.current) {
-                 console.warn("GPS failed, falling back to last known location.");
-                 return locationCache.current;
-             }
-             // 5. FAIL
-             throw new Error("Unable to retrieve location. Please check GPS settings.");
-         }
+         console.warn("High Accuracy GPS failed, falling back to cache if available.");
+         setGpsAccuracy(null); // Mark as lost/unknown
+         if (locationCache.current) return locationCache.current;
+         throw new Error("GPS Signal Lost. Please move to a clearer area.");
      }
   }, []);
 
@@ -342,9 +325,8 @@ function App() {
       SoundService.playClick();
       setTargetLocation(null); 
       
-      // OPTIMIZATION: Use cached location immediately (false).
-      // This ensures the modal opens INSTANTLY.
       try {
+          // Use cached location immediately for speed
           const userLoc = await getLocation(false); 
           const lat = userLoc.lat;
           const lng = userLoc.lng;
@@ -363,21 +345,20 @@ function App() {
   const handleSaveMessage = async (text: string, imageUrl?: string, isMasked: boolean = false) => {
     if (!targetLocation) return;
     
+    // START with the exact target location (usually user's current location)
     let finalLat = targetLocation.lat;
     let finalLng = targetLocation.lng;
     
-    // Attempt precision refresh before send, but don't block on it if it fails
-    if (!isMasked) {
-        try {
-            const freshLoc = await getLocation(true);
-            finalLat = freshLoc.lat;
-            finalLng = freshLoc.lng;
-        } catch (e) {
-            // Silent fallback to modal-open location
-        }
+    // Try to refresh precision just before sending to be sure
+    try {
+        const freshLoc = await getLocation(true);
+        finalLat = freshLoc.lat;
+        finalLng = freshLoc.lng;
+    } catch (e) {
+        // Fallback to what we had when modal opened
     }
     
-    const userLoc = await getLocation(false).catch(() => ({ lat: finalLat, lng: finalLng })); 
+    const userLoc = { lat: finalLat, lng: finalLng };
     
     await saveMessage(
         text, 
@@ -486,6 +467,7 @@ function App() {
                 onClosePopup={() => { SoundService.playClick(); setFocusedMessage(null); }}
                 hiddenIds={hiddenIds}
                 getUserLocation={getLocation}
+                userLocation={currentUserLocation} 
             />
 
             {/* TOP HEADER CONTROLS */}
@@ -558,6 +540,7 @@ function App() {
                 cooldownUntil={rateLimit.cooldownUntil}
                 targetLocationName={targetLocation?.name}
                 onTypingStateChange={handleTypingChange}
+                gpsAccuracy={gpsAccuracy}
             />
 
             {selectedMessage && (

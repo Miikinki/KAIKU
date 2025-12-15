@@ -22,49 +22,78 @@ interface ChatMapProps {
   onClosePopup: () => void;
   hiddenIds: Set<string>;
   getUserLocation: () => Promise<{lat: number, lng: number}>;
+  userLocation: { lat: number, lng: number } | null; // NEW: Raw user location
 }
 
 // --- DYNAMIC MARKER ICON GENERATOR ---
 const getMarkerIcon = (msg: ChatMessage) => {
-    // Logic: Pulse ONLY if fresh (< 15m) or hot (score > 20)
-    // This reduces CSS animation load significantly.
+    // 1. PERFORMANCE: Only pulse if message is FRESH (< 15 mins)
+    // This prevents massive FPS drop when hundreds of markers are visible.
     const ageMins = (Date.now() - msg.timestamp) / 60000;
-    const isFresh = ageMins < 15;
-    const isHot = msg.score > 20;
-    const shouldPulse = isFresh || isHot;
+    const shouldPulse = ageMins < 15;
     
-    // Default to false if property missing
-    const isMasked = msg.isMasked || false; 
+    // 2. VISUAL STYLE: Exact vs Masked
+    const isMasked = msg.isMasked || false;
 
-    let html = '';
+    // Icon Settings
+    const iconSize = isMasked ? 18 : 22; // Exact markers slightly bolder
+    const containerSize = 40; // Enough space for the pulse ring
 
-    if (isMasked) {
-         // MASKED: Hollow Circle
-         // Visual: 16px, Cyan Border, Transparent BG
-         html = `
-            <div class="relative w-4 h-4 flex items-center justify-center">
-                ${shouldPulse ? `<div class="absolute inset-0 rounded-full border border-cyan-400 animate-ping opacity-50"></div>` : ''}
-                <div class="relative w-4 h-4 rounded-full border-2 border-cyan-400 bg-black/20 box-border shadow-[0_0_2px_#06b6d4]"></div>
+    // SVG: Zap/Signal Icon (Matching App Theme)
+    const svgContent = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" 
+            fill="${isMasked ? 'none' : 'currentColor'}" 
+            stroke="currentColor" 
+            stroke-width="2" 
+            stroke-linecap="round" 
+            stroke-linejoin="round"
+        >
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+    `;
+
+    // Wrapper Styles
+    // Exact: Glowing, Solid, Bright
+    // Masked: Ghostly, Hollow, Dimmer
+    const visualClasses = isMasked 
+        ? 'opacity-60' 
+        : 'drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]';
+
+    const html = `
+        <div class="relative w-full h-full flex items-center justify-center">
+            ${shouldPulse ? `<div class="absolute w-8 h-8 bg-cyan-400/30 rounded-full animate-ping"></div>` : ''}
+            <div class="relative z-10 text-cyan-400 ${visualClasses} transition-all duration-300">
+                ${svgContent}
             </div>
-         `;
-    } else {
-         // EXACT: Solid Diamond
-         // Visual: 12px, Cyan Fill, Rotated 45deg
-         html = `
-            <div class="relative w-3 h-3 flex items-center justify-center">
-                ${shouldPulse ? `<div class="absolute inset-0 bg-cyan-400 rotate-45 animate-ping opacity-75"></div>` : ''}
-                <div class="relative w-3 h-3 bg-[#00f0ff] transform rotate-45 border border-black/40 shadow-[0_0_5px_#00f0ff]"></div>
-            </div>
-         `;
-    }
+        </div>
+    `;
 
     return L.divIcon({
-        className: 'custom-marker-container', // Empty class used to remove Leaflet defaults via CSS if needed
+        className: 'bg-transparent border-none', // Ensure no default white square from Leaflet
         html: html,
-        iconSize: isMasked ? [16, 16] : [12, 12],
-        iconAnchor: isMasked ? [8, 8] : [6, 6],
+        iconSize: [containerSize, containerSize],
+        iconAnchor: [containerSize / 2, containerSize / 2],
         popupAnchor: [0, -10]
     });
+};
+
+// --- USER LOCATION MARKER (BLUE DOT) ---
+const UserLocationMarker = ({ position }: { position: { lat: number, lng: number } }) => {
+    // Standard "Google Maps Style" Blue Dot
+    // No accuracy circle (requested to be removed)
+    const icon = L.divIcon({
+        className: 'bg-transparent border-none',
+        html: `
+            <div class="relative w-6 h-6 flex items-center justify-center">
+                <div class="absolute w-6 h-6 bg-blue-500/30 rounded-full animate-ping"></div>
+                <div class="relative w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg"></div>
+            </div>
+        `,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+    });
+
+    return <Marker position={[position.lat, position.lng]} icon={icon} zIndexOffset={1000} />;
 };
 
 // --- MAP FLY TO CONTROLLER (MESSAGE) ---
@@ -207,7 +236,7 @@ const MapController: React.FC<{
 };
 
 // --- MAIN CHAT MAP ---
-const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation }) => {
+const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation, userLocation }) => {
   const [zoom, setZoom] = useState(3.5);
   const { t } = useTranslation();
   
@@ -269,6 +298,9 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         <CoordinateFlyTo target={flyToLocation} />
         
         <MapEventsHandler onMapClick={onMapClick} />
+
+        {/* --- USER LOCATION BLUE DOT --- */}
+        {userLocation && <UserLocationMarker position={userLocation} />}
         
         {/* Messages as Markers */}
         {messages.map(msg => (
@@ -399,6 +431,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
            prevProps.focusedMessage === nextProps.focusedMessage &&
            prevProps.hiddenIds === nextProps.hiddenIds &&
            prevProps.getUserLocation === nextProps.getUserLocation &&
+           prevProps.userLocation === nextProps.userLocation && // Check for userLocation updates
            prevProps.flyToLocation === nextProps.flyToLocation; 
 });
 

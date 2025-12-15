@@ -30,15 +30,15 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         });
     };
 
-    // --- STRATEGY 1: HIGH ACCURACY GPS (RELAXED) ---
+    // --- STRATEGY 1: HIGH ACCURACY GPS (STRICT) ---
     try {
         setStatusText("INITIALIZING GPS (PRECISION)...");
         
         // maximumAge: 0 forces a fresh fix. 
-        // Previously it was 10 mins (600000), causing stale "home" location at coffee shops.
+        // timeout: 10000 (10s) gives enough time but fails fast enough if indoors
         const pos = await getPosition({ 
             enableHighAccuracy: true, 
-            timeout: 20000, 
+            timeout: 10000, 
             maximumAge: 0 
         });
         
@@ -50,15 +50,14 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         // Continue to Strategy 2...
     }
 
-    // --- STRATEGY 2: LOW ACCURACY / CACHED GPS ---
+    // --- STRATEGY 2: LOW ACCURACY / CACHED GPS (Fallback) ---
     try {
         setStatusText("RETRYING (STANDARD SIGNAL)...");
         
-        // Even looser constraints
         const pos = await getPosition({ 
             enableHighAccuracy: false, 
-            timeout: 20000, 
-            maximumAge: Infinity 
+            timeout: 15000, 
+            maximumAge: 60000 
         });
         
         onStart({ lat: pos.coords.latitude, lng: pos.coords.longitude }, false);

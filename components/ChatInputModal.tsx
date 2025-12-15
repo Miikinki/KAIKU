@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, MapPin, AlertCircle, Loader2, Clock, Image as ImageIcon, Trash2, Shield, Crosshair } from 'lucide-react';
+import { X, Send, MapPin, AlertCircle, Loader2, Clock, Image as ImageIcon, Trash2, Shield, Crosshair, AlertTriangle } from 'lucide-react';
 import { THEME_COLOR } from '../constants';
 import { SoundService } from '../services/soundService';
 import { triggerHaptic } from '../services/hapticService';
@@ -14,9 +14,12 @@ interface ChatInputModalProps {
   cooldownUntil: number | null;
   targetLocationName?: string;
   onTypingStateChange?: (isTyping: boolean) => void;
+  gpsAccuracy: number | null; // NEW: Receive GPS accuracy
 }
 
-const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName, onTypingStateChange }) => {
+const REQUIRED_ACCURACY_METERS = 50; // Threshold for "Exact" mode
+
+const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName, onTypingStateChange, gpsAccuracy }) => {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -156,8 +159,13 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
     }
   };
 
+  // --- GPS GATING LOGIC ---
+  const isSignalWeak = gpsAccuracy === null || gpsAccuracy > REQUIRED_ACCURACY_METERS;
+  const isExactModeBlocked = !isMasked && isSignalWeak;
+  
   const isLocked = !!cooldownUntil && timeLeft !== '';
   const canAttachImages = canSendImages();
+  const isSendDisabled = isSubmitting || (!text.trim() && !selectedFile) || !targetLocationName || isExactModeBlocked;
 
   return (
     <AnimatePresence>
@@ -189,6 +197,11 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                         <span className="text-cyan-400 font-bold flex items-center gap-1">
                             <MapPin size={10} /> {targetLocationName}
                         </span>
+                        {gpsAccuracy && (
+                            <span className={`ml-2 font-mono text-[10px] ${gpsAccuracy > REQUIRED_ACCURACY_METERS ? 'text-red-400' : 'text-green-400'}`}>
+                                [GPS: ±{Math.round(gpsAccuracy)}m]
+                            </span>
+                        )}
                     </>
                  ) : (
                     <span className="animate-pulse">{t('input.locating')}</span>
@@ -272,8 +285,15 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                     </div>
                     
                     {/* Visual Toggle Switch */}
-                    <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${isMasked ? 'bg-cyan-500' : 'bg-gray-700'}`}>
-                        <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 shadow-md ${isMasked ? 'left-6' : 'left-1'}`} />
+                    <div className="flex items-center gap-3">
+                        {isExactModeBlocked && (
+                             <div title="Signal too weak for exact mode">
+                                <AlertTriangle size={16} className="text-red-500 animate-pulse" />
+                             </div>
+                        )}
+                        <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${isMasked ? 'bg-cyan-500' : 'bg-gray-700'}`}>
+                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 shadow-md ${isMasked ? 'left-6' : 'left-1'}`} />
+                        </div>
                     </div>
                 </div>
 
@@ -286,13 +306,22 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
 
                 <button
                   onClick={handleSubmit}
-                  disabled={isSubmitting || (!text.trim() && !selectedFile) || !targetLocationName}
-                  className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+                  disabled={isSendDisabled}
+                  className={`w-full py-3 font-bold rounded-xl flex items-center justify-center gap-2 transition-all 
+                      ${isExactModeBlocked 
+                          ? 'bg-red-900/50 text-red-300 cursor-not-allowed border border-red-500/30' 
+                          : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
+                      }`}
                 >
                   {isSubmitting ? (
                       <>
                         <Loader2 className="animate-spin" />
                         <span>{isUploading ? "UPLOADING..." : "SENDING..."}</span>
+                      </>
+                  ) : isExactModeBlocked ? (
+                      <>
+                        <AlertTriangle size={18} />
+                        <span>WEAK GPS SIGNAL (ENABLE MASKING)</span>
                       </>
                   ) : (
                       <>
