@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
+import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
 
@@ -77,9 +78,11 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       setReplyText('');
       const data = await fetchReplies(parentMessage.id);
       setReplies(data);
+      triggerHaptic('success');
     } catch (e: any) {
       console.error(e);
       setError(e.message || t('thread.error_send_reply'));
+      triggerHaptic('error');
     } finally {
       setIsSending(false);
     }
@@ -88,12 +91,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   const handleBoostClick = (e: React.MouseEvent, msgId: string) => {
     e.stopPropagation();
     if (userVotes[msgId] === 'up') return; 
+    triggerHaptic('heavy');
     onVote(msgId, 'up');
     setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
   };
 
   const handleReportClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
     e.stopPropagation();
+    triggerHaptic('error');
     if (window.confirm("Report this signal as spam/offensive? It will be removed from your view.")) {
         if (isParent) {
              onDelete(msgId);
@@ -107,6 +112,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
 
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
     e.stopPropagation();
+    triggerHaptic('error');
     if (window.confirm(t('feed.delete_confirm'))) {
         if (isParent) {
             onDelete(msgId);
@@ -163,9 +169,17 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   const renderMessageCard = (msg: ChatMessage, isParent: boolean) => {
       const isBoosted = userVotes[msg.id] === 'up';
       const { isCritical, isWeak } = getSignalHealth(msg);
+      
+      // Check if this message is from the Original Poster
+      const isOp = !isParent && msg.sessionId === parentMessage.sessionId;
 
       let borderClass = isParent ? 'border-b border-white/10' : 'border-l-2 border-white/10 ml-4 pl-4';
       
+      // OP Visuals: Thin cyan border + faint cyan tint
+      if (isOp) {
+          borderClass = 'border-l-2 border-cyan-500/40 ml-4 pl-4 bg-cyan-500/5';
+      }
+
       // Apply health colors if it's the parent message (replies usually don't have separate health logic visually in thread view, but we can add it lightly)
       if (isParent) {
          if (isCritical) borderClass += ' border-red-500/50';
@@ -194,6 +208,15 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                 <div className="flex justify-between items-start mb-1">
                     <div className="flex items-center gap-2 text-[10px] text-gray-400">
                         <span className="font-mono text-cyan-400">ID: {msg.sessionId.slice(0, 6)}</span>
+                        
+                        {/* OP BADGE */}
+                        {isOp && (
+                            <span className="flex items-center gap-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-1 py-px rounded-[3px] font-bold tracking-wider text-[9px]" title="Original Poster">
+                                <Crown size={10} strokeWidth={2.5} />
+                                <span>OP</span>
+                            </span>
+                        )}
+
                         <span>•</span>
                         <div className="flex items-center gap-1 font-mono font-bold">
                             <Clock size={10} />

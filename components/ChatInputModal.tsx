@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, MapPin, AlertCircle, Loader2, Clock, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { THEME_COLOR } from '../constants';
 import { SoundService } from '../services/soundService';
+import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import { canSendImages, uploadImage } from '../services/storageService';
 
@@ -106,12 +107,14 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
       await onSave(text, uploadedImageUrl);
       
       SoundService.playSuccess();
+      triggerHaptic('success');
       setText('');
       clearImage();
       onClose();
     } catch (err: any) {
       console.error(err);
       setError(err.message || t('input.error_transmission'));
+      triggerHaptic('error');
       setIsUploading(false);
     } finally {
       setIsSubmitting(false);

@@ -11,6 +11,7 @@ import { getCityName } from './services/moderationService';
 import { SoundService } from './services/soundService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
+import { triggerHaptic } from './services/hapticService';
 
 // Radius of the visual ring in pixels.
 // Visual ring is w-64 (256px) -> 128px radius.
@@ -28,6 +29,8 @@ function App() {
   const [isInputOpen, setIsInputOpen] = useState(false);
   const [isFeedOpen, setIsFeedOpen] = useState(false); 
   const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
+  const [focusedMessage, setFocusedMessage] = useState<ChatMessage | null>(null);
+
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
   
   const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -222,6 +225,19 @@ function App() {
     }
   };
 
+  // --- JUMP TO LOCATION LOGIC ---
+  const handleMessageClick = (msg: ChatMessage) => {
+      SoundService.playClick();
+      triggerHaptic('light'); // Tactile confirm for jump
+      setFocusedMessage(msg); // 1. Trigger Map FlyTo & Marker
+      setIsFeedOpen(false);   // 2. Collapse panel (Mobile UX)
+  };
+
+  const handleOpenThread = (msg: ChatMessage) => {
+      SoundService.playClick();
+      setSelectedMessage(msg);
+  };
+
   const handleTagClick = (tag: string) => {
       SoundService.playClick();
       setActiveTag(tag);
@@ -321,6 +337,7 @@ function App() {
   const handleDelete = async (msgId: string, parentId?: string | null) => {
     setMessages(prev => prev.filter(m => m.id !== msgId));
     if (selectedMessage?.id === msgId) setSelectedMessage(null);
+    if (focusedMessage?.id === msgId) setFocusedMessage(null);
     await deleteMessage(msgId);
   };
   
@@ -349,6 +366,9 @@ function App() {
         lastNewMessage={lastNewMessage}
         hasSignal={hasSignal}
         initialCenter={locationCache.current || undefined}
+        focusedMessage={focusedMessage}
+        onOpenThread={handleOpenThread}
+        onClosePopup={() => { SoundService.playClick(); setFocusedMessage(null); }}
       />
 
       <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">
@@ -369,7 +389,7 @@ function App() {
 
       <FeedPanel 
         visibleMessages={visibleMessages}
-        onMessageClick={(msg) => { SoundService.playClick(); setSelectedMessage(msg); }} 
+        onMessageClick={handleMessageClick} 
         isOpen={isFeedOpen}
         toggleOpen={() => { SoundService.playClick(); setIsFeedOpen(!isFeedOpen); }}
         onVote={handleVote}

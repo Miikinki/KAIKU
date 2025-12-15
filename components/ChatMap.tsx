@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, useMapEvents, useMap } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert } from 'lucide-react';
+import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
+import { Crosshair, Lock, ShieldAlert, X } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
 import HeatmapLayer, { HeatmapLayerRef } from './HeatmapLayer';
 import { useTranslation } from 'react-i18next';
+import L from 'leaflet';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -14,8 +15,38 @@ interface ChatMapProps {
   onMapClick: () => void;
   lastNewMessage: ChatMessage | null;
   hasSignal: boolean;
-  initialCenter?: { lat: number; lng: number }; 
+  initialCenter?: { lat: number; lng: number };
+  focusedMessage: ChatMessage | null;
+  onOpenThread: (msg: ChatMessage) => void;
+  onClosePopup: () => void;
 }
+
+// --- CUSTOM PIN ICON ---
+const customPinIcon = L.divIcon({
+    className: 'custom-pin',
+    html: `<div class="relative w-4 h-4">
+            <div class="absolute inset-0 bg-cyan-400 rounded-full animate-ping opacity-75"></div>
+            <div class="relative w-4 h-4 bg-cyan-500 rounded-full border-2 border-white shadow-[0_0_15px_#06b6d4]"></div>
+           </div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8], // Center
+    popupAnchor: [0, -10]
+});
+
+// --- MAP FLY TO CONTROLLER ---
+const MapFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (target) {
+            map.flyTo([target.location.lat, target.location.lng], 14, {
+                animate: true,
+                duration: 1.5,
+                easeLinearity: 0.25
+            });
+        }
+    }, [target, map]);
+    return null;
+};
 
 // --- ANIMATED ELLIPSIS COMPONENT ---
 const AnimatedEllipsis = () => {
@@ -80,7 +111,7 @@ const MapController: React.FC<{
   const handleMove = useCallback(() => {
       const bounds = map.getBounds();
       const center = map.getCenter();
-      const z = map.getZoom();
+      const z = map.getSize().x > 0 ? map.getZoom() : 0;
       const size = map.getSize();
 
       const visualOffsetY = 96; 
@@ -197,7 +228,7 @@ const SonarVisualLayer: React.FC<{ pings: ActivePing[] }> = ({ pings }) => {
 };
 
 // --- MAIN CHAT MAP ---
-const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter }) => {
+const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, focusedMessage, onOpenThread, onClosePopup }) => {
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
   
@@ -233,7 +264,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         center={startPosition} 
         zoom={startZoom}
         scrollWheelZoom={true}
-        doubleClickZoom={false} // <--- THE FIX: DISABLE DOUBLE CLICK ZOOM
+        doubleClickZoom={false} 
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
@@ -257,8 +288,54 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
             onViewportChange={onViewportChange}
             setZoom={setZoom}
         />
+
+        <MapFlyTo target={focusedMessage} />
         
         <SonarController onSonar={handleSonar} onMapClick={onMapClick} />
+
+        {/* Focused Message Marker */}
+        {focusedMessage && (
+            <Marker 
+                key={focusedMessage.id}
+                position={[focusedMessage.location.lat, focusedMessage.location.lng]} 
+                icon={customPinIcon}
+                ref={(ref) => {
+                    if (ref) setTimeout(() => ref.openPopup(), 600); 
+                }}
+            >
+                <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -4]}>
+                    <div className="p-3 relative">
+                        {/* CLOSE BUTTON */}
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onClosePopup();
+                            }}
+                            className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors z-50"
+                        >
+                            <X size={14} />
+                        </button>
+
+                        <div onClick={() => onOpenThread(focusedMessage)} className="cursor-pointer group mt-1">
+                            <div className="flex items-center justify-between mb-2 pr-6">
+                                <span className="text-[10px] text-cyan-400 font-mono font-bold tracking-wider flex items-center gap-1">
+                                    <Crosshair size={10} /> TARGET
+                                </span>
+                                <span className="text-[10px] text-gray-500 font-mono">
+                                    {new Date(focusedMessage.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </span>
+                            </div>
+                            <p className="text-sm text-gray-200 leading-relaxed line-clamp-3 mb-3 font-light border-l-2 border-cyan-500/30 pl-2 group-hover:border-cyan-400 transition-colors">
+                                {focusedMessage.text}
+                            </p>
+                            <div className="text-center py-1.5 bg-white/5 rounded text-[10px] text-cyan-400 font-bold tracking-widest group-hover:bg-cyan-500 group-hover:text-black transition-all">
+                                OPEN CHANNEL
+                            </div>
+                        </div>
+                    </div>
+                </Popup>
+            </Marker>
+        )}
 
         {/* Visual Layers */}
         <SonarVisualLayer pings={pings} />
@@ -319,7 +396,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
     return prevProps.messages === nextProps.messages && 
            prevProps.signals === nextProps.signals && 
            prevProps.lastNewMessage === nextProps.lastNewMessage &&
-           prevProps.hasSignal === nextProps.hasSignal;
+           prevProps.hasSignal === nextProps.hasSignal &&
+           prevProps.focusedMessage === nextProps.focusedMessage;
 });
 
 export default ChatMap;

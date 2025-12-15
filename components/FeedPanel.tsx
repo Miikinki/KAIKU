@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
+import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
 
@@ -56,6 +57,11 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   const [now, setNow] = useState(Date.now());
   const [showMyMessagesOnly, setShowMyMessagesOnly] = useState(false);
   
+  // TOAST LOGIC STATE
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showNewMsgToast, setShowNewMsgToast] = useState(false);
+  const prevMsgCountRef = useRef(visibleMessages.length);
+  
   const currentSessionId = getAnonymousID();
 
   // Update ticker
@@ -68,6 +74,35 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   useEffect(() => {
     setUserVotes(getUserVotes());
   }, [visibleMessages, isOpen]);
+
+  // --- NEW SIGNAL TOAST LOGIC ---
+  useEffect(() => {
+    // If we have MORE messages than before (new arrival)
+    if (visibleMessages.length > prevMsgCountRef.current) {
+        // AND we are currently open and scrolled down significantly
+        if (isOpen && scrollRef.current && scrollRef.current.scrollTop > 150) {
+            setShowNewMsgToast(true);
+            // Optional: Very subtle haptic to indicate background activity, or none to avoid annoyance
+        }
+    }
+    prevMsgCountRef.current = visibleMessages.length;
+  }, [visibleMessages, isOpen]);
+
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    // If user scrolls back to top manually, hide the toast
+    if (scrollRef.current.scrollTop < 50) {
+        setShowNewMsgToast(false);
+    }
+  };
+
+  const scrollToTop = () => {
+      if (scrollRef.current) {
+          triggerHaptic('light');
+          scrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+          setShowNewMsgToast(false);
+      }
+  };
 
   // --- FILTERING LOGIC ---
   const displayMessages = useMemo(() => {
@@ -112,12 +147,14 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
     e.stopPropagation();
     if (userVotes[msgId] === 'up') return; // Already boosted
 
+    triggerHaptic('heavy'); // Heavy vibration for power action
     onVote(msgId, 'up');
     setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
   };
 
   const handleReportClick = (e: React.MouseEvent, msgId: string) => {
       e.stopPropagation();
+      triggerHaptic('error');
       if (window.confirm("Report this signal as spam/offensive? It will be removed from your view.")) {
           onDelete(msgId);
       }
@@ -125,6 +162,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, parentId?: string | null) => {
       e.stopPropagation();
+      triggerHaptic('error'); // Warn user tactilely
       if (window.confirm(t('feed.delete_confirm'))) {
           onDelete(msgId, parentId || undefined);
       }
@@ -133,10 +171,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   const handleRefresh = (e: React.MouseEvent) => {
       e.stopPropagation();
       if (onRefresh) {
+          triggerHaptic('light');
           setIsRefreshing(true);
           onRefresh();
           setTimeout(() => setIsRefreshing(false), 1000);
       }
+  };
+
+  const handleToggleFilter = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      triggerHaptic('light');
+      setShowMyMessagesOnly(!showMyMessagesOnly);
   };
 
   // --- TEXT PARSER ---
@@ -235,7 +280,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     <div className="flex items-center gap-1">
                         {/* FILTER: MY MESSAGES */}
                         <button
-                            onClick={(e) => { e.stopPropagation(); setShowMyMessagesOnly(!showMyMessagesOnly); }}
+                            onClick={handleToggleFilter}
                             className={`p-2 rounded-full transition-all ${showMyMessagesOnly ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-white/10 text-gray-400'}`}
                             title="My Signals"
                         >
@@ -288,8 +333,37 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             )}
         </AnimatePresence>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508]">
+        <div 
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="relative flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508]"
+        >
             
+            {/* NEW SIGNAL TOAST */}
+            <AnimatePresence>
+                {showNewMsgToast && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20, x: "-50%" }}
+                        animate={{ opacity: 1, y: 0, x: "-50%" }}
+                        exit={{ opacity: 0, y: -20, x: "-50%" }}
+                        className="fixed left-1/2 z-[500] pointer-events-none"
+                        style={{ top: "calc(15vh + 90px)" }} // Approx position relative to header
+                    >
+                         <button
+                            onClick={scrollToTop}
+                            className="pointer-events-auto flex items-center gap-2 px-4 py-2 bg-[#0a0a12]/90 border border-cyan-500/50 rounded-full shadow-[0_0_15px_rgba(6,182,212,0.3)] backdrop-blur-md text-cyan-400 text-xs font-bold font-mono tracking-widest cursor-pointer hover:bg-cyan-950/50 transition-all active:scale-95 group"
+                        >
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                            </span>
+                            NEW SIGNAL DETECTED
+                            <ArrowUp size={12} className="group-hover:-translate-y-0.5 transition-transform" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* TRENDING TOPICS */}
             {isOpen && !activeTag && !showMyMessagesOnly && trendingTags.length > 0 && (
                 <motion.div 
