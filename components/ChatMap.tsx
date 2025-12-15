@@ -384,6 +384,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     onClosePopup();
+                                    mapRef.current?.closePopup(); // EXPLICITLY CLOSE LEAFLET POPUP
                                 }}
                                 className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors z-50"
                             >

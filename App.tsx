@@ -6,6 +6,7 @@ import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import WelcomeScreen from './components/WelcomeScreen';
 import BootSequence from './components/BootSequence';
+import DesktopLanding from './components/DesktopLanding';
 import { ChatMessage, ViewportBounds } from './types';
 import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, subscribeToPresence, getHiddenIds, toggleHiddenMessage } from './services/storageService';
 import { getCityName } from './services/moderationService';
@@ -20,6 +21,7 @@ type AppState = 'welcome' | 'boot' | 'app';
 
 function App() {
   const [appState, setAppState] = useState<AppState>('welcome');
+  const [isDesktop, setIsDesktop] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
   const [signals, setSignals] = useState<ChatMessage[]>([]);
@@ -57,6 +59,26 @@ function App() {
 
   const [nearbyTypingCount, setNearbyTypingCount] = useState(0);
   const presenceActions = useRef<{ setTyping: (t: boolean, l?: {lat: number, lng: number}) => void } | null>(null);
+
+  // DEVICE DETECTION LOGIC
+  useEffect(() => {
+    const checkDevice = () => {
+      const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const isSmallScreen = window.innerWidth < 1024; // Treat screens >= 1024px width as Desktop (Landscape Tablets included)
+      const hasDevFlag = new URLSearchParams(window.location.search).get('dev') === 'true';
+
+      // Desktop if: NOT mobile UA AND NOT small screen AND NOT dev flag
+      if (!isMobileUA && !isSmallScreen && !hasDevFlag) {
+        setIsDesktop(true);
+      } else {
+        setIsDesktop(false);
+      }
+    };
+
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+    return () => window.removeEventListener('resize', checkDevice);
+  }, []);
 
   // START HANDLER
   const handleStart = (startLoc: { lat: number, lng: number }, isFallback: boolean) => {
@@ -428,6 +450,11 @@ function App() {
       setIsMuted(newState);
       if (!newState) SoundService.playClick();
   };
+
+  // IF DESKTOP MODE DETECTED, SHOW GATE
+  if (isDesktop) {
+      return <DesktopLanding />;
+  }
 
   const hasSignal = visibleMessages.length > 0;
 
