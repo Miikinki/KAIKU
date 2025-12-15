@@ -117,15 +117,12 @@ const AnimatedEllipsis = () => {
   );
 };
 
-// --- SONAR CLICK HANDLER (Map Events) ---
-// Captures clicks on the map to trigger the Sonar Wave
-const SonarController: React.FC<{ 
-    onSonar: (lat: number, lng: number) => void,
+// --- MAP EVENTS HANDLER ---
+const MapEventsHandler: React.FC<{ 
     onMapClick: () => void
-}> = ({ onSonar, onMapClick }) => {
+}> = ({ onMapClick }) => {
     useMapEvents({
-        click: (e) => {
-            onSonar(e.latlng.lat, e.latlng.lng);
+        click: () => {
             onMapClick();
         }
     });
@@ -204,106 +201,17 @@ const MapController: React.FC<{
   return null;
 };
 
-// --- SONAR VISUAL LAYER (SVG OVERLAY) ---
-// Renders the expanding ring
-interface ActivePing {
-    id: number;
-    lat: number;
-    lng: number;
-    startTime: number;
-}
-const SonarVisualLayer: React.FC<{ pings: ActivePing[] }> = ({ pings }) => {
-    const map = useMap();
-    const [frame, setFrame] = useState(0);
-
-    // Re-render on map move to keep rings pinned
-    useEffect(() => {
-        const handler = () => setFrame(f => f + 1);
-        map.on('move', handler);
-        map.on('zoom', handler);
-        return () => {
-             map.off('move', handler);
-             map.off('zoom', handler);
-        };
-    }, [map]);
-
-    // Animation Loop for smooth expansion
-    useEffect(() => {
-        let raf: number;
-        const loop = () => {
-            setFrame(f => f + 1);
-            raf = requestAnimationFrame(loop);
-        };
-        loop();
-        return () => cancelAnimationFrame(raf);
-    }, []);
-
-    if (pings.length === 0) return null;
-
-    return (
-        <svg 
-            className="leaflet-zoom-hide pointer-events-none"
-            style={{ 
-                position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', 
-                zIndex: 450, overflow: 'visible' 
-            }}
-        >
-            {pings.map(ping => {
-                const elapsed = Date.now() - ping.startTime;
-                if (elapsed > 2000) return null; // Hide after 2s
-
-                const center = map.latLngToContainerPoint([ping.lat, ping.lng]);
-                
-                // Animation Params
-                const radius = elapsed * 0.5; // Matches HEATMAP layer speed
-                const opacity = 1 - (elapsed / 2000);
-                
-                return (
-                    <circle 
-                        key={ping.id}
-                        cx={center.x}
-                        cy={center.y}
-                        r={radius}
-                        fill="none"
-                        stroke="#22d3ee"
-                        strokeWidth={2}
-                        strokeOpacity={opacity * 0.5}
-                    />
-                );
-            })}
-        </svg>
-    );
-};
-
 // --- MAIN CHAT MAP ---
 const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation }) => {
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
   
-  // Sonar State
-  const [pings, setPings] = useState<ActivePing[]>([]);
   const heatmapRef = useRef<HeatmapLayerRef>(null);
 
   const startPosition = initialCenter ? [initialCenter.lat, initialCenter.lng] : [60.1, 24.9];
   const startZoom = initialCenter ? 8 : 4; 
 
   const isMaxZoom = zoom >= 12;
-
-  const handleSonar = useCallback((lat: number, lng: number) => {
-      // 1. Add Visual Ring
-      setPings(prev => {
-          const now = Date.now();
-          // Filter old pings
-          const next = prev.filter(p => now - p.startTime < 2000);
-          next.push({ id: Math.random(), lat, lng, startTime: now });
-          return next;
-      });
-
-      // 2. Trigger Heatmap Reaction
-      if (heatmapRef.current) {
-          heatmapRef.current.ping(lat, lng);
-      }
-  }, []);
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
@@ -339,7 +247,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
 
         <MapFlyTo target={focusedMessage} />
         
-        <SonarController onSonar={handleSonar} onMapClick={onMapClick} />
+        <MapEventsHandler onMapClick={onMapClick} />
         
         <LocateControl getUserLocation={getUserLocation} />
 
@@ -398,7 +306,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         )}
 
         {/* Visual Layers */}
-        <SonarVisualLayer pings={pings} />
         <ArcLayer messages={signals} />
         <HeatmapLayer ref={heatmapRef} messages={messages} />
         
@@ -411,12 +318,9 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
               <div className={`absolute flex items-center justify-center w-64 h-64 rounded-full transition-all duration-500 ease-out 
                   ${isMaxZoom ? 'opacity-100 scale-110' : (hasSignal ? 'opacity-100 scale-105' : 'opacity-60 scale-100')}
               `}>
-                   {/* Layer 1: Sonar Pulse (The Ripple) */}
-                   <div className={`absolute inset-0 border border-cyan-500/40 rounded-full animate-[ping_3s_linear_infinite] 
-                       ${isMaxZoom ? 'border-red-500/40' : ''}`} 
-                   />
+                   {/* Layer 1: REMOVED PULSE (Was causing overflow) */}
                    
-                   {/* Layer 2: Rotating Sweep (The Radar Trail) */}
+                   {/* Layer 2: Rotating Sweep (The Radar Trail) - KEPT ACTIVE */}
                    <div 
                        className="absolute inset-0 rounded-full animate-[spin_4s_linear_infinite]"
                        style={{ 
