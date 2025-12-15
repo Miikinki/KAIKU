@@ -19,17 +19,14 @@ import { triggerHaptic } from './services/hapticService';
 // We set scan radius slightly larger to include edge signals comfortably.
 const SCAN_RADIUS_PX = 150; 
 
+type AppState = 'welcome' | 'boot' | 'app';
+
 function App() {
-  const [hasStarted, setHasStarted] = useState(false); // New state for Welcome Screen
-  
-  // BOOT SEQUENCE STATE
-  // We check sessionStorage to ensure it only runs once per session.
-  const [showBoot, setShowBoot] = useState(() => {
-      if (typeof window !== 'undefined' && window.sessionStorage) {
-          return !window.sessionStorage.getItem('kaiku_booted');
-      }
-      return false;
-  });
+  // APP FLOW STATE
+  // 'welcome' -> Waiting for user to click Initialize
+  // 'boot' -> Playing terminal animation
+  // 'app' -> Main interface
+  const [appState, setAppState] = useState<AppState>('welcome');
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
   const [signals, setSignals] = useState<ChatMessage[]>([]);
@@ -60,7 +57,7 @@ function App() {
   const [nearbyTypingCount, setNearbyTypingCount] = useState(0);
   const presenceActions = useRef<{ setTyping: (t: boolean, l?: {lat: number, lng: number}) => void } | null>(null);
 
-  // START HANDLER
+  // START HANDLER (Triggered from WelcomeScreen)
   const handleStart = (startLoc: { lat: number, lng: number }) => {
       // 1. Initialize location cache immediately with the fresh GPS data
       locationCache.current = startLoc;
@@ -71,9 +68,20 @@ function App() {
       // 2. Play startup sound (now allowed because of user interaction)
       SoundService.playScan();
       
-      // 3. Mount the app
-      setHasStarted(true);
+      // 3. Move to Boot Sequence
+      setAppState('boot');
   };
+
+  const handleBootComplete = () => {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+          window.sessionStorage.setItem('kaiku_booted', 'true');
+      }
+      setAppState('app');
+  };
+
+  // Derived state for background processes
+  // We want to start fetching data/tracking GPS as soon as we leave the welcome screen (during boot)
+  const isRunning = appState !== 'welcome';
 
   const loadData = async () => {
       const data = await fetchMessages(true);
@@ -83,7 +91,7 @@ function App() {
 
   // CONTINUOUS GPS TRACKING (Only activates after start)
   useEffect(() => {
-    if (!hasStarted) return; // Don't track until started
+    if (!isRunning) return; 
 
     let watchId: number;
     let timerId: any;
@@ -120,11 +128,11 @@ function App() {
       clearTimeout(timerId);
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
-  }, [hasStarted]);
+  }, [isRunning]);
 
   // SUPABASE REALTIME (Presence & Messages)
   useEffect(() => {
-    if (!hasStarted) return;
+    if (!isRunning) return;
     loadData();
     
     // 1. MESSAGE LISTENER
@@ -208,7 +216,7 @@ function App() {
         if (subMessages) subMessages.unsubscribe();
         if (presenceHelper) presenceHelper.unsubscribe();
     };
-  }, [hasStarted]);
+  }, [isRunning]);
 
   useEffect(() => {
     if (!currentBounds) return;
@@ -253,20 +261,14 @@ function App() {
   };
 
   const handleMapClick = () => {
-    // UPDATED INTERACTION LOGIC:
-    // If the feed is open, we close it so the user can see the map/sonar.
-    // If the feed is CLOSED, we DO NOT open it. We just play the sonar sound/effect (handled in ChatMap).
-    // This solves the issue where Sonar Wave was hidden by the panel popping up.
     if (isFeedOpen) {
         SoundService.playClick();
         setIsFeedOpen(false);
     } else {
-        // Just play sound, the Visual Sonar Wave is handled by the internal Map Events in ChatMap.tsx
         SoundService.playClick();
     }
   };
 
-  // --- JUMP TO LOCATION LOGIC ---
   const handleMessageClick = (msg: ChatMessage) => {
       SoundService.playClick();
       triggerHaptic('light'); // Tactile confirm for jump
@@ -289,7 +291,6 @@ function App() {
   const getLocation = async (): Promise<{lat: number, lng: number}> => {
      if (locationCache.current) return locationCache.current;
      
-     // Fallback if cache is empty (unlikely with WelcomeScreen)
      return new Promise((resolve, reject) => {
          if (!navigator.geolocation) {
              reject(new Error("Geolocation not supported"));
@@ -351,19 +352,13 @@ function App() {
               targetLng = selectedMessage.location.lng;
           }
 
-          // SERVER-DRIVEN LOGIC ENFORCEMENT:
-          // We save the message to Supabase. 
-          // We DO NOT call setSignals() here locally.
-          // We rely on the subscribeToMessages() listener in useEffect to catch the echo from the server.
           await saveMessage(text, targetLat, targetLng, userLoc.lat, userLoc.lng, parentId);
-          
           await loadData();
       } catch (e) {
           alert("GPS Signal Lost. Cannot send reply.");
       }
   };
 
-  // --- TYPING BROADCAST ---
   const handleTypingChange = async (isTyping: boolean) => {
       if (presenceActions.current) {
            const loc = await getLocation();
@@ -398,20 +393,12 @@ function App() {
 
   const hasSignal = visibleMessages.length > 0;
 
-  // --- RENDER ---
-
-  const handleBootComplete = () => {
-      if (typeof window !== 'undefined' && window.sessionStorage) {
-          window.sessionStorage.setItem('kaiku_booted', 'true');
-      }
-      setShowBoot(false);
-  };
-
   return (
     <>
-        <AnimatePresence>
-            {showBoot && (
+        <AnimatePresence mode="wait">
+            {appState === 'boot' && (
                 <motion.div
+                    key="boot"
                     className="fixed inset-0 z-[10000] bg-[#0a0a12] flex items-center justify-center"
                     exit={{ opacity: 0 }}
                     transition={{ duration: 1.5, ease: "easeInOut" }}
@@ -421,9 +408,11 @@ function App() {
             )}
         </AnimatePresence>
 
-        {!hasStarted ? (
+        {appState === 'welcome' && (
             <WelcomeScreen onStart={handleStart} />
-        ) : (
+        )}
+        
+        {appState === 'app' && (
             <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
             
             <ChatMap 
