@@ -233,6 +233,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         center={startPosition} 
         zoom={startZoom}
         scrollWheelZoom={true}
+        doubleClickZoom={false} // <--- THE FIX: DISABLE DOUBLE CLICK ZOOM
         zoomControl={false}
         attributionControl={false}
         className="w-full h-full"
