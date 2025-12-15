@@ -267,7 +267,7 @@ function App() {
       }
   };
 
-  const handleSaveMessage = async (text: string) => {
+  const handleSaveMessage = async (text: string, imageUrl?: string) => {
     if (!targetLocation) return;
     const userLoc = await getLocation(); 
     await saveMessage(
@@ -275,7 +275,9 @@ function App() {
         targetLocation.lat, 
         targetLocation.lng, 
         userLoc.lat, 
-        userLoc.lng
+        userLoc.lng,
+        undefined, // parentId
+        imageUrl
     );
     await loadData();
   };

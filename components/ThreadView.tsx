@@ -4,6 +4,7 @@ import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { useTranslation } from 'react-i18next';
+import ImageAttachment from './ImageAttachment';
 
 interface ThreadViewProps {
   parentMessage: ChatMessage;
@@ -234,6 +235,11 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                 <p className={`text-sm text-gray-200 leading-relaxed whitespace-pre-wrap ${isParent ? 'font-medium text-base' : 'font-light'}`}>
                     {renderMessageText(msg.text)}
                 </p>
+
+                {/* Render Image Attachment */}
+                {msg.imageUrl && (
+                    <ImageAttachment src={msg.imageUrl} />
+                )}
             </div>
         </div>
         </div>

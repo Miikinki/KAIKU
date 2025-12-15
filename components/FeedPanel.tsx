@@ -4,6 +4,7 @@ import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { useTranslation } from 'react-i18next';
+import ImageAttachment from './ImageAttachment';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -378,6 +379,11 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     <p className="text-base text-gray-100 leading-relaxed font-light break-words">
                         {renderMessageText(msg.text)}
                     </p>
+
+                    {/* Render Image Attachment */}
+                    {msg.imageUrl && (
+                        <ImageAttachment src={msg.imageUrl} />
+                    )}
                     
                     <div className="mt-3 flex justify-between items-center border-t border-white/5 pt-2">
                         <span className="text-[10px] text-gray-600 font-mono">ID: {msg.sessionId.slice(0, 8)}</span>

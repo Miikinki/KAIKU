@@ -154,6 +154,41 @@ export const getUserVotes = (): Record<string, 'up' | 'down'> => {
     return stored ? JSON.parse(stored) : {};
 };
 
+// --- IMAGE UPLOAD SERVICE ---
+
+export const canSendImages = (): boolean => {
+    // Placeholder for future monetization/premium checks
+    return true;
+};
+
+export const uploadImage = async (file: File): Promise<string> => {
+    if (!canSendImages()) throw new Error("Image upload is currently restricted.");
+    
+    // Simple validation
+    if (!file.type.startsWith('image/')) throw new Error("Only image files are allowed.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("Image size must be under 5MB.");
+
+    const fileExt = file.name.split('.').pop() || 'jpg';
+    const fileName = `${generateUUID()}_${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+        .from('chat-images')
+        .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+        });
+
+    if (uploadError) {
+        console.error("Supabase Upload Error:", uploadError);
+        // Pass the specific error message to the UI
+        throw new Error(uploadError.message || "Failed to upload image. Please try again.");
+    }
+
+    const { data } = supabase.storage.from('chat-images').getPublicUrl(filePath);
+    return data.publicUrl;
+};
+
 // --- DATA ACCESS ---
 
 export const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
@@ -218,7 +253,8 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
                 isRemote: d.is_remote,
                 originCountry: d.origin_country,
                 tags: tags,
-                preciseOrigin: preciseOrigin 
+                preciseOrigin: preciseOrigin,
+                imageUrl: d.image_url 
             };
         });
   }
@@ -261,7 +297,8 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
                 isRemote: d.is_remote,
                 originCountry: d.origin_country,
                 tags: tags,
-                preciseOrigin: preciseOrigin
+                preciseOrigin: preciseOrigin,
+                imageUrl: d.image_url
             };
         });
 };
@@ -272,7 +309,8 @@ export const saveMessage = async (
     targetLng: number, 
     userLat: number, 
     userLng: number, 
-    parentId?: string
+    parentId?: string,
+    imageUrl?: string
 ): Promise<ChatMessage> => {
   // Rate Limit
   const lastPostTimeStr = localStorage.getItem(LAST_POST_TIMESTAMP_KEY);
@@ -331,7 +369,8 @@ export const saveMessage = async (
     isRemote: isRemote,
     originCountry: isRemote ? originCountry : undefined,
     tags: tags,
-    preciseOrigin: { lat: senderLatJitter, lng: senderLngJitter }
+    preciseOrigin: { lat: senderLatJitter, lng: senderLngJitter },
+    imageUrl: imageUrl
   };
 
   // We don't send expires_at explicitly here; we let the DB Default (now() + 24h) handle it.
@@ -348,7 +387,8 @@ export const saveMessage = async (
           parent_post_id: newMessage.parentId,
           origin_country: newMessage.originCountry,
           is_remote: newMessage.isRemote,
-          tags: newMessage.tags
+          tags: newMessage.tags,
+          image_url: newMessage.imageUrl
       }]);
 
   if (error) {
@@ -446,7 +486,8 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
                     isRemote: d.is_remote,
                     originCountry: d.origin_country,
                     tags: tags,
-                    preciseOrigin: preciseOrigin 
+                    preciseOrigin: preciseOrigin,
+                    imageUrl: d.image_url
                 };
                 
                 // If update, we might just re-insert to refresh state in UI

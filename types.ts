@@ -20,6 +20,7 @@ export interface ChatMessage {
   tags?: string[]; // Array of hashtags found in the text (e.g. ["#summer", "#helsinki"])
   customOrigin?: { lat: number, lng: number }; // TRANSIENT: For animating "My" outgoing messages precisely (Local Echo)
   preciseOrigin?: { lat: number, lng: number }; // PERSISTENT: Extracted from metadata for accurate remote arcs
+  imageUrl?: string; // NEW: URL for attached image
 }
 
 export interface ViewportBounds {
