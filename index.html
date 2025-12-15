@@ -25,22 +25,72 @@
         padding: 0;
         background-color: #0a0a12;
         overflow: hidden;
+        position: fixed; /* Lock body to prevent bounce/elastic scrolling */
+        overscroll-behavior: none; /* Prevent pull-to-refresh effects */
+        -webkit-font-smoothing: antialiased;
       }
       #root {
         height: 100%;
         width: 100%;
-        display: flex;
-        flex-direction: column;
-      }
-      .leaflet-container {
-        height: 100%;
-        width: 100%;
-        background: #0a0a12;
-        /* Hardware Acceleration */
-        transform: translate3d(0,0,0);
-        will-change: transform;
+        position: relative; 
       }
       
+      /* --- CRITICAL RENDER FIXES FOR MOBILE MAP ARTIFACTS --- */
+      
+      /* 1. Force the container to match app theme so loading tiles don't flash white/blue */
+      .leaflet-container {
+        background: #0a0a12 !important; 
+        outline: none !important;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      /* 2. Prevent "floating squares" by flattening the render layer */
+      .leaflet-map-pane,
+      .leaflet-tile-pane,
+      .leaflet-marker-pane,
+      .leaflet-overlay-pane {
+        transform-style: flat !important; /* Forces 2D rendering context */
+        z-index: auto;
+      }
+
+      /* 3. Fix Tile Tearing/Flickering/White Lines on Zoom */
+      .leaflet-tile {
+        /* GPU Acceleration + Anti-flicker hacks */
+        transform: translate3d(0,0,0);
+        will-change: transform;
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+        
+        /* Outline prevents sub-pixel gaps (white lines) */
+        outline: 1px solid transparent;
+        border: none !important;
+        
+        /* Optimizes scaling quality */
+        image-rendering: -webkit-optimize-contrast;
+      }
+      
+      /* Prevent black flash on tile load */
+      .leaflet-tile-container {
+        transform: translate3d(0,0,0);
+        -webkit-transform: translate3d(0,0,0);
+      }
+
+      /* 4. GPU Acceleration for Animations */
+      .leaflet-fade-anim .leaflet-tile,
+      .leaflet-zoom-anim .leaflet-zoom-animated {
+        will-change: transform;
+        transition: transform 0.25s cubic-bezier(0,0,0.25,1);
+      }
+
+      /* 5. Hide all default controls/attribution that might cause layout shifts */
+      .leaflet-control-container .leaflet-top,
+      .leaflet-control-container .leaflet-bottom {
+        display: none !important;
+      }
+      .leaflet-control-attribution {
+        display: none !important;
+      }
+
       /* Glassmorphism Scrollbar */
       ::-webkit-scrollbar {
         width: 4px;
@@ -60,28 +110,6 @@
       .leaflet-div-icon {
         background: transparent;
         border: none;
-      }
-
-      .leaflet-control-attribution {
-        display: none !important;
-      }
-
-      /* --- KAIKU HEXAGONS --- */
-      .kaiku-hex-polygon {
-        transition: all 0.5s ease-out;
-        transform-origin: center;
-        /* "Plus Lighter" creates that intense neon overlap effect */
-        mix-blend-mode: screen; 
-        stroke-linejoin: round;
-      }
-      
-      /* The Breathing Effect */
-      .kaiku-hex-polygon:hover {
-        fill-opacity: 0.9 !important;
-        stroke: white !important;
-        stroke-width: 1.5px !important; /* Reduced for high-res grid */
-        filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.8));
-        z-index: 1000;
       }
 
       /* --- KAIKU ARCS (Transient) --- */
@@ -112,13 +140,11 @@
       .kaiku-custom-popup .leaflet-popup-tip {
         background: rgba(10, 10, 18, 0.95);
         border: 1px solid rgba(255, 255, 255, 0.1); /* Tip border match */
-        /* To hide the border overlap on the top side of the tip, usually tricky, so we just match bg */
       }
       .kaiku-custom-popup .leaflet-popup-content {
         margin: 0;
         min-width: 220px !important;
       }
-      /* Hide default close button as we don't use it or implement our own */
       .kaiku-custom-popup .leaflet-popup-close-button {
         display: none;
       }

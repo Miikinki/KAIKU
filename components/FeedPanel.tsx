@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { triggerHaptic } from '../services/hapticService';
@@ -237,6 +237,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   };
 
   const feedTitle = (zoomLevel && zoomLevel < 9) ? t('feed.regional_intercept') : t('feed.local_signals');
+  const hasSignal = displayMessages.length > 0;
   
   const variants = {
       open: { y: 0 },
@@ -267,15 +268,15 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             <div className="flex items-center gap-4">
                 {!isOpen ? (
                     <div className="flex items-center gap-3">
-                         <div className={`p-1.5 rounded-full bg-cyan-500/10 ${isRefreshing ? 'animate-spin' : ''}`}>
-                             <ScanLine size={18} className="text-cyan-400" />
+                         <div className={`p-1.5 rounded-full ${hasSignal ? 'bg-cyan-500/20 text-cyan-400' : 'bg-gray-800/50 text-gray-500'} ${isRefreshing ? 'animate-spin' : ''}`}>
+                             {hasSignal ? <Lock size={18} /> : <ScanLine size={18} />}
                          </div>
                          <div className="flex flex-col">
-                             <span className="text-sm font-bold tracking-widest uppercase text-white">
-                                {feedTitle}
+                             <span className={`text-xs font-bold tracking-widest uppercase ${hasSignal ? 'text-cyan-400' : 'text-gray-400'}`}>
+                                {hasSignal ? t('map.signal_locked') : "SCANNING..."}
                              </span>
                              <div className="flex items-center gap-2">
-                                <span className={`text-[10px] font-mono ${displayMessages.length === 0 ? 'text-gray-500' : 'text-cyan-400'}`}>
+                                <span className={`text-[10px] font-mono ${displayMessages.length === 0 ? 'text-gray-500' : 'text-white/60'}`}>
                                     {displayMessages.length} {t('feed.signals_detected')}
                                 </span>
                              </div>

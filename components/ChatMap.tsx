@@ -22,24 +22,18 @@ interface ChatMapProps {
   onClosePopup: () => void;
   hiddenIds: Set<string>;
   getUserLocation: () => Promise<{lat: number, lng: number}>;
-  userLocation: { lat: number, lng: number } | null; // NEW: Raw user location
+  userLocation: { lat: number, lng: number } | null;
 }
 
 // --- DYNAMIC MARKER ICON GENERATOR ---
 const getMarkerIcon = (msg: ChatMessage) => {
-    // 1. PERFORMANCE: Only pulse if message is FRESH (< 15 mins)
-    // This prevents massive FPS drop when hundreds of markers are visible.
     const ageMins = (Date.now() - msg.timestamp) / 60000;
     const shouldPulse = ageMins < 15;
-    
-    // 2. VISUAL STYLE: Exact vs Masked
     const isMasked = msg.isMasked || false;
 
-    // Icon Settings
-    const iconSize = isMasked ? 18 : 22; // Exact markers slightly bolder
-    const containerSize = 40; // Enough space for the pulse ring
+    const iconSize = isMasked ? 18 : 22;
+    const containerSize = 40;
 
-    // SVG: Zap/Signal Icon (Matching App Theme)
     const svgContent = `
         <svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" 
             fill="${isMasked ? 'none' : 'currentColor'}" 
@@ -52,9 +46,6 @@ const getMarkerIcon = (msg: ChatMessage) => {
         </svg>
     `;
 
-    // Wrapper Styles
-    // Exact: Glowing, Solid, Bright
-    // Masked: Ghostly, Hollow, Dimmer
     const visualClasses = isMasked 
         ? 'opacity-60' 
         : 'drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]';
@@ -69,7 +60,7 @@ const getMarkerIcon = (msg: ChatMessage) => {
     `;
 
     return L.divIcon({
-        className: 'bg-transparent border-none', // Ensure no default white square from Leaflet
+        className: 'bg-transparent border-none',
         html: html,
         iconSize: [containerSize, containerSize],
         iconAnchor: [containerSize / 2, containerSize / 2],
@@ -77,10 +68,7 @@ const getMarkerIcon = (msg: ChatMessage) => {
     });
 };
 
-// --- USER LOCATION MARKER (BLUE DOT) ---
 const UserLocationMarker = ({ position }: { position: { lat: number, lng: number } }) => {
-    // Standard "Google Maps Style" Blue Dot
-    // No accuracy circle (requested to be removed)
     const icon = L.divIcon({
         className: 'bg-transparent border-none',
         html: `
@@ -96,7 +84,6 @@ const UserLocationMarker = ({ position }: { position: { lat: number, lng: number
     return <Marker position={[position.lat, position.lng]} icon={icon} zIndexOffset={1000} />;
 };
 
-// --- MAP FLY TO CONTROLLER (MESSAGE) ---
 const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
     const map = useMap();
     useEffect(() => {
@@ -111,44 +98,20 @@ const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
     return null;
 };
 
-// --- COORDINATE FLY TO CONTROLLER (AUTO-CORRECT & EXTERNAL LOCATE) ---
 const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number, timestamp: number } | null }> = ({ target }) => {
     const map = useMap();
     useEffect(() => {
         if (target) {
-            // ZOOM LEVEL UPDATED: 16.5 (Street Level) for precise feel
             map.flyTo([target.lat, target.lng], 16.5, {
                 animate: true,
-                duration: 2.0, // Cinematic fly-in
+                duration: 2.0,
                 easeLinearity: 0.2
             });
         }
-    }, [target?.timestamp, map]); // Dependent on timestamp to force re-fly
+    }, [target?.timestamp, map]);
     return null;
 };
 
-// --- ANIMATED ELLIPSIS COMPONENT ---
-const AnimatedEllipsis = () => {
-  const [dots, setDots] = useState('');
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setDots(prev => {
-        if (prev === '...') return '';
-        return prev + '.';
-      });
-    }, 500);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <span className="inline-block w-6 text-left font-bold text-inherit">
-      {dots}
-    </span>
-  );
-};
-
-// --- MAP EVENTS HANDLER ---
 const MapEventsHandler: React.FC<{ 
     onMapClick: () => void
 }> = ({ onMapClick }) => {
@@ -160,7 +123,6 @@ const MapEventsHandler: React.FC<{
     return null;
 };
 
-// --- MAP CONTROLLER (Viewport Logic) ---
 const MapController: React.FC<{ 
     onViewportChange: (b: ViewportBounds) => void, 
     setZoom: (z: number) => void
@@ -170,16 +132,24 @@ const MapController: React.FC<{
   const lastUpdateRef = useRef(0);
 
   useEffect(() => {
-      const invalidate = () => map.invalidateSize();
+      const invalidate = () => {
+          map.invalidateSize({ animate: false });
+      };
+      
       invalidate();
-      const rafId = requestAnimationFrame(() => { invalidate(); });
-      const timer = setTimeout(invalidate, 500);
+      
+      const timer = setTimeout(invalidate, 300);
+      window.addEventListener('resize', invalidate);
+
       const container = map.getContainer();
-      const resizeObserver = new ResizeObserver(() => { invalidate(); });
+      const resizeObserver = new ResizeObserver(() => {
+          invalidate();
+      });
       resizeObserver.observe(container);
+
       return () => {
-          cancelAnimationFrame(rafId);
           clearTimeout(timer);
+          window.removeEventListener('resize', invalidate);
           resizeObserver.disconnect();
       };
   }, [map]);
@@ -242,19 +212,14 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   
   const heatmapRef = useRef<HeatmapLayerRef>(null);
 
-  // START WIDE: Center on general Europe/Global view roughly, Zoom 3.5
   const startPosition: [number, number] = [52.0, 10.0]; 
   const startZoom = 3.5; 
 
   const isMaxZoom = zoom >= 12;
 
-  // Radar Scaling Logic
   const getRadarScale = (currentZoom: number) => {
-    // Street level (13+): Full Scale
     if (currentZoom >= 13) return 1.0;
-    // Country level (7-): Small Scale
     if (currentZoom <= 7) return 0.4;
-    // Interpolate
     return 0.4 + ((currentZoom - 7) / (13 - 7)) * (1.0 - 0.4);
   };
 
@@ -262,8 +227,14 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   const pulseMultiplier = isMaxZoom ? 1.1 : (hasSignal ? 1.05 : 1.0);
   const totalScale = baseScale * pulseMultiplier;
 
+  // Use simple transparency gradient for sweep
+  const sweepGradient = isMaxZoom 
+    ? `conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(239, 68, 68, 0.4) 360deg)`
+    : `conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(34, 211, 238, 0.4) 360deg)`;
+
   return (
-    <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
+    // FORCE FULL-SCREEN CSS for KAIKU BACKGROUND LAYER
+    <div className="absolute inset-0 w-full h-full z-0 bg-[#0a0a12] overflow-hidden">
       <MapContainer
         // @ts-ignore
         center={startPosition} 
@@ -272,13 +243,12 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         doubleClickZoom={false} 
         zoomControl={false}
         attributionControl={false}
-        className="w-full h-full"
-        style={{ width: '100%', height: '100%', background: '#0a0a12' }}
+        className="w-full h-full outline-none"
+        style={{ width: '100%', height: '100%', background: '#0a0a12' }} 
         minZoom={3}
         maxZoom={12.5}
         zoomSnap={0.5} 
         maxBounds={[[-90, -220], [90, 220]]} 
-        maxBoundsViscosity={1.0} 
         preferCanvas={true}
         worldCopyJump={false} 
       >
@@ -287,6 +257,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
           url={MAP_TILE_URL}
           noWrap={true}
           opacity={0.8}
+          keepBuffer={4}
         />
 
         <MapController 
@@ -299,17 +270,14 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         
         <MapEventsHandler onMapClick={onMapClick} />
 
-        {/* --- USER LOCATION BLUE DOT --- */}
         {userLocation && <UserLocationMarker position={userLocation} />}
         
-        {/* Messages as Markers */}
         {messages.map(msg => (
             <Marker 
                 key={msg.id}
                 position={[msg.location.lat, msg.location.lng]} 
-                icon={getMarkerIcon(msg)} // Use dynamic icon
+                icon={getMarkerIcon(msg)}
                 ref={(ref) => {
-                    // Auto-open if this is the focused message
                     if (ref && focusedMessage?.id === msg.id) {
                         setTimeout(() => ref.openPopup(), 600); 
                     }
@@ -317,7 +285,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
             >
                 <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -4]}>
                     <div className="p-3 relative">
-                        {/* CLOSE BUTTON */}
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -359,43 +326,58 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
             </Marker>
         ))}
 
-        {/* Visual Layers */}
         <ArcLayer messages={signals} />
         <HeatmapLayer ref={heatmapRef} messages={messages} />
         
       </MapContainer>
 
+      {/* OVERLAY CONTAINER - Simplified to just the crosshair */}
       <div className="pointer-events-none absolute inset-0 z-[400] flex flex-col items-center justify-center pb-48">
           
-          <div className="relative flex items-center justify-center transition-all duration-200">
-              {/* HYBRID RADAR SWEEP ANIMATION */}
+          <div 
+            className="relative flex items-center justify-center transition-all duration-200" 
+            style={{ 
+                transform: 'translate3d(0,0,0)', /* Force GPU layer */
+                willChange: 'transform' /* Hint browser to promote to layer */
+            }}
+          >
+              
+              {/* RESTORED AESTHETIC RADAR - OPTIMIZED FOR MOBILE */}
               <div 
-                   className="absolute flex items-center justify-center w-64 h-64 rounded-full ease-out"
+                   className="absolute w-64 h-64 rounded-full"
                    style={{ 
                        transform: `scale(${totalScale})`,
                        opacity: isMaxZoom || hasSignal ? 1 : 0.6,
-                       transition: 'transform 0.2s ease-out, opacity 0.5s ease-out'
+                       transition: 'transform 0.2s ease-out, opacity 0.5s ease-out',
+                       /* KEY FIXES: Transparent border forces clipping, translateZ isolates layer */
+                       border: '1px solid transparent',
+                       backfaceVisibility: 'hidden',
+                       WebkitBackfaceVisibility: 'hidden',
+                       transformStyle: 'preserve-3d',
+                       /* Use simple shadows, avoid complex blurs if possible */
+                       boxShadow: isMaxZoom 
+                        ? 'inset 0 0 20px rgba(239, 68, 68, 0.2), 0 0 0 1px rgba(239, 68, 68, 0.3)' 
+                        : 'inset 0 0 20px rgba(34, 211, 238, 0.2), 0 0 0 1px rgba(34, 211, 238, 0.3)'
                    }}
               >
-                   {/* Layer 2: Rotating Sweep (The Radar Trail) - KEPT ACTIVE */}
-                   <div 
-                       className="absolute inset-0 rounded-full animate-[spin_4s_linear_infinite]"
-                       style={{ 
-                           background: isMaxZoom
-                            ? `conic-gradient(from 0deg, transparent 0deg, transparent 240deg, rgba(239, 68, 68, 0.4) 360deg)`
-                            : `conic-gradient(from 0deg, transparent 0deg, transparent 240deg, rgba(6, 182, 212, 0.3) 360deg)`
-                       }} 
-                   />
-
-                   {/* Static Rim for definition */}
-                   <div className={`absolute inset-0 border border-white/10 rounded-full ${isMaxZoom ? 'border-red-500/30' : 'border-cyan-500/30'}`} />
-
-                   {/* Inner decorative ring */}
-                   <div className={`absolute inset-[25%] border border-dashed rounded-full animate-[spin_10s_linear_infinite_reverse] opacity-30 
-                       ${isMaxZoom ? 'border-red-500' : 'border-cyan-500'}`} 
-                   />
+                  {/* The Spin Layer */}
+                  <div 
+                    className="absolute inset-0 rounded-full animate-[spin_4s_linear_infinite]"
+                    style={{ 
+                        background: sweepGradient,
+                        /* Ensure the spinner also respects the clip */
+                        borderRadius: '50%',
+                        border: '1px solid transparent' 
+                    }}
+                  />
+                  
+                  {/* Decorative Inner Ring */}
+                  <div 
+                    className={`absolute inset-[25%] rounded-full border border-dashed opacity-30 animate-[spin_10s_linear_infinite_reverse] ${isMaxZoom ? 'border-red-500' : 'border-cyan-400'}`}
+                  />
               </div>
-              
+
+              {/* Icon Center - Independent of Scale */}
               <div className={`transition-all duration-300 z-10 
                   ${isMaxZoom 
                       ? 'text-red-500 drop-shadow-[0_0_12px_rgba(239,68,68,1)] scale-125' 
@@ -404,22 +386,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                   {isMaxZoom ? <ShieldAlert size={32} strokeWidth={2} /> : (hasSignal ? <Lock size={32} strokeWidth={2} /> : <Crosshair size={32} strokeWidth={1.5} />)}
               </div>
           </div>
-
-          <div className={`mt-36 flex items-center gap-2 text-[10px] font-mono tracking-[0.2em] uppercase px-4 py-2 rounded backdrop-blur-md border shadow-lg transition-all duration-300 ${
-              isMaxZoom
-                ? 'bg-red-950/80 border-red-500 text-red-500 shadow-[0_0_30px_rgba(220,38,38,0.5)] animate-pulse'
-                : (hasSignal 
-                    ? 'bg-cyan-500/20 border-cyan-400 text-white shadow-[0_0_20px_rgba(34,211,238,0.4)]' 
-                    : 'bg-black/60 border-cyan-500/20 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]')
-          }`}>
-              <span className={`drop-shadow-md ${isMaxZoom || hasSignal ? 'font-bold' : ''}`}>
-                {isMaxZoom 
-                    ? t('map.zoom_limit') 
-                    : (hasSignal ? t('map.signal_locked') : t('map.sector_scan_active'))
-                }
-              </span>
-              {!hasSignal && !isMaxZoom && <AnimatedEllipsis />}
-          </div>
+          
       </div>
     </div>
   );
@@ -431,7 +398,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
            prevProps.focusedMessage === nextProps.focusedMessage &&
            prevProps.hiddenIds === nextProps.hiddenIds &&
            prevProps.getUserLocation === nextProps.getUserLocation &&
-           prevProps.userLocation === nextProps.userLocation && // Check for userLocation updates
+           prevProps.userLocation === nextProps.userLocation &&
            prevProps.flyToLocation === nextProps.flyToLocation; 
 });
 
