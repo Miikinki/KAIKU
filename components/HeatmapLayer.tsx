@@ -1,27 +1,45 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { useMap } from 'react-leaflet';
 import { ChatMessage } from '../types';
 import L from 'leaflet';
+import { MESSAGE_LIFESPAN_MS } from '../constants';
 
 interface HeatmapLayerProps {
   messages: ChatMessage[];
 }
 
-// --- CUSTOM GLOW LAYER (HUD MODE) ---
-// Renders a fixed canvas over the map container.
-// Points are projected every frame to ensure they stick to the map 
-// even during interaction, avoiding CSS transform artifacts.
+export interface HeatmapLayerRef {
+    ping: (lat: number, lng: number) => void;
+}
+
+// --- VISUAL CONSTANTS ---
+const SPEED_PX_PER_MS = 0.5; // Speed of the sonar wave
+const WAVE_WIDTH_PX = 50; // Width of the "active" wave band
 
 // @ts-ignore
 const GlowLayer = L.Layer.extend({
     initialize: function (data: ChatMessage[]) {
         this._data = data;
+        this._pings = []; // Stores active sonar waves
         this._animating = false;
         this._rafId = null;
     },
 
     setData: function (data: ChatMessage[]) {
         this._data = data;
+    },
+
+    addPing: function(lat: number, lng: number) {
+        // Add a new expanding wave origin
+        this._pings.push({
+            lat,
+            lng,
+            startTime: Date.now(),
+            id: Math.random()
+        });
+        
+        // Cleanup old pings after 3 seconds
+        if (this._pings.length > 5) this._pings.shift();
     },
 
     onAdd: function (map: L.Map) {
@@ -31,18 +49,11 @@ const GlowLayer = L.Layer.extend({
             this._initCanvas();
         }
 
-        // Append to the map container (Viewport), NOT the overlay pane.
-        // This ensures the canvas doesn't move with the map drag (CSS Transform).
-        // Instead, we project the points to the correct screen coordinates every frame.
         map.getContainer().appendChild(this._canvas);
 
         this._resizeBound = this._resize.bind(this);
         map.on('resize', this._resizeBound);
         
-        // We don't need move/zoom listeners to reset canvas, 
-        // because the canvas is fixed 100% width/height of container.
-        // We just rely on the animation loop to project points.
-
         this._resize();
         this._startAnimation();
     },
@@ -51,7 +62,6 @@ const GlowLayer = L.Layer.extend({
         this._stopAnimation();
 
         if (this._canvas) {
-            // Remove from container
              const container = map.getContainer();
              if (container.contains(this._canvas)) {
                  container.removeChild(this._canvas);
@@ -68,24 +78,17 @@ const GlowLayer = L.Layer.extend({
 
     _initCanvas: function () {
         const canvas = this._canvas = L.DomUtil.create('canvas', 'leaflet-glow-layer-hud') as HTMLCanvasElement;
-        
-        // Style: Fixed overlay, pass-through clicks
         canvas.style.position = 'absolute';
         canvas.style.top = '0';
         canvas.style.left = '0';
         canvas.style.pointerEvents = 'none';
-        canvas.style.zIndex = '400'; // Above tiles, below UI
-        // Mix-blend-mode 'screen' can be buggy on some mobile browsers with transparent canvas.
-        // We'll use standard blending but with additive-like colors in the draw loop if needed.
-        // canvas.style.mixBlendMode = 'screen'; 
+        canvas.style.zIndex = '400';
     },
 
     _resize: function () {
         if (!this._map) return;
-        
         const size = this._map.getSize();
         const dpr = window.devicePixelRatio || 1;
-
         this._canvas.width = size.x * dpr;
         this._canvas.height = size.y * dpr;
         this._canvas.style.width = size.x + 'px';
@@ -123,81 +126,120 @@ const GlowLayer = L.Layer.extend({
         const width = this._canvas.width;
         const height = this._canvas.height;
 
-        // Clear
         ctx.clearRect(0, 0, width, height);
 
-        // Visual Params
         const zoom = this._map.getZoom();
-        const bounds = this._map.getBounds(); // Cull off-screen points
+        const bounds = this._map.getBounds();
         const now = Date.now();
 
-        // Scale tuning based on Zoom
-        // Adjusted to be slightly larger at low zooms to avoid "tiny dots" issue
+        // 1. Process Pings (Calculate current radius in pixels for this frame)
+        // We project the ping origin to container point to measure pixel distance
+        const activePings = this._pings.map((ping: any) => {
+             const elapsed = now - ping.startTime;
+             // Remove old pings from calculation to save perf
+             if (elapsed > 2000) return null;
+             
+             const p = this._map.latLngToContainerPoint([ping.lat, ping.lng]);
+             return {
+                 x: p.x * dpr,
+                 y: p.y * dpr,
+                 radius: elapsed * SPEED_PX_PER_MS * dpr, // Expand rate
+                 id: ping.id
+             };
+        }).filter(Boolean);
+        
+        // Clean up raw array
+        this._pings = this._pings.filter((p: any) => (now - p.startTime) < 2000);
+
+
+        // 2. Base Size Logic
         let baseRadius = 15 * dpr;
         let baseIntensity = 0.4;
 
-        if (zoom < 5) { 
-            baseRadius = 6 * dpr; // Increased from 4
-            baseIntensity = 0.6; 
-        }
-        else if (zoom < 8) { 
-            baseRadius = 13 * dpr; // Increased from 10
-            baseIntensity = 0.5; 
-        }
-        else if (zoom < 10) { 
-            // Regional
-            baseRadius = 25 * dpr; 
-            baseIntensity = 0.35; 
-        }
-        else { 
-            // Max Zoom (10-11)
-            // Render a large, soft "privacy blob" that obscures precise street location
-            baseRadius = 55 * dpr; 
-            baseIntensity = 0.25; 
-        } 
+        if (zoom < 5) { baseRadius = 6 * dpr; baseIntensity = 0.6; }
+        else if (zoom < 8) { baseRadius = 13 * dpr; baseIntensity = 0.5; }
+        else if (zoom < 10) { baseRadius = 25 * dpr; baseIntensity = 0.35; }
+        else { baseRadius = 55 * dpr; baseIntensity = 0.25; } 
 
-        // Draw loop
+        // 3. Draw Loop
         this._data.forEach((msg: ChatMessage) => {
-            // Optimization: Skip if far off-screen
-            // We use a loose check (no padding calculation) for speed
             if (!bounds.contains([msg.location.lat, msg.location.lng])) return;
 
-            // Project to screen coordinates
-            // latLngToContainerPoint returns pixels relative to the map container (viewport)
             const p = this._map.latLngToContainerPoint([msg.location.lat, msg.location.lng]);
-
-            // Multiply by DPR for HiDPI canvas
             const x = p.x * dpr;
             const y = p.y * dpr;
 
-            // --- PULSE ANIMATION ---
+            // --- A. DECAY COLOR LOGIC ---
+            // Calculate Remaining Life
+            const expiry = msg.expiresAt || (msg.timestamp + MESSAGE_LIFESPAN_MS);
+            const msLeft = expiry - now;
+            const hoursLeft = msLeft / (1000 * 60 * 60);
+            const totalAgeHours = (now - msg.timestamp) / (1000 * 60 * 60);
+
+            let r=34, g=211, b=238; // Default Cyan (Tailwind Cyan-400)
+
+            if (totalAgeHours < 1) {
+                // NEW (Fresh): White/Blue hot
+                r=200; g=245; b=255; 
+                baseIntensity += 0.2; // Brighter
+            } else if (hoursLeft < 4) {
+                // DYING: Red/Orange fade
+                // Transition from Cyan to Red based on remaining time
+                r=239; g=68; b=68; // Red-500
+            }
+
+            // --- B. SONAR INTERACTION ---
+            let sonarBoost = 0;
+            
+            activePings.forEach((ping: any) => {
+                const dx = x - ping.x;
+                const dy = y - ping.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                // If point is within the "wave band"
+                const distDiff = Math.abs(dist - ping.radius);
+                
+                if (distDiff < (WAVE_WIDTH_PX * dpr)) {
+                    // Calculate intensity based on how close to center of wave
+                    // 1.0 = dead center of wave, 0.0 = edge
+                    const waveIntensity = 1 - (distDiff / (WAVE_WIDTH_PX * dpr));
+                    sonarBoost = Math.max(sonarBoost, waveIntensity);
+                }
+            });
+
+
+            // --- C. PULSE ANIMATION ---
             const phase = (msg.timestamp % 5000) / 5000 * (Math.PI * 2);
-            const breathing = 1.0 + Math.sin(now * 0.002 + phase) * 0.2;
+            // If dying, pulse faster (heartbeat)
+            const pulseSpeed = hoursLeft < 4 ? 0.008 : 0.002;
+            const breathing = 1.0 + Math.sin(now * pulseSpeed + phase) * 0.2;
 
             let radius = baseRadius * breathing;
             let intensity = baseIntensity * breathing;
             
-            // Score multipliers (Toned down slightly to keep new messages competitive)
+            // Apply Sonar Boost
+            if (sonarBoost > 0) {
+                // Flash White when hit
+                const boostAmount = sonarBoost * 0.8; 
+                intensity += boostAmount;
+                radius *= (1 + (sonarBoost * 0.5));
+                
+                // Shift color towards white on hit
+                r = Math.min(255, r + (255-r)*sonarBoost);
+                g = Math.min(255, g + (255-g)*sonarBoost);
+                b = Math.min(255, b + (255-b)*sonarBoost);
+            }
+
             if (msg.score > 5) { radius *= 1.25; intensity += 0.1; }
             if (msg.score > 20) { radius *= 1.5; intensity = 0.8; }
-            
-            // New signal flash - BOOST NEW MESSAGES
-            // This ensures user-created content (which starts at score 0) feels significant
-            const ageHours = (now - msg.timestamp) / (1000 * 60 * 60);
-            if (ageHours < 4) {
-                intensity += 0.25;
-                radius *= 1.3; // Make fresh signals physically larger
-            }
 
             intensity = Math.min(intensity, 1.0);
 
-            // Manual additive blend simulation (Screen-ish)
-            // Using radial gradient with transparency
+            // --- D. DRAW ---
             const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
-            // Cyan: 34, 211, 238
-            grad.addColorStop(0, `rgba(34, 211, 238, ${intensity})`);
-            grad.addColorStop(0.4, `rgba(34, 211, 238, ${intensity * 0.4})`);
-            grad.addColorStop(1, 'rgba(34, 211, 238, 0)');
+            grad.addColorStop(0, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity})`);
+            grad.addColorStop(0.4, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity * 0.4})`);
+            grad.addColorStop(1, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, 0)`);
 
             ctx.fillStyle = grad;
             ctx.beginPath();
@@ -207,9 +249,17 @@ const GlowLayer = L.Layer.extend({
     }
 });
 
-const HeatmapLayer: React.FC<HeatmapLayerProps> = ({ messages }) => {
+const HeatmapLayer = forwardRef<HeatmapLayerRef, HeatmapLayerProps>(({ messages }, ref) => {
   const map = useMap();
   const layerRef = useRef<any>(null);
+
+  useImperativeHandle(ref, () => ({
+      ping: (lat: number, lng: number) => {
+          if (layerRef.current) {
+              layerRef.current.addPing(lat, lng);
+          }
+      }
+  }));
 
   useEffect(() => {
     if (!map) return;
@@ -223,7 +273,7 @@ const HeatmapLayer: React.FC<HeatmapLayerProps> = ({ messages }) => {
     }
   }, [map, messages]);
 
-  // Clean up on unmount
+  // Clean up
   useEffect(() => {
       return () => {
           if (layerRef.current && map) {
@@ -234,6 +284,6 @@ const HeatmapLayer: React.FC<HeatmapLayerProps> = ({ messages }) => {
   }, [map]);
 
   return null;
-};
+});
 
 export default HeatmapLayer;

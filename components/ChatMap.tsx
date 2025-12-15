@@ -4,7 +4,7 @@ import { Crosshair, Lock, ShieldAlert } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
-import HeatmapLayer from './HeatmapLayer';
+import HeatmapLayer, { HeatmapLayerRef } from './HeatmapLayer';
 import { useTranslation } from 'react-i18next';
 
 interface ChatMapProps {
@@ -14,10 +14,10 @@ interface ChatMapProps {
   onMapClick: () => void;
   lastNewMessage: ChatMessage | null;
   hasSignal: boolean;
-  initialCenter?: { lat: number; lng: number }; // NEW PROP
+  initialCenter?: { lat: number; lng: number }; 
 }
 
-// --- ANIMATED ELLIPSIS COMPONENT (Sequential) ---
+// --- ANIMATED ELLIPSIS COMPONENT ---
 const AnimatedEllipsis = () => {
   const [dots, setDots] = useState('');
 
@@ -38,7 +38,22 @@ const AnimatedEllipsis = () => {
   );
 };
 
-// --- MAP CONTROLLER ---
+// --- SONAR CLICK HANDLER (Map Events) ---
+// Captures clicks on the map to trigger the Sonar Wave
+const SonarController: React.FC<{ 
+    onSonar: (lat: number, lng: number) => void,
+    onMapClick: () => void
+}> = ({ onSonar, onMapClick }) => {
+    useMapEvents({
+        click: (e) => {
+            onSonar(e.latlng.lat, e.latlng.lng);
+            onMapClick();
+        }
+    });
+    return null;
+};
+
+// --- MAP CONTROLLER (Viewport Logic) ---
 const MapController: React.FC<{ 
     onViewportChange: (b: ViewportBounds) => void, 
     setZoom: (z: number) => void
@@ -110,15 +125,106 @@ const MapController: React.FC<{
   return null;
 };
 
+// --- SONAR VISUAL LAYER (SVG OVERLAY) ---
+// Renders the expanding ring
+interface ActivePing {
+    id: number;
+    lat: number;
+    lng: number;
+    startTime: number;
+}
+const SonarVisualLayer: React.FC<{ pings: ActivePing[] }> = ({ pings }) => {
+    const map = useMap();
+    const [frame, setFrame] = useState(0);
+
+    // Re-render on map move to keep rings pinned
+    useEffect(() => {
+        const handler = () => setFrame(f => f + 1);
+        map.on('move', handler);
+        map.on('zoom', handler);
+        return () => {
+             map.off('move', handler);
+             map.off('zoom', handler);
+        };
+    }, [map]);
+
+    // Animation Loop for smooth expansion
+    useEffect(() => {
+        let raf: number;
+        const loop = () => {
+            setFrame(f => f + 1);
+            raf = requestAnimationFrame(loop);
+        };
+        loop();
+        return () => cancelAnimationFrame(raf);
+    }, []);
+
+    if (pings.length === 0) return null;
+
+    return (
+        <svg 
+            className="leaflet-zoom-hide pointer-events-none"
+            style={{ 
+                position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', 
+                zIndex: 450, overflow: 'visible' 
+            }}
+        >
+            {pings.map(ping => {
+                const elapsed = Date.now() - ping.startTime;
+                if (elapsed > 2000) return null; // Hide after 2s
+
+                const center = map.latLngToContainerPoint([ping.lat, ping.lng]);
+                
+                // Animation Params
+                const radius = elapsed * 0.5; // Matches HEATMAP layer speed
+                const opacity = 1 - (elapsed / 2000);
+                
+                return (
+                    <circle 
+                        key={ping.id}
+                        cx={center.x}
+                        cy={center.y}
+                        r={radius}
+                        fill="none"
+                        stroke="#22d3ee"
+                        strokeWidth={2}
+                        strokeOpacity={opacity * 0.5}
+                    />
+                );
+            })}
+        </svg>
+    );
+};
+
 // --- MAIN CHAT MAP ---
 const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter }) => {
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
+  
+  // Sonar State
+  const [pings, setPings] = useState<ActivePing[]>([]);
+  const heatmapRef = useRef<HeatmapLayerRef>(null);
 
   const startPosition = initialCenter ? [initialCenter.lat, initialCenter.lng] : [60.1, 24.9];
-  const startZoom = initialCenter ? 8 : 4; // Zoom closer if we have user loc
+  const startZoom = initialCenter ? 8 : 4; 
 
   const isMaxZoom = zoom >= 12;
+
+  const handleSonar = useCallback((lat: number, lng: number) => {
+      // 1. Add Visual Ring
+      setPings(prev => {
+          const now = Date.now();
+          // Filter old pings
+          const next = prev.filter(p => now - p.startTime < 2000);
+          next.push({ id: Math.random(), lat, lng, startTime: now });
+          return next;
+      });
+
+      // 2. Trigger Heatmap Reaction
+      if (heatmapRef.current) {
+          heatmapRef.current.ping(lat, lng);
+      }
+  }, []);
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
@@ -150,9 +256,13 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
             onViewportChange={onViewportChange}
             setZoom={setZoom}
         />
+        
+        <SonarController onSonar={handleSonar} onMapClick={onMapClick} />
 
+        {/* Visual Layers */}
+        <SonarVisualLayer pings={pings} />
         <ArcLayer messages={signals} />
-        <HeatmapLayer messages={messages} />
+        <HeatmapLayer ref={heatmapRef} messages={messages} />
         
       </MapContainer>
 

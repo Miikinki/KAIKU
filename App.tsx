@@ -209,8 +209,17 @@ function App() {
   };
 
   const handleMapClick = () => {
-    SoundService.playClick();
-    setIsFeedOpen(true);
+    // UPDATED INTERACTION LOGIC:
+    // If the feed is open, we close it so the user can see the map/sonar.
+    // If the feed is CLOSED, we DO NOT open it. We just play the sonar sound/effect (handled in ChatMap).
+    // This solves the issue where Sonar Wave was hidden by the panel popping up.
+    if (isFeedOpen) {
+        SoundService.playClick();
+        setIsFeedOpen(false);
+    } else {
+        // Just play sound, the Visual Sonar Wave is handled by the internal Map Events in ChatMap.tsx
+        SoundService.playClick();
+    }
   };
 
   const handleTagClick = (tag: string) => {
