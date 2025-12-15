@@ -41,7 +41,8 @@ function App() {
   // Location Management
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
-  const [flyToLocation, setFlyToLocation] = useState<{lat: number, lng: number} | null>(null);
+  // Timestamp added to ensure every click triggers effect, even if coords are same
+  const [flyToLocation, setFlyToLocation] = useState<{lat: number, lng: number, timestamp: number} | null>(null);
   const [isLocating, setIsLocating] = useState(false);
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenIds());
@@ -106,7 +107,7 @@ function App() {
                             // If distance > 2km, assume meaningful correction
                             if (dist > 2) {
                                 console.log("KAIKU: Auto-correcting location from fallback to GPS");
-                                setFlyToLocation({ ...newLoc }); // Spread to force update
+                                setFlyToLocation({ ...newLoc, timestamp: Date.now() }); // Force update with timestamp
                                 setIsFallbackLocation(false); // We are no longer in fallback mode
                             }
                         }
@@ -122,9 +123,10 @@ function App() {
                     }
                 },
                 { 
-                    enableHighAccuracy: true, 
-                    maximumAge: 10000, 
-                    timeout: 20000 
+                    // Use Standard Accuracy for background tracking to avoid timeout loops and battery drain
+                    enableHighAccuracy: false, 
+                    maximumAge: 30000, 
+                    timeout: 30000 
                 }
             );
         }
@@ -278,33 +280,43 @@ function App() {
       setSelectedMessage(null);
   };
 
-  // UPDATED: getLocation now accepts forceRefresh to bypass cache
+  // UPDATED: Robust getLocation with failover chain
   const getLocation = useCallback(async (forceRefresh = false): Promise<{lat: number, lng: number}> => {
+     // 1. FAST PATH: Return cache if allowed and available
      if (locationCache.current && !forceRefresh) return locationCache.current;
      
-     return new Promise((resolve, reject) => {
-         if (!navigator.geolocation) {
-             reject(new Error("Geolocation not supported"));
-             return;
+     const getPos = (opts: PositionOptions): Promise<GeolocationPosition> => 
+        new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, opts));
+
+     try {
+         // 2. ATTEMPT HIGH ACCURACY (Only if forced, e.g. "Locate Me")
+         if (forceRefresh) {
+             const pos = await getPos({ enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
+             const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+             locationCache.current = loc;
+             return loc;
          }
-         // High Accuracy Mode for precision
-         navigator.geolocation.getCurrentPosition(
-             (pos) => {
-                 const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                 locationCache.current = loc;
-                 resolve(loc);
-             }, 
-             (err) => {
-                 // Retry high accuracy if fast failed, or fall back to cache if available
-                 if (locationCache.current && !forceRefresh) {
-                     resolve(locationCache.current);
-                     return;
-                 }
-                 reject(new Error("GPS signal required."));
-             }, 
-             { timeout: 10000, enableHighAccuracy: true, maximumAge: forceRefresh ? 0 : 60000 }
-         );
-     });
+         throw new Error("Skipping High Accuracy (Not Forced)");
+     } catch (e) {
+         // 3. FALLBACK: STANDARD ACCURACY
+         // If high accuracy fails or is skipped, try standard.
+         // This handles the "Timeout expired" error from high accuracy attempts.
+         console.warn("Switching to standard accuracy...");
+         try {
+             const pos = await getPos({ enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+             const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+             locationCache.current = loc;
+             return loc;
+         } catch (e2) {
+             // 4. LAST RESORT: INTERNAL CACHE
+             if (locationCache.current) {
+                 console.warn("GPS failed, falling back to last known location.");
+                 return locationCache.current;
+             }
+             // 5. FAIL
+             throw new Error("Unable to retrieve location. Please check GPS settings.");
+         }
+     }
   }, []);
 
   const handleLocateMe = async () => {
@@ -313,10 +325,10 @@ function App() {
       triggerHaptic('light');
       
       try {
-          // Force fresh GPS data to fix accuracy issues
+          // Force fresh GPS data
           const loc = await getLocation(true); 
-          // Spread object to create new reference -> Forces Map FlyTo even if coords are same
-          setFlyToLocation({ ...loc }); 
+          // Use timestamp to ensure unique state update every time, triggering map flyTo
+          setFlyToLocation({ ...loc, timestamp: Date.now() }); 
       } catch (e) {
           console.warn("Locate failed", e);
       } finally {
@@ -327,15 +339,19 @@ function App() {
   const handleOpenInput = async () => {
       SoundService.playClick();
       setTargetLocation(null); 
-
+      
+      // OPTIMIZATION: Use cached location immediately (false).
+      // This ensures the modal opens INSTANTLY.
       try {
-          // Force fresh GPS data so the "Target" is perfectly accurate
-          const userLoc = await getLocation(true);
+          const userLoc = await getLocation(false); 
           const lat = userLoc.lat;
           const lng = userLoc.lng;
 
-          const nameData = await getCityName(lat, lng);
-          setTargetLocation({ lat, lng, name: nameData.city });
+          getCityName(lat, lng).then(nameData => {
+             setTargetLocation(prev => prev ? { ...prev, name: nameData.city } : { lat, lng, name: nameData.city });
+          });
+          
+          setTargetLocation({ lat, lng, name: "Locating..." });
           setIsInputOpen(true);
       } catch (e) {
           alert("GPS Signal Lost. Cannot broadcast.");
@@ -345,13 +361,26 @@ function App() {
   const handleSaveMessage = async (text: string, imageUrl?: string, isMasked: boolean = false) => {
     if (!targetLocation) return;
     
-    // Ensure the sender metadata is also precise
-    const userLoc = await getLocation(true); 
+    let finalLat = targetLocation.lat;
+    let finalLng = targetLocation.lng;
+    
+    // Attempt precision refresh before send, but don't block on it if it fails
+    if (!isMasked) {
+        try {
+            const freshLoc = await getLocation(true);
+            finalLat = freshLoc.lat;
+            finalLng = freshLoc.lng;
+        } catch (e) {
+            // Silent fallback to modal-open location
+        }
+    }
+    
+    const userLoc = await getLocation(false).catch(() => ({ lat: finalLat, lng: finalLng })); 
     
     await saveMessage(
         text, 
-        targetLocation.lat, // Use the locked target location from modal open
-        targetLocation.lng, 
+        finalLat, 
+        finalLng, 
         userLoc.lat, 
         userLoc.lng,
         undefined, 
@@ -363,7 +392,7 @@ function App() {
   
   const handleReplyMessage = async (text: string, parentId: string) => {
       try {
-          const userLoc = await getLocation(true); 
+          const userLoc = await getLocation(false); 
           let targetLat = userLoc.lat;
           let targetLng = userLoc.lng;
 
@@ -381,7 +410,7 @@ function App() {
 
   const handleTypingChange = async (isTyping: boolean) => {
       if (presenceActions.current) {
-           const loc = await getLocation();
+           const loc = locationCache.current || { lat: 0, lng: 0 };
            presenceActions.current.setTyping(isTyping, loc);
       }
   };
@@ -507,26 +536,18 @@ function App() {
                 onCompose={handleOpenInput}
             />
 
-            {/* FLOATING ACTION BUTTON - Styled to match "Sector Scan" aesthetic */}
-            {/* Visible only when map is empty (No signals) */}
-            <AnimatePresence>
-                {!isInputOpen && !isFeedOpen && !hasSignal && (
-                    <motion.div 
-                        initial={{ opacity: 0, scale: 0.5, y: 100 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.5, y: 100 }}
-                        className="fixed bottom-24 right-5 z-[500] pointer-events-none"
-                    >
-                        <button
-                            onClick={handleOpenInput}
-                            className="pointer-events-auto flex items-center gap-2 px-5 py-3 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/40 rounded-lg text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)] hover:bg-cyan-950/80 hover:text-white hover:border-cyan-400 transition-all active:scale-95 group"
-                        >
-                             <Plus size={18} strokeWidth={3} className="group-hover:rotate-90 transition-transform duration-300" />
-                             <span className="font-mono font-bold tracking-widest text-xs uppercase">SIGNAL</span>
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* FLOATING ACTION BUTTON - HIDDEN WHEN FEED IS OPEN (hasSignal) */}
+            <div 
+                className={`fixed bottom-24 right-5 z-[500] transition-all duration-300 ${(isInputOpen || isFeedOpen || hasSignal) ? 'opacity-0 translate-y-10 pointer-events-none' : 'opacity-100 translate-y-0 pointer-events-auto'}`}
+            >
+                <button
+                    onClick={handleOpenInput}
+                    className="flex items-center gap-2 px-5 py-3 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/40 rounded-lg text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)] hover:bg-cyan-950/80 hover:text-white hover:border-cyan-400 transition-all active:scale-95 group"
+                >
+                        <Plus size={18} strokeWidth={3} className="group-hover:rotate-90 transition-transform duration-300" />
+                        <span className="font-mono font-bold tracking-widest text-xs uppercase">SIGNAL</span>
+                </button>
+            </div>
 
             <ChatInputModal 
                 isOpen={isInputOpen}

@@ -30,15 +30,16 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         });
     };
 
-    // --- STRATEGY 1: HIGH ACCURACY GPS ---
+    // --- STRATEGY 1: HIGH ACCURACY GPS (RELAXED) ---
     try {
         setStatusText("INITIALIZING GPS (PRECISION)...");
         
-        // Increased timeout to 12s (was 6s) to allow devices more time to lock
+        // Allow cached positions up to 10 minutes old to prevent timeouts
+        // Timeout 20s
         const pos = await getPosition({ 
             enableHighAccuracy: true, 
-            timeout: 12000, 
-            maximumAge: 0 
+            timeout: 20000, 
+            maximumAge: 600000 
         });
         
         onStart({ lat: pos.coords.latitude, lng: pos.coords.longitude }, false);
@@ -53,10 +54,10 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
     try {
         setStatusText("RETRYING (STANDARD SIGNAL)...");
         
-        // Increased timeout to 15s (was 10s)
+        // Even looser constraints
         const pos = await getPosition({ 
             enableHighAccuracy: false, 
-            timeout: 15000, 
+            timeout: 20000, 
             maximumAge: Infinity 
         });
         

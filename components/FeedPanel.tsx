@@ -292,13 +292,14 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             </div>
             
             <div className="flex items-center gap-1">
-                {/* COMPOSE BUTTON IN HEADER - ALWAYS AVAILABLE */}
+                {/* COMPOSE BUTTON IN HEADER - REPLACES FAB WHEN PANEL IS OPEN */}
                 <button
                     onClick={handleComposeClick}
-                    className="p-2 rounded-full bg-cyan-500 hover:bg-cyan-400 text-black shadow-lg transition-all active:scale-95 mr-1"
+                    className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-black rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.4)] transition-all active:scale-95 mr-2"
                     title="Broadcast Signal"
                 >
-                    <Plus size={18} strokeWidth={3} />
+                    <Plus size={16} strokeWidth={3} />
+                    <span className="font-mono font-bold text-[10px] tracking-widest">SIGNAL</span>
                 </button>
 
                 {isOpen && (

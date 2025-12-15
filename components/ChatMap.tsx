@@ -17,7 +17,7 @@ interface ChatMapProps {
   lastNewMessage: ChatMessage | null;
   hasSignal: boolean;
   initialCenter?: { lat: number; lng: number };
-  flyToLocation: { lat: number; lng: number } | null; 
+  flyToLocation: { lat: number; lng: number; timestamp: number } | null; 
   focusedMessage: ChatMessage | null;
   onOpenThread: (msg: ChatMessage) => void;
   onClosePopup: () => void;
@@ -53,7 +53,7 @@ const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
 };
 
 // --- COORDINATE FLY TO CONTROLLER (AUTO-CORRECT & EXTERNAL LOCATE) ---
-const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number } | null }> = ({ target }) => {
+const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number, timestamp: number } | null }> = ({ target }) => {
     const map = useMap();
     useEffect(() => {
         if (target) {
@@ -63,7 +63,7 @@ const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number } | null }>
                 easeLinearity: 0.2
             });
         }
-    }, [target, map]);
+    }, [target?.timestamp, map]); // Dependent on timestamp to force re-fly
     return null;
 };
 
@@ -166,6 +166,9 @@ const MapController: React.FC<{
     zoomend: () => {
         setZoom(map.getZoom());
         handleMove(); 
+    },
+    zoom: () => {
+        setZoom(map.getZoom());
     }
   });
 
@@ -184,6 +187,20 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   const startZoom = 3.5; 
 
   const isMaxZoom = zoom >= 12;
+
+  // Radar Scaling Logic
+  const getRadarScale = (currentZoom: number) => {
+    // Street level (13+): Full Scale
+    if (currentZoom >= 13) return 1.0;
+    // Country level (7-): Small Scale
+    if (currentZoom <= 7) return 0.4;
+    // Interpolate
+    return 0.4 + ((currentZoom - 7) / (13 - 7)) * (1.0 - 0.4);
+  };
+
+  const baseScale = getRadarScale(zoom);
+  const pulseMultiplier = isMaxZoom ? 1.1 : (hasSignal ? 1.05 : 1.0);
+  const totalScale = baseScale * pulseMultiplier;
 
   return (
     <div className="absolute inset-0 z-0 bg-[#0a0a12] w-full h-full">
@@ -286,9 +303,14 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
           
           <div className="relative flex items-center justify-center transition-all duration-200">
               {/* HYBRID RADAR SWEEP ANIMATION */}
-              <div className={`absolute flex items-center justify-center w-64 h-64 rounded-full transition-all duration-500 ease-out 
-                  ${isMaxZoom ? 'opacity-100 scale-110' : (hasSignal ? 'opacity-100 scale-105' : 'opacity-60 scale-100')}
-              `}>
+              <div 
+                   className="absolute flex items-center justify-center w-64 h-64 rounded-full ease-out"
+                   style={{ 
+                       transform: `scale(${totalScale})`,
+                       opacity: isMaxZoom || hasSignal ? 1 : 0.6,
+                       transition: 'transform 0.2s ease-out, opacity 0.5s ease-out'
+                   }}
+              >
                    {/* Layer 2: Rotating Sweep (The Radar Trail) - KEPT ACTIVE */}
                    <div 
                        className="absolute inset-0 rounded-full animate-[spin_4s_linear_infinite]"
