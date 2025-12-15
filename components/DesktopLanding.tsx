@@ -3,9 +3,12 @@ import QRCode from 'react-qr-code';
 import { ShieldAlert, Smartphone } from 'lucide-react';
 
 const DesktopLanding = () => {
-  const currentUrl = typeof window !== 'undefined' ? window.location.href : 'https://kaiku.app';
+  // Always point the QR code to the production app so it's accessible from mobile devices
+  // even when the desktop user is viewing localhost or a preview environment.
+  const appUrl = 'https://kaikuchat.vercel.app/';
 
   const handleDevOverride = () => {
+    // Override applies to the CURRENT environment (e.g. localhost)
     const url = new URL(window.location.href);
     url.searchParams.set('dev', 'true');
     window.location.href = url.toString();
@@ -39,7 +42,7 @@ const DesktopLanding = () => {
         </p>
 
         <div className="bg-white p-4 rounded-lg inline-block mb-4 shadow-xl">
-            <QRCode value={currentUrl} size={180} />
+            <QRCode value={appUrl} size={180} />
         </div>
 
         <div className="flex items-center justify-center gap-2 text-xs text-cyan-400 font-bold tracking-widest uppercase animate-pulse">
