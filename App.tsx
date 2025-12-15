@@ -291,7 +291,9 @@ function App() {
      try {
          // 2. ATTEMPT HIGH ACCURACY (Only if forced, e.g. "Locate Me")
          if (forceRefresh) {
-             const pos = await getPos({ enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
+             // INCREASED TIMEOUT to 15s to allow better GPS lock
+             // maximumAge: 0 forces a fresh reading
+             const pos = await getPos({ enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
              const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
              locationCache.current = loc;
              return loc;

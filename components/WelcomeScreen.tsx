@@ -34,12 +34,12 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
     try {
         setStatusText("INITIALIZING GPS (PRECISION)...");
         
-        // Allow cached positions up to 10 minutes old to prevent timeouts
-        // Timeout 20s
+        // maximumAge: 0 forces a fresh fix. 
+        // Previously it was 10 mins (600000), causing stale "home" location at coffee shops.
         const pos = await getPosition({ 
             enableHighAccuracy: true, 
             timeout: 20000, 
-            maximumAge: 600000 
+            maximumAge: 0 
         });
         
         onStart({ lat: pos.coords.latitude, lng: pos.coords.longitude }, false);

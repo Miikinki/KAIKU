@@ -87,7 +87,8 @@ const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number, timestamp:
     const map = useMap();
     useEffect(() => {
         if (target) {
-            map.flyTo([target.lat, target.lng], 14, {
+            // ZOOM LEVEL UPDATED: 16.5 (Street Level) for precise feel
+            map.flyTo([target.lat, target.lng], 16.5, {
                 animate: true,
                 duration: 2.0, // Cinematic fly-in
                 easeLinearity: 0.2
