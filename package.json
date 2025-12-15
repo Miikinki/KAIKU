@@ -24,7 +24,8 @@
     "react-dom": "18.2.0",
     "react-i18next": "^13.5.0",
     "react-leaflet": "4.2.1",
-    "tailwind-merge": "2.0.0"
+    "tailwind-merge": "2.0.0",
+    "use-supercluster": "^1.1.0"
   },
   "overrides": {
     "react": "18.2.0",

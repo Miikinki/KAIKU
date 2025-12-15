@@ -7,6 +7,7 @@ import ArcLayer from './ArcLayer';
 import HeatmapLayer, { HeatmapLayerRef } from './HeatmapLayer';
 import { useTranslation } from 'react-i18next';
 import L from 'leaflet';
+// @ts-ignore
 import useSupercluster from 'use-supercluster';
 
 interface ChatMapProps {
