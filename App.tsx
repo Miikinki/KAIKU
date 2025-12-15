@@ -14,18 +14,11 @@ import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './consta
 import { AnimatePresence, motion } from 'framer-motion';
 import { triggerHaptic } from './services/hapticService';
 
-// Radius of the visual ring in pixels.
-// Visual ring is w-64 (256px) -> 128px radius.
-// We set scan radius slightly larger to include edge signals comfortably.
 const SCAN_RADIUS_PX = 150; 
 
 type AppState = 'welcome' | 'boot' | 'app';
 
 function App() {
-  // APP FLOW STATE
-  // 'welcome' -> Waiting for user to click Initialize
-  // 'boot' -> Playing terminal animation
-  // 'app' -> Main interface
   const [appState, setAppState] = useState<AppState>('welcome');
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
@@ -45,10 +38,11 @@ function App() {
   const [isMuted, setIsMuted] = useState(SoundService.getMuteStatus());
   const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number, name: string} | null>(null);
   
-  // Use a ref for location to ensure we always have the absolute latest coords without re-renders
+  // Location Management
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
+  const [isFallbackLocation, setIsFallbackLocation] = useState(false);
+  const [flyToLocation, setFlyToLocation] = useState<{lat: number, lng: number} | null>(null);
 
-  // VISIBILITY FILTER STATE (Hidden Messages)
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenIds());
 
   const [rateLimit, setRateLimit] = useState<{ isLimited: boolean; cooldownUntil: number | null }>({
@@ -56,22 +50,18 @@ function App() {
     cooldownUntil: null
   });
 
-  // TYPING INDICATOR STATE
   const [nearbyTypingCount, setNearbyTypingCount] = useState(0);
   const presenceActions = useRef<{ setTyping: (t: boolean, l?: {lat: number, lng: number}) => void } | null>(null);
 
-  // START HANDLER (Triggered from WelcomeScreen)
-  const handleStart = (startLoc: { lat: number, lng: number }) => {
-      // 1. Initialize location cache immediately with the fresh GPS data
+  // START HANDLER
+  const handleStart = (startLoc: { lat: number, lng: number }, isFallback: boolean) => {
       locationCache.current = startLoc;
+      setIsFallbackLocation(isFallback);
       
-      // Save initial start location as "Last Known" to help next boot be faster
+      // Save location
       localStorage.setItem('kaiku_last_loc', JSON.stringify(startLoc));
       
-      // 2. Play startup sound (now allowed because of user interaction)
       SoundService.playScan();
-      
-      // 3. Move to Boot Sequence
       setAppState('boot');
   };
 
@@ -82,8 +72,6 @@ function App() {
       setAppState('app');
   };
 
-  // Derived state for background processes
-  // We want to start fetching data/tracking GPS as soon as we leave the welcome screen (during boot)
   const isRunning = appState !== 'welcome';
 
   const loadData = async () => {
@@ -92,58 +80,66 @@ function App() {
       setRateLimit(await getRateLimitStatus());
   };
 
-  // CONTINUOUS GPS TRACKING (Only activates after start)
+  // CONTINUOUS GPS TRACKING & AUTO-CORRECTION
   useEffect(() => {
     if (!isRunning) return; 
 
     let watchId: number;
     let timerId: any;
 
-    // DELAYED START to prevent "Double Permission Prompt" or Race Conditions.
-    // We already got a fresh location from WelcomeScreen, so we can afford to wait.
     timerId = setTimeout(() => {
         if ('geolocation' in navigator) {
             watchId = navigator.geolocation.watchPosition(
                 (pos) => {
                     if (pos.coords.latitude !== 0 || pos.coords.longitude !== 0) {
                         const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                        
+                        // AUTO-CORRECTION LOGIC:
+                        // If we started in Fallback Mode (e.g. IP Location = Helsinki),
+                        // and now we got a real GPS fix, we should fly the map to the real location.
+                        if (isFallbackLocation && locationCache.current) {
+                            const dist = calculateDistance(
+                                locationCache.current.lat, locationCache.current.lng,
+                                newLoc.lat, newLoc.lng
+                            );
+                            // If distance > 2km, assume meaningful correction
+                            if (dist > 2) {
+                                console.log("KAIKU: Auto-correcting location from fallback to GPS");
+                                setFlyToLocation(newLoc);
+                                setIsFallbackLocation(false); // We are no longer in fallback mode
+                            }
+                        }
+
                         locationCache.current = newLoc;
-                        // Persist reliable location for next app start (Fast Resume)
                         localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
                     }
                 },
                 (err) => {
-                    // Suppress timeout errors in background tracking to avoid console spam
                     if (err.code !== 3) {
                          console.warn("Background GPS tracking warning:", err.code, err.message);
                     }
                 },
                 { 
                     enableHighAccuracy: true, 
-                    maximumAge: 30000, // Use cached locations up to 30s old to save battery/resources
+                    maximumAge: 10000, 
                     timeout: 20000 
                 }
             );
         }
-    }, 2000); // 2 second delay
+    }, 2000); 
 
     return () => {
       clearTimeout(timerId);
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
-  }, [isRunning]);
+  }, [isRunning, isFallbackLocation]);
 
-  // SUPABASE REALTIME (Presence & Messages)
+  // SUPABASE REALTIME
   useEffect(() => {
     if (!isRunning) return;
     loadData();
     
-    // 1. MESSAGE LISTENER
     const subMessages = subscribeToMessages(({ type, message, id }) => {
-      
-      // --- AUDIO SPAM PREVENTION LOGIC ---
-      // Check distance before playing sound.
-      // 140km range. Linear volume dropoff.
       if (type === 'INSERT' && message && locationCache.current) {
           const userLoc = locationCache.current;
           const msgLoc = message.location;
@@ -156,7 +152,6 @@ function App() {
           }
       }
 
-      // UPDATE HEATMAP DATA (MESSAGES)
       setMessages(prev => {
         let next = [...prev];
         if (type === 'DELETE') {
@@ -169,7 +164,6 @@ function App() {
                  if (!message.parentId) {
                      next = [message, ...prev];
                      setLastNewMessage(message); 
-                     // Sound handled above in Audio Logic block
                  } else {
                      const parentIndex = prev.findIndex(p => p.id === message.parentId);
                      if (parentIndex !== -1) {
@@ -185,18 +179,14 @@ function App() {
         return next;
       });
 
-      // TRIGGER ARC ANIMATION (SIGNALS) via NETWORK BROADCAST
       if (message && message.parentId) {
            setSignals(prevSignals => {
-               // Deduplicate based on ID to ensure clean animation
                if (prevSignals.some(s => s.id === message.id)) return prevSignals;
                return [...prevSignals.slice(-10), message];
            });
       }
     });
 
-    // 2. PRESENCE LISTENER (Typing Indicator)
-    // We only count people typing within 150km radius
     const presenceHelper = subscribeToPresence(locationCache.current, (others) => {
         if (!locationCache.current) return;
         
@@ -225,8 +215,6 @@ function App() {
     if (!currentBounds) return;
     
     const now = Date.now();
-    // Removed old 'cutoff' based logic which filtered out boosted messages inadvertently.
-
     const centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
     const centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
 
@@ -234,9 +222,6 @@ function App() {
     const radiusKm = (metersPerPx * SCAN_RADIUS_PX) / 1000;
 
     let visible = messages.filter(m => {
-      // FIX: Use expiresAt check instead of creation timestamp.
-      // This ensures messages extended by boosts are still visible.
-      // Fallback to timestamp + lifespan if expiresAt is missing (backward compat).
       const expiry = m.expiresAt || (m.timestamp + MESSAGE_LIFESPAN_MS);
       if (expiry <= now || m.score <= SCORE_THRESHOLD_HIDE) return false;
 
@@ -274,9 +259,9 @@ function App() {
 
   const handleMessageClick = (msg: ChatMessage) => {
       SoundService.playClick();
-      triggerHaptic('light'); // Tactile confirm for jump
-      setFocusedMessage(msg); // 1. Trigger Map FlyTo & Marker
-      setIsFeedOpen(false);   // 2. Collapse panel (Mobile UX)
+      triggerHaptic('light'); 
+      setFocusedMessage(msg); 
+      setIsFeedOpen(false);   
   };
 
   const handleOpenThread = (msg: ChatMessage) => {
@@ -291,7 +276,6 @@ function App() {
       setSelectedMessage(null);
   };
 
-  // Wrapped in useCallback to provide stable reference for ChatMap
   const getLocation = useCallback(async (): Promise<{lat: number, lng: number}> => {
      if (locationCache.current) return locationCache.current;
      
@@ -300,14 +284,26 @@ function App() {
              reject(new Error("Geolocation not supported"));
              return;
          }
+         // Try fast first
          navigator.geolocation.getCurrentPosition(
              (pos) => {
                  const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                  locationCache.current = loc;
                  resolve(loc);
              }, 
-             (err) => reject(new Error("GPS signal required.")), 
-             { timeout: 10000, enableHighAccuracy: true }
+             (err) => {
+                 // Retry high accuracy if fast failed
+                  navigator.geolocation.getCurrentPosition(
+                     (pos2) => {
+                         const loc2 = { lat: pos2.coords.latitude, lng: pos2.coords.longitude };
+                         locationCache.current = loc2;
+                         resolve(loc2);
+                     }, 
+                     (err2) => reject(new Error("GPS signal required.")),
+                     { timeout: 10000, enableHighAccuracy: true }
+                  );
+             }, 
+             { timeout: 5000, enableHighAccuracy: false }
          );
      });
   }, []);
@@ -338,7 +334,7 @@ function App() {
         targetLocation.lng, 
         userLoc.lat, 
         userLoc.lng,
-        undefined, // parentId
+        undefined, 
         imageUrl
     );
     await loadData();
@@ -347,7 +343,6 @@ function App() {
   const handleReplyMessage = async (text: string, parentId: string) => {
       try {
           const userLoc = await getLocation(); 
-          
           let targetLat = userLoc.lat;
           let targetLng = userLoc.lng;
 
@@ -389,11 +384,10 @@ function App() {
     await deleteMessage(msgId);
   };
 
-  // TOGGLE HIDDEN STATUS (VISIBILITY)
   const handleToggleHidden = (msgId: string) => {
       const newSet = toggleHiddenMessage(msgId);
       setHiddenIds(newSet);
-      triggerHaptic('light'); // Subtle feedback for local toggle
+      triggerHaptic('light'); 
   };
   
   const toggleMute = () => {
@@ -434,6 +428,7 @@ function App() {
                 lastNewMessage={lastNewMessage}
                 hasSignal={hasSignal}
                 initialCenter={locationCache.current || undefined}
+                flyToLocation={flyToLocation} // NEW PROP
                 focusedMessage={focusedMessage}
                 onOpenThread={handleOpenThread}
                 onClosePopup={() => { SoundService.playClick(); setFocusedMessage(null); }}

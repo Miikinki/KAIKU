@@ -12,10 +12,6 @@ export interface HeatmapLayerRef {
     // Ping removed, no longer needed
 }
 
-// --- VISUAL CONSTANTS ---
-// Matches the CSS scan animation speed (4 seconds per rotation)
-const RADAR_CYCLE_MS = 4000; 
-
 // @ts-ignore
 const GlowLayer = L.Layer.extend({
     initialize: function (data: ChatMessage[]) {
@@ -111,8 +107,8 @@ const GlowLayer = L.Layer.extend({
         const dpr = window.devicePixelRatio || 1;
         const width = this._canvas.width;
         const height = this._canvas.height;
-        const centerX = width / 2;
-        const centerY = height / 2;
+        // const centerX = width / 2;
+        // const centerY = height / 2;
 
         ctx.clearRect(0, 0, width, height);
 
@@ -120,18 +116,7 @@ const GlowLayer = L.Layer.extend({
         const bounds = this._map.getBounds();
         const now = Date.now();
 
-        // --- AUTOMATIC RADAR SWEEP LOGIC ---
-        // Calculate current beam angle (0 to 2PI)
-        const cycleProgress = (now % RADAR_CYCLE_MS) / RADAR_CYCLE_MS;
-        const sweepAngle = (cycleProgress * Math.PI * 2) - (Math.PI / 2);
-        
-        // Define beam width in radians
-        const beamWidth = 0.6; // ~35 degrees
-        
-        // STRICT SIZE LIMIT: Reduced to 124px (from 128px) to safely stay inside the border
-        const visualRadarRadius = 124 * dpr; 
-
-        // 2. Base Scale Logic
+        // 1. Base Scale Logic
         let baseRadius = 20 * dpr; 
         let baseIntensity = 0.15; 
 
@@ -142,7 +127,7 @@ const GlowLayer = L.Layer.extend({
 
         ctx.globalCompositeOperation = 'screen'; 
 
-        // 3. Draw Loop
+        // 2. Draw Loop
         this._data.forEach((msg: ChatMessage) => {
             // Margin check for performance
             const margin = 0.5;
@@ -169,32 +154,9 @@ const GlowLayer = L.Layer.extend({
                 r=239; g=68; b=68; 
             }
 
-            // --- B. RADAR BEAM INTERACTION ---
-            // Calculate angle AND distance of this point relative to screen center
-            const dx = x - centerX;
-            const dy = y - centerY;
-            const distFromCenter = Math.sqrt(dx*dx + dy*dy);
+            // --- B. PULSE ANIMATION (Breathing Only) ---
+            // No radar sweep math here anymore.
             
-            let radarBoost = 0;
-
-            // CRITICAL FIX: Only apply sweep effect if inside the visual radar ring
-            if (distFromCenter <= visualRadarRadius) {
-                const pointAngle = Math.atan2(dy, dx); 
-                
-                // Calculate angular difference clockwise
-                let angleDiff = sweepAngle - pointAngle;
-                
-                // Normalize to -PI to +PI
-                while (angleDiff <= -Math.PI) angleDiff += Math.PI * 2;
-                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-
-                // Check if point is "inside" the beam
-                if (angleDiff >= 0 && angleDiff < beamWidth) {
-                    radarBoost = 1 - (angleDiff / beamWidth);
-                }
-            }
-
-            // --- C. PULSE ANIMATION ---
             const uniqueOffset = (msg.id.charCodeAt(0) * 100) + (msg.id.charCodeAt(msg.id.length-1) * 50);
             const pulseSpeed = hoursLeft < 4 ? 0.01 : 0.003;
             const breathing = 1.0 + Math.sin((now * pulseSpeed) + uniqueOffset) * 0.3;
@@ -202,24 +164,12 @@ const GlowLayer = L.Layer.extend({
             let radius = baseRadius * breathing;
             let intensity = baseIntensity * breathing;
             
-            // Apply Radar Boost
-            if (radarBoost > 0) {
-                // Increase intensity and radius significantly when hit
-                intensity += (radarBoost * 0.6); // Flash bright
-                radius *= (1 + (radarBoost * 0.2)); // Slight swell
-
-                // Turn White
-                r = Math.min(255, r + (255-r) * radarBoost);
-                g = Math.min(255, g + (255-g) * radarBoost);
-                b = Math.min(255, b + (255-b) * radarBoost);
-            }
-
             if (msg.score > 5) { radius *= 1.2; intensity *= 1.2; }
             if (msg.score > 20) { radius *= 1.4; intensity *= 1.3; }
 
             intensity = Math.min(intensity, 0.9);
 
-            // --- D. DRAW ---
+            // --- C. DRAW ---
             const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
             grad.addColorStop(0, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity})`);
             grad.addColorStop(0.4, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity * 0.3})`);

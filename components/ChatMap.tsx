@@ -17,6 +17,7 @@ interface ChatMapProps {
   lastNewMessage: ChatMessage | null;
   hasSignal: boolean;
   initialCenter?: { lat: number; lng: number };
+  flyToLocation: { lat: number; lng: number } | null; // NEW PROP
   focusedMessage: ChatMessage | null;
   onOpenThread: (msg: ChatMessage) => void;
   onClosePopup: () => void;
@@ -81,8 +82,8 @@ const LocateControl = ({ getUserLocation }: { getUserLocation: () => Promise<{la
     );
 };
 
-// --- MAP FLY TO CONTROLLER ---
-const MapFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
+// --- MAP FLY TO CONTROLLER (MESSAGE) ---
+const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
     const map = useMap();
     useEffect(() => {
         if (target) {
@@ -90,6 +91,21 @@ const MapFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
                 animate: true,
                 duration: 1.5,
                 easeLinearity: 0.25
+            });
+        }
+    }, [target, map]);
+    return null;
+};
+
+// --- COORDINATE FLY TO CONTROLLER (AUTO-CORRECT) ---
+const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number } | null }> = ({ target }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (target) {
+            map.flyTo([target.lat, target.lng], 14, {
+                animate: true,
+                duration: 2.0, // Slower animation for auto-correct to be less jarring
+                easeLinearity: 0.2
             });
         }
     }, [target, map]);
@@ -202,7 +218,7 @@ const MapController: React.FC<{
 };
 
 // --- MAIN CHAT MAP ---
-const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation }) => {
+const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation }) => {
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
   
@@ -245,7 +261,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
             setZoom={setZoom}
         />
 
-        <MapFlyTo target={focusedMessage} />
+        <MessageFlyTo target={focusedMessage} />
+        <CoordinateFlyTo target={flyToLocation} />
         
         <MapEventsHandler onMapClick={onMapClick} />
         
@@ -318,8 +335,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
               <div className={`absolute flex items-center justify-center w-64 h-64 rounded-full transition-all duration-500 ease-out 
                   ${isMaxZoom ? 'opacity-100 scale-110' : (hasSignal ? 'opacity-100 scale-105' : 'opacity-60 scale-100')}
               `}>
-                   {/* Layer 1: REMOVED PULSE (Was causing overflow) */}
-                   
                    {/* Layer 2: Rotating Sweep (The Radar Trail) - KEPT ACTIVE */}
                    <div 
                        className="absolute inset-0 rounded-full animate-[spin_4s_linear_infinite]"
@@ -373,7 +388,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
            prevProps.hasSignal === nextProps.hasSignal &&
            prevProps.focusedMessage === nextProps.focusedMessage &&
            prevProps.hiddenIds === nextProps.hiddenIds &&
-           prevProps.getUserLocation === nextProps.getUserLocation;
+           prevProps.getUserLocation === nextProps.getUserLocation &&
+           prevProps.flyToLocation === nextProps.flyToLocation; // Updated comparison
 });
 
 export default ChatMap;

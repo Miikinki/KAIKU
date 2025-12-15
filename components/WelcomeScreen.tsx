@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Radio, Zap, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff } from 'lucide-react';
+import { Radio, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getIpLocation } from '../services/moderationService';
 
 interface WelcomeScreenProps {
-  onStart: (location: { lat: number; lng: number }) => void;
+  onStart: (location: { lat: number; lng: number }, isFallback: boolean) => void;
 }
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
@@ -12,97 +12,103 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const [statusText, setStatusText] = useState("SYSTEM STANDBY");
   const [error, setError] = useState<string | null>(null);
 
-  // Intro animation sequence for the text
+  // Intro animation sequence
   const [showContent, setShowContent] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setShowContent(true), 500);
     return () => clearTimeout(timer);
   }, []);
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     setIsLoading(true);
     setError(null);
     
-    // Fake "Terminal" loading sequence for effect
-    const steps = ["REQUESTING PERMISSIONS...", "TRIANGULATING...", "ESTABLISHING LINK..."];
-    let stepIndex = 0;
-    
-    setStatusText(steps[0]);
-    const stepInterval = setInterval(() => {
-        stepIndex++;
-        if (stepIndex < steps.length) setStatusText(steps[stepIndex]);
-    }, 600);
-
-    const handleSuccess = (lat: number, lng: number) => {
-        clearInterval(stepInterval);
-        onStart({ lat, lng });
+    // Helper to wrap geolocation in a Promise
+    const getPosition = (options: PositionOptions): Promise<GeolocationPosition> => {
+        return new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, options);
+        });
     };
 
-    const handleError = async (errCode: number, errMsg: string) => {
-        console.warn("GPS Start Error:", errCode, errMsg);
+    // --- STRATEGY 1: HIGH ACCURACY GPS ---
+    try {
+        setStatusText("INITIALIZING GPS (PRECISION)...");
         
-        // --- 1. LOCAL STORAGE FALLBACK (Last Known Good Location) ---
-        // This restores the "Lightning Fast" feeling for returning users.
-        const savedLoc = localStorage.getItem('kaiku_last_loc');
-        if (savedLoc) {
-            try {
-                const parsed = JSON.parse(savedLoc);
-                if (parsed.lat && parsed.lng) {
-                    clearInterval(stepInterval);
-                    setStatusText("USING LAST KNOWN VECTOR...");
-                    
-                    // Small delay to let user see status change
-                    setTimeout(() => {
-                        onStart(parsed);
-                    }, 800);
-                    return;
-                }
-            } catch (e) {}
-        }
-
-        // --- 2. IP FALLBACK (Only if no local history) ---
-        setStatusText("REROUTING VIA NETWORK NODE...");
+        // Try hard to get a good fix first. 6s timeout.
+        const pos = await getPosition({ 
+            enableHighAccuracy: true, 
+            timeout: 6000, 
+            maximumAge: 0 
+        });
         
-        try {
-            const ipLoc = await getIpLocation();
-            if (ipLoc) {
-                clearInterval(stepInterval);
-                onStart(ipLoc);
-                return;
-            }
-        } catch (e) {
-            console.warn("IP Fallback failed", e);
-        }
+        onStart({ lat: pos.coords.latitude, lng: pos.coords.longitude }, false);
+        return;
 
-        // IF ALL FALLBACKS FAIL
-        clearInterval(stepInterval);
-        setIsLoading(false);
-        setStatusText("CONNECTION FAILED");
-        
-        if (errCode === 1) setError("LOCATION PERMISSION DENIED");
-        else if (errCode === 2) setError("SIGNAL LOST - CHECK NETWORK");
-        else setError("TIMEOUT - TRY AGAIN");
-    };
-
-    if (!navigator.geolocation) {
-      clearInterval(stepInterval);
-      // Try fallback immediately
-      handleError(0, "Geolocation not supported");
-      return;
+    } catch (err: any) {
+        console.warn("High Accuracy GPS failed/timed out:", err.code, err.message);
+        // Continue to Strategy 2...
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
-      (err) => handleError(err.code, err.message),
-      {
-        // FIX: Set to FALSE for initial entry. 
-        // This uses Cell/WiFi towers which are instant and don't timeout indoors.
-        // The main App.tsx will upgrade to High Accuracy in the background.
-        enableHighAccuracy: false, 
-        timeout: 15000, // Increased timeout to 15s just in case
-        maximumAge: Infinity // Accept cached positions instantly
-      }
-    );
+    // --- STRATEGY 2: LOW ACCURACY / CACHED GPS ---
+    try {
+        setStatusText("RETRYING (STANDARD SIGNAL)...");
+        
+        // Allow cached positions (infinity), allow Wifi/Cell triangulation (highAccuracy: false)
+        // Give it more time (10s)
+        const pos = await getPosition({ 
+            enableHighAccuracy: false, 
+            timeout: 10000, 
+            maximumAge: Infinity 
+        });
+        
+        onStart({ lat: pos.coords.latitude, lng: pos.coords.longitude }, false);
+        return;
+
+    } catch (err: any) {
+        console.warn("Low Accuracy GPS failed:", err.code, err.message);
+        
+        // If it was a permission denied error (Code 1), stop here.
+        if (err.code === 1) {
+            setIsLoading(false);
+            setStatusText("PERMISSION DENIED");
+            setError("LOCATION PERMISSION REQUIRED");
+            return;
+        }
+        // Continue to Strategy 3...
+    }
+
+    // --- STRATEGY 3: LOCAL STORAGE (LAST KNOWN) ---
+    const savedLoc = localStorage.getItem('kaiku_last_loc');
+    if (savedLoc) {
+        try {
+            const parsed = JSON.parse(savedLoc);
+            if (parsed.lat && parsed.lng) {
+                setStatusText("USING LAST KNOWN VECTOR...");
+                setTimeout(() => {
+                    onStart(parsed, true); // Mark as fallback so App knows to keep looking for better signal
+                }, 500);
+                return;
+            }
+        } catch (e) {}
+    }
+
+    // --- STRATEGY 4: IP GEOLOCATION (LAST RESORT) ---
+    try {
+        setStatusText("TRIANGULATING VIA NETWORK NODE...");
+        const ipLoc = await getIpLocation();
+        
+        if (ipLoc) {
+            onStart(ipLoc, true); // Mark as fallback
+            return;
+        }
+    } catch (e) {
+        console.warn("IP Fallback failed", e);
+    }
+
+    // --- FAILURE ---
+    setIsLoading(false);
+    setStatusText("CONNECTION FAILED");
+    setError("SIGNAL LOST. CHECK GPS/NETWORK.");
   };
 
   return (
@@ -110,10 +116,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       
       {/* --- CINEMATIC BACKGROUND --- */}
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-          {/* 1. Deep Radial Glow */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150vmax] h-[150vmax] bg-gradient-to-r from-cyan-900/10 via-transparent to-transparent opacity-50 rounded-full blur-3xl" />
-          
-          {/* 2. The Grid Floor (Perspective) */}
           <div 
             className="absolute inset-0 opacity-[0.15]"
             style={{
@@ -125,8 +128,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                 maskImage: 'radial-gradient(circle at center, black 40%, transparent 100%)'
             }}
           />
-
-          {/* 3. Rotating Radar Elements */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] border border-cyan-500/10 rounded-full animate-[spin_60s_linear_infinite]" />
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] border border-dashed border-cyan-500/10 rounded-full animate-[spin_40s_linear_infinite_reverse]" />
       </div>
@@ -140,21 +141,17 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       >
         <div className="bg-[#0a0a12]/60 backdrop-blur-xl border border-white/10 p-8 md:p-12 rounded-3xl shadow-2xl relative overflow-hidden group">
             
-            {/* Top scanning line decoration */}
             <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent opacity-50" />
             
             <div className="flex flex-col items-center text-center">
                 
-                {/* LOGO */}
                 <div className="mb-8 relative">
                     <div className="relative z-10 w-20 h-20 flex items-center justify-center bg-cyan-950/30 rounded-2xl border border-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.15)]">
                         <Radio size={40} className="text-cyan-400" />
                     </div>
-                    {/* Ping Animation behind logo */}
                     <div className="absolute inset-0 bg-cyan-500/20 rounded-2xl animate-ping" style={{ animationDuration: '3s' }} />
                 </div>
 
-                {/* TITLE */}
                 <h1 className="text-5xl font-black tracking-tighter text-white mb-2" style={{ textShadow: '0 0 20px rgba(255,255,255,0.1)' }}>
                     KAIKU
                 </h1>
@@ -162,7 +159,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                     Hyperlocal Signal Grid
                 </p>
 
-                {/* FEATURES LIST (Minimalist) */}
                 <div className="w-full space-y-6 mb-12">
                     <FeatureRow 
                         icon={<Globe size={18} />} 
@@ -184,7 +180,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                     />
                 </div>
 
-                {/* ERROR DISPLAY */}
                 {error && (
                     <motion.div 
                         initial={{ opacity: 0, y: 10 }}
@@ -196,7 +191,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                     </motion.div>
                 )}
 
-                {/* ACTION BUTTON */}
                 <button
                     onClick={handleConnect}
                     disabled={isLoading}
@@ -216,13 +210,12 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                         )}
                     </div>
                     
-                    {/* Subtle progress bar / loading background */}
                     {isLoading && (
                         <motion.div 
                             className="absolute inset-0 bg-cyan-300/20 origin-left"
                             initial={{ scaleX: 0 }}
                             animate={{ scaleX: 1 }}
-                            transition={{ duration: 3 }}
+                            transition={{ duration: 6 }} 
                         />
                     )}
                 </button>
@@ -238,7 +231,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   );
 };
 
-// Sub-component for clean feature rows
 const FeatureRow = ({ icon, title, desc, delay }: { icon: any, title: string, desc: string, delay: number }) => (
     <motion.div 
         initial={{ opacity: 0, x: -10 }}
