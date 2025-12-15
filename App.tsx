@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Radio, Zap, Volume2, VolumeX } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
@@ -7,7 +7,7 @@ import ThreadView from './components/ThreadView';
 import WelcomeScreen from './components/WelcomeScreen';
 import BootSequence from './components/BootSequence';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, subscribeToPresence } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, subscribeToPresence, getHiddenIds, toggleHiddenMessage } from './services/storageService';
 import { getCityName } from './services/moderationService';
 import { SoundService } from './services/soundService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
@@ -47,6 +47,9 @@ function App() {
   
   // Use a ref for location to ensure we always have the absolute latest coords without re-renders
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
+
+  // VISIBILITY FILTER STATE (Hidden Messages)
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenIds());
 
   const [rateLimit, setRateLimit] = useState<{ isLimited: boolean; cooldownUntil: number | null }>({
     isLimited: false,
@@ -288,7 +291,8 @@ function App() {
       setSelectedMessage(null);
   };
 
-  const getLocation = async (): Promise<{lat: number, lng: number}> => {
+  // Wrapped in useCallback to provide stable reference for ChatMap
+  const getLocation = useCallback(async (): Promise<{lat: number, lng: number}> => {
      if (locationCache.current) return locationCache.current;
      
      return new Promise((resolve, reject) => {
@@ -306,7 +310,7 @@ function App() {
              { timeout: 10000, enableHighAccuracy: true }
          );
      });
-  };
+  }, []);
 
   const handleOpenInput = async () => {
       SoundService.playClick();
@@ -384,6 +388,13 @@ function App() {
     if (focusedMessage?.id === msgId) setFocusedMessage(null);
     await deleteMessage(msgId);
   };
+
+  // TOGGLE HIDDEN STATUS (VISIBILITY)
+  const handleToggleHidden = (msgId: string) => {
+      const newSet = toggleHiddenMessage(msgId);
+      setHiddenIds(newSet);
+      triggerHaptic('light'); // Subtle feedback for local toggle
+  };
   
   const toggleMute = () => {
       const newState = SoundService.toggleMute();
@@ -426,6 +437,8 @@ function App() {
                 focusedMessage={focusedMessage}
                 onOpenThread={handleOpenThread}
                 onClosePopup={() => { SoundService.playClick(); setFocusedMessage(null); }}
+                hiddenIds={hiddenIds}
+                getUserLocation={getLocation}
             />
 
             <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">
@@ -457,6 +470,8 @@ function App() {
                 onTagClick={handleTagClick}
                 onClearTag={() => { SoundService.playClick(); setActiveTag(null); }}
                 nearbyTypingCount={nearbyTypingCount}
+                hiddenIds={hiddenIds}
+                onToggleHidden={handleToggleHidden}
             />
 
             <AnimatePresence>
@@ -496,6 +511,8 @@ function App() {
                     onVote={handleVote}
                     onDelete={handleDelete}
                     onTagClick={handleTagClick}
+                    hiddenIds={hiddenIds}
+                    onToggleHidden={handleToggleHidden}
                 />
             )}
 

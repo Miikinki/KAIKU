@@ -9,6 +9,7 @@ const USER_ID_KEY = 'kaiku_session_id';
 const USER_VOTES_KEY = 'kaiku_user_votes';
 const LAST_POST_TIMESTAMP_KEY = 'kaiku_last_post_ts';
 const DELETED_IDS_KEY = 'kaiku_deleted_ids'; 
+const HIDDEN_IDS_KEY = 'kaiku_hidden_ids';
 
 // --- SEED DATA ---
 
@@ -153,6 +154,28 @@ const markAsDeleted = (id: string) => {
 export const getUserVotes = (): Record<string, 'up' | 'down'> => {
     const stored = localStorage.getItem(USER_VOTES_KEY);
     return stored ? JSON.parse(stored) : {};
+};
+
+// --- HIDING MESSAGES (VISIBILITY TOGGLE) ---
+
+export const getHiddenIds = (): Set<string> => {
+    try {
+        const stored = localStorage.getItem(HIDDEN_IDS_KEY);
+        return new Set(stored ? JSON.parse(stored) : []);
+    } catch (e) {
+        return new Set();
+    }
+};
+
+export const toggleHiddenMessage = (id: string): Set<string> => {
+    const hidden = getHiddenIds();
+    if (hidden.has(id)) {
+        hidden.delete(id);
+    } else {
+        hidden.add(id);
+    }
+    localStorage.setItem(HIDDEN_IDS_KEY, JSON.stringify(Array.from(hidden)));
+    return hidden;
 };
 
 // --- IMAGE UPLOAD SERVICE ---

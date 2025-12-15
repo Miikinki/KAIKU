@@ -95,8 +95,11 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
       (err) => handleError(err.code, err.message),
       {
-        enableHighAccuracy: true, // Restored to TRUE for precision
-        timeout: 10000, // 10s is a reasonable balance
+        // FIX: Set to FALSE for initial entry. 
+        // This uses Cell/WiFi towers which are instant and don't timeout indoors.
+        // The main App.tsx will upgrade to High Accuracy in the background.
+        enableHighAccuracy: false, 
+        timeout: 15000, // Increased timeout to 15s just in case
         maximumAge: Infinity // Accept cached positions instantly
       }
     );

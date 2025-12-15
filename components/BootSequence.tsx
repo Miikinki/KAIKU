@@ -5,28 +5,38 @@ interface BootSequenceProps {
   onComplete: () => void;
 }
 
-const BootSequence: React.FC<BootSequenceProps> = ({ onComplete }) => {
-  const [lines, setLines] = useState<string[]>([]);
+// Defined outside to ensure stability
+const SEQUENCE = [
+  "> SEARCHING LOCAL FREQUENCIES...",
+  "> TRIANGULATING SIGNAL SOURCE... [LOCKED]",
+  "> HANDSHAKE PROTOCOL... [SECURE]",
+  "> UPLINK ESTABLISHED."
+];
 
-  const SEQUENCE = [
-    { text: "> INITIALIZING KAIKU PROTOCOL...", delay: 200 },
-    { text: "> CONNECTING TO SIGNAL GRID...", delay: 800 },
-    { text: "> DECRYPTING LOCAL CHANNELS... [OK]", delay: 1500 },
-    { text: "> UPLINK ESTABLISHED.", delay: 2200 }
-  ];
+const BootSequence: React.FC<BootSequenceProps> = ({ onComplete }) => {
+  // We use a counter instead of an array to prevent "Strict Mode" duplicate appends
+  const [visibleCount, setVisibleCount] = useState(0);
 
   useEffect(() => {
-    let timeouts: NodeJS.Timeout[] = [];
+    const timeouts: NodeJS.Timeout[] = [];
 
-    SEQUENCE.forEach(({ text, delay }) => {
+    // Timeline of events (ms)
+    const schedule = [
+        { count: 1, time: 200 },
+        { count: 2, time: 800 },
+        { count: 3, time: 1500 },
+        { count: 4, time: 2200 },
+    ];
+
+    schedule.forEach(({ count, time }) => {
       const t = setTimeout(() => {
-        setLines(prev => [...prev, text]);
-      }, delay);
+        setVisibleCount(prev => Math.max(prev, count));
+      }, time);
       timeouts.push(t);
     });
 
-    // Fade out trigger
-    const finishTimer = setTimeout(onComplete, 3000);
+    // Fade out trigger (Last item + 500ms pause)
+    const finishTimer = setTimeout(onComplete, 2700);
     timeouts.push(finishTimer);
 
     return () => timeouts.forEach(clearTimeout);
@@ -34,7 +44,7 @@ const BootSequence: React.FC<BootSequenceProps> = ({ onComplete }) => {
 
   return (
     <div className="flex flex-col justify-center w-full max-w-3xl px-8 font-mono text-lg md:text-2xl font-bold tracking-wider">
-      {lines.map((line, i) => (
+      {SEQUENCE.slice(0, visibleCount).map((line, i) => (
         <motion.div
           key={i}
           initial={{ opacity: 0, x: -10 }}
@@ -44,6 +54,8 @@ const BootSequence: React.FC<BootSequenceProps> = ({ onComplete }) => {
           {line}
         </motion.div>
       ))}
+      
+      {/* Blinking Cursor */}
       <motion.div
         className="w-3 h-6 bg-cyan-400 mt-2 shadow-[0_0_10px_rgba(34,211,238,0.8)]"
         animate={{ opacity: [1, 0] }}

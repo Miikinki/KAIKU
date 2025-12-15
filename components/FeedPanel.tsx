@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { triggerHaptic } from '../services/hapticService';
@@ -20,6 +20,8 @@ interface FeedPanelProps {
   onTagClick: (tag: string) => void;
   onClearTag: () => void;
   nearbyTypingCount?: number; 
+  hiddenIds: Set<string>;
+  onToggleHidden: (msgId: string) => void;
 }
 
 // Helper: Calculate if signal is dying
@@ -50,7 +52,7 @@ const formatRelativeTime = (timestamp: number) => {
 
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
     visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel,
-    activeTag, onTagClick, onClearTag, nearbyTypingCount = 0
+    activeTag, onTagClick, onClearTag, nearbyTypingCount = 0, hiddenIds, onToggleHidden
 }) => {
   const { t } = useTranslation();
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
@@ -159,12 +161,10 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
     setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
   };
 
-  const handleReportClick = (e: React.MouseEvent, msgId: string) => {
+  // Replaces Report: Toggles Local Visibility
+  const handleToggleHiddenClick = (e: React.MouseEvent, msgId: string) => {
       e.stopPropagation();
-      triggerHaptic('error');
-      if (window.confirm("Report this signal as spam/offensive? It will be removed from your view.")) {
-          onDelete(msgId);
-      }
+      onToggleHidden(msgId);
   };
 
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, parentId?: string | null) => {
@@ -415,6 +415,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 const { isCritical, isWeak } = getSignalHealth(msg);
                 const isBoosted = userVotes[msg.id] === 'up';
                 const isMe = msg.sessionId === currentSessionId;
+                const isHidden = hiddenIds.has(msg.id);
 
                 // BORDER & BG COLOR LOGIC
                 // Priority: My Message (Cyan) > Critical (Red) > Weak (Orange) > Normal (White/Gray)
@@ -432,24 +433,31 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     bgClass = 'bg-orange-950/5';
                 }
 
+                if (isHidden) {
+                    bgClass = 'bg-gray-900/50';
+                    borderClass = 'border-white/5';
+                }
+
                 return (
                 <motion.div
                 key={msg.id}
                 layoutId={msg.id}
-                onClick={() => onMessageClick(msg)}
+                onClick={() => !isHidden && onMessageClick(msg)}
                 className={`group border rounded-xl p-4 cursor-pointer transition-all flex gap-4 ${borderClass} ${bgClass}`}
                 >
                 <div className="flex flex-col items-center justify-start gap-1 min-w-[30px] pt-1">
                     <button 
                         onClick={(e) => handleBoostClick(e, msg.id)}
                         className={`p-2 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
-                        disabled={isBoosted}
+                        disabled={isBoosted || isHidden}
                     >
                         <Zap size={20} className={isBoosted ? "fill-cyan-400" : ""} />
                     </button>
-                    <span className={`text-xs font-bold font-mono ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
-                        {msg.score}
-                    </span>
+                    {!isHidden && (
+                        <span className={`text-xs font-bold font-mono ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
+                            {msg.score}
+                        </span>
+                    )}
                 </div>
 
                 <div className="flex-1">
@@ -461,7 +469,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             </span>
                         </div>
                         <div className="flex items-center gap-2">
-                            {renderVisitorBadge(msg)}
+                            {!isHidden && renderVisitorBadge(msg)}
 
                             {/* "ME" BADGE */}
                             {isMe && (
@@ -473,7 +481,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-gray-400">
                                 <Clock size={10} />
                                 {formatRelativeTime(msg.timestamp)}
-                                {!isMe && isCritical && (
+                                {!isMe && !isHidden && isCritical && (
                                     <span className="text-red-500 ml-1 animate-pulse tracking-wider">FAILING</span>
                                 )}
                             </div>
@@ -487,34 +495,36 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                 </button>
                             ) : (
                                 <button 
-                                    onClick={(e) => handleReportClick(e, msg.id)}
-                                    className="relative z-10 p-1.5 text-gray-600 hover:text-red-400 transition-colors"
-                                    title="Report"
+                                    onClick={(e) => handleToggleHiddenClick(e, msg.id)}
+                                    className={`relative z-10 p-1.5 transition-colors ${isHidden ? 'text-cyan-400 hover:text-white' : 'text-gray-600 hover:text-white'}`}
+                                    title={isHidden ? "Unhide Signal" : "Hide Signal"}
                                 >
-                                    <Flag size={12} />
+                                    {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
                                 </button>
                             )}
                         </div>
                     </div>
                     
                     {/* Render Text */}
-                    <p className="text-base text-gray-100 leading-relaxed font-light break-words">
-                        {renderMessageText(msg.text)}
+                    <p className={`text-base leading-relaxed font-light break-words ${isHidden ? 'text-gray-600 italic select-none' : 'text-gray-100'}`}>
+                        {isHidden ? "** CONTENT HIDDEN **" : renderMessageText(msg.text)}
                     </p>
 
                     {/* Render Image Attachment */}
-                    {msg.imageUrl && (
+                    {!isHidden && msg.imageUrl && (
                         <ImageAttachment src={msg.imageUrl} />
                     )}
                     
-                    <div className="mt-3 flex justify-between items-center border-t border-white/5 pt-2">
-                        <span className="text-[10px] text-gray-600 font-mono">ID: {msg.sessionId.slice(0, 8)}</span>
-                        
-                        <div className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">
-                            <MessageSquare size={14} />
-                            <span>{msg.replyCount || 0} {t('feed.replies')}</span>
+                    {!isHidden && (
+                        <div className="mt-3 flex justify-between items-center border-t border-white/5 pt-2">
+                            <span className="text-[10px] text-gray-600 font-mono">ID: {msg.sessionId.slice(0, 8)}</span>
+                            
+                            <div className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">
+                                <MessageSquare size={14} />
+                                <span>{msg.replyCount || 0} {t('feed.replies')}</span>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
                 </motion.div>
             )})

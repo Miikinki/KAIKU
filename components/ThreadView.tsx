@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { triggerHaptic } from '../services/hapticService';
@@ -14,6 +14,8 @@ interface ThreadViewProps {
   onVote: (msgId: string, direction: 'up' | 'down') => void;
   onDelete: (msgId: string, parentId?: string) => void;
   onTagClick: (tag: string) => void;
+  hiddenIds: Set<string>;
+  onToggleHidden: (msgId: string) => void;
 }
 
 // Helper: Relative Creation Time (e.g. "5m ago")
@@ -41,7 +43,7 @@ const getSignalHealth = (msg: ChatMessage) => {
     };
 };
 
-const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick }) => {
+const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick, hiddenIds, onToggleHidden }) => {
   const { t } = useTranslation();
   const [replies, setReplies] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -96,18 +98,10 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
   };
 
-  const handleReportClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
+  // REPLACED REPORT WITH HIDE
+  const handleToggleHiddenClick = (e: React.MouseEvent, msgId: string) => {
     e.stopPropagation();
-    triggerHaptic('error');
-    if (window.confirm("Report this signal as spam/offensive? It will be removed from your view.")) {
-        if (isParent) {
-             onDelete(msgId);
-             onClose();
-        } else {
-             onDelete(msgId, parentMessage.id);
-             setReplies(prev => prev.filter(r => r.id !== msgId));
-        }
-    }
+    onToggleHidden(msgId);
   };
 
   const handleDeleteClick = (e: React.MouseEvent, msgId: string, isParent: boolean) => {
@@ -169,6 +163,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   const renderMessageCard = (msg: ChatMessage, isParent: boolean) => {
       const isBoosted = userVotes[msg.id] === 'up';
       const { isCritical, isWeak } = getSignalHealth(msg);
+      const isHidden = hiddenIds.has(msg.id);
       
       // Check if this message is from the Original Poster
       const isOp = !isParent && msg.sessionId === parentMessage.sessionId;
@@ -187,20 +182,22 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       }
 
       return (
-        <div className={`p-4 ${isParent ? 'bg-white/10' : 'bg-transparent'} ${borderClass}`}>
+        <div className={`p-4 ${isParent ? 'bg-white/10' : 'bg-transparent'} ${borderClass} ${isHidden ? 'opacity-70' : ''}`}>
         <div className="flex gap-3">
             {/* Boost Column */}
             <div className="flex flex-col items-center gap-1 min-w-[24px]">
                 <button 
                     onClick={(e) => handleBoostClick(e, msg.id)}
                     className={`p-1.5 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
-                    disabled={isBoosted}
+                    disabled={isBoosted || isHidden}
                 >
                     <Zap size={18} className={isBoosted ? "fill-cyan-400" : ""} />
                 </button>
-                <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
-                    {msg.score}
-                </span>
+                {!isHidden && (
+                    <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
+                        {msg.score}
+                    </span>
+                )}
             </div>
             
             {/* Content */}
@@ -221,14 +218,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                         <div className="flex items-center gap-1 font-mono font-bold">
                             <Clock size={10} />
                             {formatRelativeTime(msg.timestamp)}
-                            {isParent && isCritical && (
+                            {isParent && isCritical && !isHidden && (
                                 <span className="text-red-500 ml-1 animate-pulse">FAILING</span>
                             )}
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
                         
-                        {renderVisitorBadge(msg)}
+                        {!isHidden && renderVisitorBadge(msg)}
 
                         {msg.sessionId === currentSessionId ? (
                             <button 
@@ -240,11 +237,11 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                             </button>
                         ) : (
                              <button 
-                                onClick={(e) => handleReportClick(e, msg.id, isParent)}
-                                className="text-gray-600 hover:text-red-400 transition-colors p-1"
-                                title="Report"
+                                onClick={(e) => handleToggleHiddenClick(e, msg.id)}
+                                className={`p-1 transition-colors ${isHidden ? 'text-cyan-400 hover:text-white' : 'text-gray-600 hover:text-white'}`}
+                                title={isHidden ? "Unhide Signal" : "Hide Signal"}
                             >
-                                <Flag size={12} />
+                                {isHidden ? <EyeOff size={12} /> : <Eye size={12} />}
                             </button>
                         )}
                         {isParent && (
@@ -255,12 +252,12 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     </div>
                 </div>
                 {/* RENDER TEXT WITH HASHTAGS */}
-                <p className={`text-sm text-gray-200 leading-relaxed whitespace-pre-wrap ${isParent ? 'font-medium text-base' : 'font-light'}`}>
-                    {renderMessageText(msg.text)}
+                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isHidden ? 'text-gray-500 italic' : 'text-gray-200'} ${isParent && !isHidden ? 'font-medium text-base' : 'font-light'}`}>
+                    {isHidden ? "** CONTENT HIDDEN **" : renderMessageText(msg.text)}
                 </p>
 
                 {/* Render Image Attachment */}
-                {msg.imageUrl && (
+                {!isHidden && msg.imageUrl && (
                     <ImageAttachment src={msg.imageUrl} />
                 )}
             </div>

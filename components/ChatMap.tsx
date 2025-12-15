@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert, X } from 'lucide-react';
+import { Crosshair, Lock, ShieldAlert, X, Locate } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
 import HeatmapLayer, { HeatmapLayerRef } from './HeatmapLayer';
 import { useTranslation } from 'react-i18next';
 import L from 'leaflet';
+import { triggerHaptic } from '../services/hapticService';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -19,6 +20,8 @@ interface ChatMapProps {
   focusedMessage: ChatMessage | null;
   onOpenThread: (msg: ChatMessage) => void;
   onClosePopup: () => void;
+  hiddenIds: Set<string>;
+  getUserLocation: () => Promise<{lat: number, lng: number}>;
 }
 
 // --- CUSTOM PIN ICON ---
@@ -32,6 +35,51 @@ const customPinIcon = L.divIcon({
     iconAnchor: [8, 8], // Center
     popupAnchor: [0, -10]
 });
+
+// --- LOCATE USER CONTROL ---
+const LocateControl = ({ getUserLocation }: { getUserLocation: () => Promise<{lat: number, lng: number}> }) => {
+    const map = useMap();
+    const [isLocating, setIsLocating] = useState(false);
+
+    const handleLocate = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault(); 
+        setIsLocating(true);
+        triggerHaptic('light');
+        try {
+            const loc = await getUserLocation();
+            map.flyTo([loc.lat, loc.lng], 14, {
+                animate: true,
+                duration: 1.5,
+                easeLinearity: 0.25
+            });
+        } catch (error) {
+            console.warn("Locate failed", error);
+        } finally {
+            setIsLocating(false);
+        }
+    };
+
+    return (
+        <div className="absolute bottom-28 right-4 z-[400] pointer-events-auto">
+            <button
+                onClick={handleLocate}
+                className={`
+                    flex items-center justify-center w-12 h-12 
+                    bg-[#0a0a12]/80 backdrop-blur-md 
+                    border border-cyan-500/50 rounded-full 
+                    shadow-[0_0_15px_rgba(6,182,212,0.4)] 
+                    text-cyan-400 hover:bg-cyan-950/50 hover:text-white transition-all
+                    active:scale-95 group
+                    ${isLocating ? 'animate-pulse' : ''}
+                `}
+                title="Locate Me"
+            >
+                <Locate size={24} className="group-hover:rotate-45 transition-transform duration-500" />
+            </button>
+        </div>
+    );
+};
 
 // --- MAP FLY TO CONTROLLER ---
 const MapFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
@@ -228,7 +276,7 @@ const SonarVisualLayer: React.FC<{ pings: ActivePing[] }> = ({ pings }) => {
 };
 
 // --- MAIN CHAT MAP ---
-const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, focusedMessage, onOpenThread, onClosePopup }) => {
+const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation }) => {
   const [zoom, setZoom] = useState(5);
   const { t } = useTranslation();
   
@@ -292,6 +340,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         <MapFlyTo target={focusedMessage} />
         
         <SonarController onSonar={handleSonar} onMapClick={onMapClick} />
+        
+        <LocateControl getUserLocation={getUserLocation} />
 
         {/* Focused Message Marker */}
         {focusedMessage && (
@@ -316,7 +366,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                             <X size={14} />
                         </button>
 
-                        <div onClick={() => onOpenThread(focusedMessage)} className="cursor-pointer group mt-1">
+                        <div onClick={() => !hiddenIds.has(focusedMessage.id) && onOpenThread(focusedMessage)} className="cursor-pointer group mt-1">
                             <div className="flex items-center justify-between mb-2 pr-6">
                                 <span className="text-[10px] text-cyan-400 font-mono font-bold tracking-wider flex items-center gap-1">
                                     <Crosshair size={10} /> TARGET
@@ -325,12 +375,22 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                                     {new Date(focusedMessage.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                 </span>
                             </div>
-                            <p className="text-sm text-gray-200 leading-relaxed line-clamp-3 mb-3 font-light border-l-2 border-cyan-500/30 pl-2 group-hover:border-cyan-400 transition-colors">
-                                {focusedMessage.text}
-                            </p>
-                            <div className="text-center py-1.5 bg-white/5 rounded text-[10px] text-cyan-400 font-bold tracking-widest group-hover:bg-cyan-500 group-hover:text-black transition-all">
-                                OPEN CHANNEL
-                            </div>
+                            
+                            {hiddenIds.has(focusedMessage.id) ? (
+                                <p className="text-sm text-gray-500 italic leading-relaxed mb-3 font-light border-l-2 border-gray-500/30 pl-2">
+                                    ** CONTENT HIDDEN **
+                                </p>
+                            ) : (
+                                <p className="text-sm text-gray-200 leading-relaxed line-clamp-3 mb-3 font-light border-l-2 border-cyan-500/30 pl-2 group-hover:border-cyan-400 transition-colors">
+                                    {focusedMessage.text}
+                                </p>
+                            )}
+                            
+                            {!hiddenIds.has(focusedMessage.id) && (
+                                <div className="text-center py-1.5 bg-white/5 rounded text-[10px] text-cyan-400 font-bold tracking-widest group-hover:bg-cyan-500 group-hover:text-black transition-all">
+                                    OPEN CHANNEL
+                                </div>
+                            )}
                         </div>
                     </div>
                 </Popup>
@@ -407,7 +467,9 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
            prevProps.signals === nextProps.signals && 
            prevProps.lastNewMessage === nextProps.lastNewMessage &&
            prevProps.hasSignal === nextProps.hasSignal &&
-           prevProps.focusedMessage === nextProps.focusedMessage;
+           prevProps.focusedMessage === nextProps.focusedMessage &&
+           prevProps.hiddenIds === nextProps.hiddenIds &&
+           prevProps.getUserLocation === nextProps.getUserLocation;
 });
 
 export default ChatMap;
