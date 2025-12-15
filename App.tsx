@@ -13,7 +13,9 @@ import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './consta
 import { AnimatePresence, motion } from 'framer-motion';
 
 // Radius of the visual ring in pixels.
-const SCAN_RADIUS_PX = 142; 
+// Visual ring is w-64 (256px) -> 128px radius.
+// We set scan radius slightly larger to include edge signals comfortably.
+const SCAN_RADIUS_PX = 150; 
 
 function App() {
   const [hasStarted, setHasStarted] = useState(false); // New state for Welcome Screen
@@ -168,7 +170,7 @@ function App() {
     if (!currentBounds) return;
     
     const now = Date.now();
-    const cutoff = now - MESSAGE_LIFESPAN_MS;
+    // Removed old 'cutoff' based logic which filtered out boosted messages inadvertently.
 
     const centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
     const centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
@@ -177,7 +179,11 @@ function App() {
     const radiusKm = (metersPerPx * SCAN_RADIUS_PX) / 1000;
 
     let visible = messages.filter(m => {
-      if (m.timestamp <= cutoff || m.score <= SCORE_THRESHOLD_HIDE) return false;
+      // FIX: Use expiresAt check instead of creation timestamp.
+      // This ensures messages extended by boosts are still visible.
+      // Fallback to timestamp + lifespan if expiresAt is missing (backward compat).
+      const expiry = m.expiresAt || (m.timestamp + MESSAGE_LIFESPAN_MS);
+      if (expiry <= now || m.score <= SCORE_THRESHOLD_HIDE) return false;
 
       const dist = calculateDistance(
           centerLat, 
