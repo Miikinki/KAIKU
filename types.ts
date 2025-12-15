@@ -21,6 +21,7 @@ export interface ChatMessage {
   customOrigin?: { lat: number, lng: number }; // TRANSIENT: For animating "My" outgoing messages precisely (Local Echo)
   preciseOrigin?: { lat: number, lng: number }; // PERSISTENT: Extracted from metadata for accurate remote arcs
   imageUrl?: string; // NEW: URL for attached image
+  isMasked?: boolean; // NEW: Indicates if the location is fuzzy/masked
 }
 
 export interface ViewportBounds {

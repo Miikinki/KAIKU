@@ -7,7 +7,6 @@ import ArcLayer from './ArcLayer';
 import HeatmapLayer, { HeatmapLayerRef } from './HeatmapLayer';
 import { useTranslation } from 'react-i18next';
 import L from 'leaflet';
-import { triggerHaptic } from '../services/hapticService';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -25,17 +24,48 @@ interface ChatMapProps {
   getUserLocation: () => Promise<{lat: number, lng: number}>;
 }
 
-// --- CUSTOM PIN ICON ---
-const customPinIcon = L.divIcon({
-    className: 'custom-pin',
-    html: `<div class="relative w-4 h-4">
-            <div class="absolute inset-0 bg-cyan-400 rounded-full animate-ping opacity-75"></div>
-            <div class="relative w-4 h-4 bg-cyan-500 rounded-full border-2 border-white shadow-[0_0_15px_#06b6d4]"></div>
-           </div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8], // Center
-    popupAnchor: [0, -10]
-});
+// --- DYNAMIC MARKER ICON GENERATOR ---
+const getMarkerIcon = (msg: ChatMessage) => {
+    // Logic: Pulse ONLY if fresh (< 15m) or hot (score > 20)
+    // This reduces CSS animation load significantly.
+    const ageMins = (Date.now() - msg.timestamp) / 60000;
+    const isFresh = ageMins < 15;
+    const isHot = msg.score > 20;
+    const shouldPulse = isFresh || isHot;
+    
+    // Default to false if property missing
+    const isMasked = msg.isMasked || false; 
+
+    let html = '';
+
+    if (isMasked) {
+         // MASKED: Hollow Circle
+         // Visual: 16px, Cyan Border, Transparent BG
+         html = `
+            <div class="relative w-4 h-4 flex items-center justify-center">
+                ${shouldPulse ? `<div class="absolute inset-0 rounded-full border border-cyan-400 animate-ping opacity-50"></div>` : ''}
+                <div class="relative w-4 h-4 rounded-full border-2 border-cyan-400 bg-black/20 box-border shadow-[0_0_2px_#06b6d4]"></div>
+            </div>
+         `;
+    } else {
+         // EXACT: Solid Diamond
+         // Visual: 12px, Cyan Fill, Rotated 45deg
+         html = `
+            <div class="relative w-3 h-3 flex items-center justify-center">
+                ${shouldPulse ? `<div class="absolute inset-0 bg-cyan-400 rotate-45 animate-ping opacity-75"></div>` : ''}
+                <div class="relative w-3 h-3 bg-[#00f0ff] transform rotate-45 border border-black/40 shadow-[0_0_5px_#00f0ff]"></div>
+            </div>
+         `;
+    }
+
+    return L.divIcon({
+        className: 'custom-marker-container', // Empty class used to remove Leaflet defaults via CSS if needed
+        html: html,
+        iconSize: isMasked ? [16, 16] : [12, 12],
+        iconAnchor: isMasked ? [8, 8] : [6, 6],
+        popupAnchor: [0, -10]
+    });
+};
 
 // --- MAP FLY TO CONTROLLER (MESSAGE) ---
 const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
@@ -239,14 +269,17 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         
         <MapEventsHandler onMapClick={onMapClick} />
         
-        {/* Focused Message Marker */}
-        {focusedMessage && (
+        {/* Messages as Markers */}
+        {messages.map(msg => (
             <Marker 
-                key={focusedMessage.id}
-                position={[focusedMessage.location.lat, focusedMessage.location.lng]} 
-                icon={customPinIcon}
+                key={msg.id}
+                position={[msg.location.lat, msg.location.lng]} 
+                icon={getMarkerIcon(msg)} // Use dynamic icon
                 ref={(ref) => {
-                    if (ref) setTimeout(() => ref.openPopup(), 600); 
+                    // Auto-open if this is the focused message
+                    if (ref && focusedMessage?.id === msg.id) {
+                        setTimeout(() => ref.openPopup(), 600); 
+                    }
                 }}
             >
                 <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -4]}>
@@ -262,27 +295,27 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                             <X size={14} />
                         </button>
 
-                        <div onClick={() => !hiddenIds.has(focusedMessage.id) && onOpenThread(focusedMessage)} className="cursor-pointer group mt-1">
+                        <div onClick={() => !hiddenIds.has(msg.id) && onOpenThread(msg)} className="cursor-pointer group mt-1">
                             <div className="flex items-center justify-between mb-2 pr-6">
                                 <span className="text-[10px] text-cyan-400 font-mono font-bold tracking-wider flex items-center gap-1">
-                                    <Crosshair size={10} /> TARGET
+                                    <Crosshair size={10} /> {msg.isMasked ? 'MASKED' : 'EXACT'}
                                 </span>
                                 <span className="text-[10px] text-gray-500 font-mono">
-                                    {new Date(focusedMessage.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                    {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                 </span>
                             </div>
                             
-                            {hiddenIds.has(focusedMessage.id) ? (
+                            {hiddenIds.has(msg.id) ? (
                                 <p className="text-sm text-gray-500 italic leading-relaxed mb-3 font-light border-l-2 border-gray-500/30 pl-2">
                                     ** CONTENT HIDDEN **
                                 </p>
                             ) : (
                                 <p className="text-sm text-gray-200 leading-relaxed line-clamp-3 mb-3 font-light border-l-2 border-cyan-500/30 pl-2 group-hover:border-cyan-400 transition-colors">
-                                    {focusedMessage.text}
+                                    {msg.text}
                                 </p>
                             )}
                             
-                            {!hiddenIds.has(focusedMessage.id) && (
+                            {!hiddenIds.has(msg.id) && (
                                 <div className="text-center py-1.5 bg-white/5 rounded text-[10px] text-cyan-400 font-bold tracking-widest group-hover:bg-cyan-500 group-hover:text-black transition-all">
                                     OPEN CHANNEL
                                 </div>
@@ -291,7 +324,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                     </div>
                 </Popup>
             </Marker>
-        )}
+        ))}
 
         {/* Visual Layers */}
         <ArcLayer messages={signals} />

@@ -36,6 +36,7 @@ const extractTags = (text: string): string[] => {
 const processTags = (rawTags: string[] | null) => {
     const tags = rawTags || [];
     let preciseOrigin: { lat: number, lng: number } | undefined = undefined;
+    let isMasked = false;
     const cleanTags: string[] = [];
 
     tags.forEach(tag => {
@@ -49,12 +50,14 @@ const processTags = (rawTags: string[] | null) => {
                     };
                 }
             } catch (e) {}
+        } else if (tag === '__masked') {
+            isMasked = true;
         } else {
             cleanTags.push(tag);
         }
     });
 
-    return { tags: cleanTags, preciseOrigin };
+    return { tags: cleanTags, preciseOrigin, isMasked };
 };
 
 const generateSeedData = (): ChatMessage[] => {
@@ -82,7 +85,8 @@ const generateSeedData = (): ChatMessage[] => {
         replyCount: 0,
         isRemote: Math.random() > 0.8,
         originCountry: city.country,
-        tags: extractTags(text)
+        tags: extractTags(text),
+        isMasked: Math.random() > 0.5 // Random masking for seed data
       });
       count++;
     }
@@ -338,7 +342,7 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
     return data
         .filter((d: any) => !deleted.has(d.id))
         .map((d: any) => {
-            const { tags, preciseOrigin } = processTags(d.tags);
+            const { tags, preciseOrigin, isMasked } = processTags(d.tags);
             return {
                 id: d.id,
                 text: d.text,
@@ -355,7 +359,8 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
                 originCountry: d.origin_country,
                 tags: tags,
                 preciseOrigin: preciseOrigin,
-                imageUrl: d.image_url 
+                imageUrl: d.image_url,
+                isMasked: isMasked
             };
         });
   }
@@ -383,7 +388,7 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
     return data
         .filter((d: any) => !deleted.has(d.id))
         .map((d: any) => {
-            const { tags, preciseOrigin } = processTags(d.tags);
+            const { tags, preciseOrigin, isMasked } = processTags(d.tags);
             return {
                 id: d.id,
                 text: d.text,
@@ -399,7 +404,8 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
                 originCountry: d.origin_country,
                 tags: tags,
                 preciseOrigin: preciseOrigin,
-                imageUrl: d.image_url
+                imageUrl: d.image_url,
+                isMasked: isMasked
             };
         });
 };
@@ -466,6 +472,11 @@ export const saveMessage = async (
   const tags = extractTags(text);
   // Store the sender's location (possibly masked) in the hidden tag for arcs
   tags.push(`__loc:${finalSenderLat.toFixed(5)},${finalSenderLng.toFixed(5)}`);
+  
+  // NEW: Add masking tag if enabled
+  if (useSignalMasking) {
+      tags.push('__masked');
+  }
 
   const now = Date.now();
   
@@ -485,7 +496,8 @@ export const saveMessage = async (
     originCountry: isRemote ? originCountry : undefined,
     tags: tags,
     preciseOrigin: { lat: finalSenderLat, lng: finalSenderLng },
-    imageUrl: imageUrl
+    imageUrl: imageUrl,
+    isMasked: useSignalMasking
   };
 
   // We don't send expires_at explicitly here; we let the DB Default (now() + 24h) handle it.
@@ -585,7 +597,7 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
             
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                 const d = payload.new;
-                const { tags, preciseOrigin } = processTags(d.tags);
+                const { tags, preciseOrigin, isMasked } = processTags(d.tags);
 
                 const msg: ChatMessage = {
                     id: d.id,
@@ -602,7 +614,8 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
                     originCountry: d.origin_country,
                     tags: tags,
                     preciseOrigin: preciseOrigin,
-                    imageUrl: d.image_url
+                    imageUrl: d.image_url,
+                    isMasked: isMasked
                 };
                 
                 // If update, we might just re-insert to refresh state in UI

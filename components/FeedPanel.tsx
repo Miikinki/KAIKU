@@ -292,14 +292,13 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             </div>
             
             <div className="flex items-center gap-1">
-                {/* COMPOSE BUTTON IN HEADER - REPLACES FAB WHEN PANEL IS OPEN */}
+                {/* COMPACT SIGNAL BUTTON - REPLACES BULKY TEXT BUTTON */}
                 <button
                     onClick={handleComposeClick}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-black rounded-lg shadow-[0_0_15px_rgba(6,182,212,0.4)] transition-all active:scale-95 mr-2"
+                    className="p-2 rounded-full bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.1)]"
                     title="Broadcast Signal"
                 >
-                    <Plus size={16} strokeWidth={3} />
-                    <span className="font-mono font-bold text-[10px] tracking-widest">SIGNAL</span>
+                    <Plus size={20} />
                 </button>
 
                 {isOpen && (
@@ -361,7 +360,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
         <div 
             ref={scrollRef}
             onScroll={handleScroll}
-            className="relative flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508]"
+            className={`relative flex-1 p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508] ${isOpen ? 'overflow-y-auto' : 'overflow-hidden'}`}
         >
             
             {/* NEW SIGNAL TOAST (Notification) */}
@@ -568,6 +567,21 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             )}
 
             <div className="h-20" /> 
+            
+            {/* Gradient Fade for Peek Mode - Visual Hint to scroll/open */}
+            {!isOpen && displayMessages.length > 2 && (
+                <div 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        toggleOpen();
+                    }}
+                    className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#0a0a12] via-[#0a0a12]/80 to-transparent z-20 cursor-pointer flex items-end justify-center pb-8 group"
+                >
+                    <div className="flex flex-col items-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                         <ChevronUp className="text-cyan-400 animate-bounce" size={20} />
+                    </div>
+                </div>
+            )}
         </div>
       </motion.div>
     </>
