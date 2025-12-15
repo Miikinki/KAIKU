@@ -34,10 +34,10 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
     try {
         setStatusText("INITIALIZING GPS (PRECISION)...");
         
-        // Try hard to get a good fix first. 6s timeout.
+        // Increased timeout to 12s (was 6s) to allow devices more time to lock
         const pos = await getPosition({ 
             enableHighAccuracy: true, 
-            timeout: 6000, 
+            timeout: 12000, 
             maximumAge: 0 
         });
         
@@ -53,11 +53,10 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
     try {
         setStatusText("RETRYING (STANDARD SIGNAL)...");
         
-        // Allow cached positions (infinity), allow Wifi/Cell triangulation (highAccuracy: false)
-        // Give it more time (10s)
+        // Increased timeout to 15s (was 10s)
         const pos = await getPosition({ 
             enableHighAccuracy: false, 
-            timeout: 10000, 
+            timeout: 15000, 
             maximumAge: Infinity 
         });
         

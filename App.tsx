@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Radio, Zap, Volume2, VolumeX } from 'lucide-react';
+import { Radio, Volume2, VolumeX, Plus, Locate } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -42,6 +42,7 @@ function App() {
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
   const [flyToLocation, setFlyToLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenIds());
 
@@ -115,6 +116,7 @@ function App() {
                     }
                 },
                 (err) => {
+                    // Ignore simple timeouts in background tracking to avoid log spam
                     if (err.code !== 3) {
                          console.warn("Background GPS tracking warning:", err.code, err.message);
                     }
@@ -308,6 +310,27 @@ function App() {
      });
   }, []);
 
+  const handleLocateMe = async () => {
+      setIsLocating(true);
+      SoundService.playClick();
+      triggerHaptic('light');
+      
+      try {
+          // If we have a cached location, fly there immediately for responsiveness
+          if (locationCache.current) {
+              setFlyToLocation(locationCache.current);
+          }
+          
+          // Then get fresh location to refine it
+          const loc = await getLocation();
+          setFlyToLocation(loc);
+      } catch (e) {
+          console.warn("Locate failed", e);
+      } finally {
+          setIsLocating(false);
+      }
+  };
+
   const handleOpenInput = async () => {
       SoundService.playClick();
       setTargetLocation(null); 
@@ -428,7 +451,7 @@ function App() {
                 lastNewMessage={lastNewMessage}
                 hasSignal={hasSignal}
                 initialCenter={locationCache.current || undefined}
-                flyToLocation={flyToLocation} // NEW PROP
+                flyToLocation={flyToLocation}
                 focusedMessage={focusedMessage}
                 onOpenThread={handleOpenThread}
                 onClosePopup={() => { SoundService.playClick(); setFocusedMessage(null); }}
@@ -436,6 +459,7 @@ function App() {
                 getUserLocation={getLocation}
             />
 
+            {/* TOP HEADER CONTROLS */}
             <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">
                 <div className="flex items-center gap-2 pointer-events-auto">
                     <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg">
@@ -450,6 +474,21 @@ function App() {
                         {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                     </button>
                 </div>
+
+                {/* LOCATE ME - Moved Top Right (Header) to avoid being covered */}
+                <button
+                    onClick={handleLocateMe}
+                    className={`
+                        pointer-events-auto flex items-center justify-center w-10 h-10 
+                        bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/30 
+                        rounded-full shadow-lg text-cyan-400 hover:bg-cyan-950/80 hover:text-white 
+                        transition-all active:scale-95 group
+                        ${isLocating ? 'animate-pulse' : ''}
+                    `}
+                    title="Locate Me"
+                >
+                    <Locate size={18} className="group-hover:rotate-45 transition-transform duration-500" />
+                </button>
             </div>
 
             <FeedPanel 
@@ -467,23 +506,28 @@ function App() {
                 nearbyTypingCount={nearbyTypingCount}
                 hiddenIds={hiddenIds}
                 onToggleHidden={handleToggleHidden}
+                onCompose={handleOpenInput}
             />
 
+            {/* FLOATING ACTION BUTTON - Visible when Feed is CLOSED or PEEKING */}
+            {/* Placed at bottom-24 to clear the peek bar. When Feed opens, this hides, and Header button takes over. */}
             <AnimatePresence>
-                {!isFeedOpen && !isInputOpen && (
+                {!isInputOpen && !isFeedOpen && (
                     <motion.div 
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.5 }}
-                        className="fixed top-5 right-5 z-[500] pointer-events-none"
+                        initial={{ opacity: 0, scale: 0.5, y: 100 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.5, y: 100 }}
+                        className="fixed bottom-24 right-5 z-[500] pointer-events-none"
                     >
                         <button
                             onClick={handleOpenInput}
-                            className="pointer-events-auto group relative flex items-center justify-center w-14 h-14 bg-[#0f0f18] rounded-full border border-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.4)] active:scale-95 transition-all overflow-hidden"
+                            className="pointer-events-auto group relative flex items-center justify-center h-14 px-6 bg-cyan-500 hover:bg-cyan-400 text-black rounded-full shadow-[0_0_30px_rgba(6,182,212,0.5)] hover:shadow-[0_0_50px_rgba(6,182,212,0.7)] active:scale-95 transition-all duration-300 overflow-hidden"
                         >
-                            <div className="absolute inset-0 rounded-full border border-cyan-500/30 animate-[ping_2s_infinite]" />
-                            <div className="absolute inset-0 bg-cyan-500/10 group-hover:bg-cyan-500/20 transition-colors" />
-                            <Zap size={24} className="text-cyan-400 drop-shadow-[0_0_5px_rgba(6,182,212,1)]" />
+                            {/* Pulsing ring inside */}
+                            <div className="absolute inset-0 rounded-full border-2 border-cyan-400 opacity-0 group-hover:animate-ping" />
+                            
+                            <Plus size={24} strokeWidth={3} className="mr-2" />
+                            <span className="font-black tracking-widest text-sm">SIGNAL</span>
                         </button>
                     </motion.div>
                 )}

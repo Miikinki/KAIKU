@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { triggerHaptic } from '../services/hapticService';
@@ -22,6 +22,7 @@ interface FeedPanelProps {
   nearbyTypingCount?: number; 
   hiddenIds: Set<string>;
   onToggleHidden: (msgId: string) => void;
+  onCompose: () => void;
 }
 
 // Helper: Calculate if signal is dying
@@ -52,7 +53,7 @@ const formatRelativeTime = (timestamp: number) => {
 
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
     visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel,
-    activeTag, onTagClick, onClearTag, nearbyTypingCount = 0, hiddenIds, onToggleHidden
+    activeTag, onTagClick, onClearTag, nearbyTypingCount = 0, hiddenIds, onToggleHidden, onCompose
 }) => {
   const { t } = useTranslation();
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
@@ -191,6 +192,12 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       setShowMyMessagesOnly(!showMyMessagesOnly);
   };
 
+  const handleComposeClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      triggerHaptic('light');
+      onCompose();
+  };
+
   // --- TEXT PARSER ---
   const renderMessageText = (text: string) => {
       const parts = text.split(/(#[\p{L}\p{N}_]+)/gu);
@@ -282,10 +289,20 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         </h2>
                     </div>
                 )}
+            </div>
+            
+            <div className="flex items-center gap-1">
+                {/* COMPOSE BUTTON IN HEADER - ALWAYS AVAILABLE */}
+                <button
+                    onClick={handleComposeClick}
+                    className="p-2 rounded-full bg-cyan-500 hover:bg-cyan-400 text-black shadow-lg transition-all active:scale-95 mr-1"
+                    title="Broadcast Signal"
+                >
+                    <Plus size={18} strokeWidth={3} />
+                </button>
 
                 {isOpen && (
-                    <div className="flex items-center gap-1">
-                        {/* FILTER: MY MESSAGES */}
+                    <>
                         <button
                             onClick={handleToggleFilter}
                             className={`p-2 rounded-full transition-all ${showMyMessagesOnly ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-white/10 text-gray-400'}`}
@@ -302,16 +319,16 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                 <RotateCcw size={18} />
                             </button>
                         )}
-                    </div>
+                    </>
                 )}
+                
+                <button 
+                    onClick={(e) => { e.stopPropagation(); toggleOpen(); }} 
+                    className="p-2 hover:bg-white/10 rounded-full text-gray-400"
+                >
+                {isOpen ? <ChevronDown size={24} /> : <ChevronUp size={24} />}
+                </button>
             </div>
-            
-            <button 
-                onClick={(e) => { e.stopPropagation(); toggleOpen(); }} 
-                className="p-2 hover:bg-white/10 rounded-full text-gray-400"
-            >
-               {isOpen ? <ChevronDown size={24} /> : <ChevronUp size={24} />}
-            </button>
           </div>
         </div>
 

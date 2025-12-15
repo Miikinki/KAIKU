@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert, X, Locate } from 'lucide-react';
+import { Crosshair, Lock, ShieldAlert, X } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
@@ -17,7 +17,7 @@ interface ChatMapProps {
   lastNewMessage: ChatMessage | null;
   hasSignal: boolean;
   initialCenter?: { lat: number; lng: number };
-  flyToLocation: { lat: number; lng: number } | null; // NEW PROP
+  flyToLocation: { lat: number; lng: number } | null; 
   focusedMessage: ChatMessage | null;
   onOpenThread: (msg: ChatMessage) => void;
   onClosePopup: () => void;
@@ -37,51 +37,6 @@ const customPinIcon = L.divIcon({
     popupAnchor: [0, -10]
 });
 
-// --- LOCATE USER CONTROL ---
-const LocateControl = ({ getUserLocation }: { getUserLocation: () => Promise<{lat: number, lng: number}> }) => {
-    const map = useMap();
-    const [isLocating, setIsLocating] = useState(false);
-
-    const handleLocate = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        e.preventDefault(); 
-        setIsLocating(true);
-        triggerHaptic('light');
-        try {
-            const loc = await getUserLocation();
-            map.flyTo([loc.lat, loc.lng], 14, {
-                animate: true,
-                duration: 1.5,
-                easeLinearity: 0.25
-            });
-        } catch (error) {
-            console.warn("Locate failed", error);
-        } finally {
-            setIsLocating(false);
-        }
-    };
-
-    return (
-        <div className="absolute bottom-28 right-4 z-[400] pointer-events-auto">
-            <button
-                onClick={handleLocate}
-                className={`
-                    flex items-center justify-center w-12 h-12 
-                    bg-[#0a0a12]/80 backdrop-blur-md 
-                    border border-cyan-500/50 rounded-full 
-                    shadow-[0_0_15px_rgba(6,182,212,0.4)] 
-                    text-cyan-400 hover:bg-cyan-950/50 hover:text-white transition-all
-                    active:scale-95 group
-                    ${isLocating ? 'animate-pulse' : ''}
-                `}
-                title="Locate Me"
-            >
-                <Locate size={24} className="group-hover:rotate-45 transition-transform duration-500" />
-            </button>
-        </div>
-    );
-};
-
 // --- MAP FLY TO CONTROLLER (MESSAGE) ---
 const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
     const map = useMap();
@@ -97,14 +52,14 @@ const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
     return null;
 };
 
-// --- COORDINATE FLY TO CONTROLLER (AUTO-CORRECT) ---
+// --- COORDINATE FLY TO CONTROLLER (AUTO-CORRECT & EXTERNAL LOCATE) ---
 const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number } | null }> = ({ target }) => {
     const map = useMap();
     useEffect(() => {
         if (target) {
             map.flyTo([target.lat, target.lng], 14, {
                 animate: true,
-                duration: 2.0, // Slower animation for auto-correct to be less jarring
+                duration: 2.0, // Cinematic fly-in
                 easeLinearity: 0.2
             });
         }
@@ -219,13 +174,14 @@ const MapController: React.FC<{
 
 // --- MAIN CHAT MAP ---
 const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation }) => {
-  const [zoom, setZoom] = useState(5);
+  const [zoom, setZoom] = useState(3.5);
   const { t } = useTranslation();
   
   const heatmapRef = useRef<HeatmapLayerRef>(null);
 
-  const startPosition = initialCenter ? [initialCenter.lat, initialCenter.lng] : [60.1, 24.9];
-  const startZoom = initialCenter ? 8 : 4; 
+  // START WIDE: Center on general Europe/Global view roughly, Zoom 3.5
+  const startPosition: [number, number] = [52.0, 10.0]; 
+  const startZoom = 3.5; 
 
   const isMaxZoom = zoom >= 12;
 
@@ -241,7 +197,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         attributionControl={false}
         className="w-full h-full"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }}
-        minZoom={4}
+        minZoom={3}
         maxZoom={12.5}
         zoomSnap={0.5} 
         maxBounds={[[-90, -220], [90, 220]]} 
@@ -266,8 +222,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         
         <MapEventsHandler onMapClick={onMapClick} />
         
-        <LocateControl getUserLocation={getUserLocation} />
-
         {/* Focused Message Marker */}
         {focusedMessage && (
             <Marker 
@@ -389,7 +343,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
            prevProps.focusedMessage === nextProps.focusedMessage &&
            prevProps.hiddenIds === nextProps.hiddenIds &&
            prevProps.getUserLocation === nextProps.getUserLocation &&
-           prevProps.flyToLocation === nextProps.flyToLocation; // Updated comparison
+           prevProps.flyToLocation === nextProps.flyToLocation; 
 });
 
 export default ChatMap;
