@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
 import { triggerHaptic } from '../services/hapticService';
@@ -251,9 +251,15 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                         )}
                     </div>
                 </div>
-                {/* RENDER TEXT WITH HASHTAGS */}
+                {/* RENDER TEXT WITH HASHTAGS OR IMAGE PLACEHOLDER */}
                 <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isHidden ? 'text-gray-500 italic' : 'text-gray-200'} ${isParent && !isHidden ? 'font-medium text-base' : 'font-light'}`}>
-                    {isHidden ? "** CONTENT HIDDEN **" : renderMessageText(msg.text)}
+                    {isHidden 
+                        ? "** CONTENT HIDDEN **" 
+                        : (msg.text && msg.text.trim().length > 0 
+                            ? renderMessageText(msg.text) 
+                            : (msg.imageUrl && <span className="flex items-center gap-2 text-gray-500 italic"><ImageIcon size={14} /> {t('thread.image_attached')}</span>)
+                          )
+                    }
                 </p>
 
                 {/* Render Image Attachment */}

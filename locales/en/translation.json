@@ -11,7 +11,9 @@
     "replies": "Replies",
     "delete_confirm": "Are you sure you want to delete this signal?",
     "visitor_remote": "Remote signal from {{country}}",
-    "visitor_global": "Global signal from {{country}}"
+    "visitor_global": "Global signal from {{country}}",
+    "scanning": "SCANNING...",
+    "signal_locked": "SIGNAL LOCKED"
   },
   "input": {
     "broadcast_signal": "Broadcast Signal",
@@ -34,11 +36,41 @@
     "no_replies": "No replies yet. Be the first to respond.",
     "post_reply_placeholder": "Post a reply...",
     "delete_signal_tooltip": "Delete your signal",
-    "error_send_reply": "Failed to send reply. Please try again."
+    "error_send_reply": "Failed to send reply. Please try again.",
+    "image_attached": "Image attached"
   },
   "map": {
     "sector_scan_active": "Sector Scan Active",
     "signal_locked": "SIGNAL LOCKED",
-    "zoom_limit": "SECURITY PROTOCOL: PRECISE LOCATION ENCRYPTED"
+    "zoom_limit": "SECURITY PROTOCOL: PRECISE LOCATION ENCRYPTED",
+    "masked": "MASKED",
+    "exact": "EXACT",
+    "content_hidden": "** CONTENT HIDDEN **",
+    "open_channel": "OPEN CHANNEL"
+  },
+  "welcome": {
+    "subtitle": "Hyperlocal Signal Grid",
+    "feature_scan_title": "SECTOR SCAN",
+    "feature_scan_desc": "Visible only to those within 140km.",
+    "feature_ghost_title": "GHOST PROTOCOL",
+    "feature_ghost_desc": "No names. No accounts. Total anonymity.",
+    "feature_decay_title": "SIGNAL DECAY",
+    "feature_decay_desc": "Messages fade and vanish automatically.",
+    "status_standby": "SYSTEM STANDBY",
+    "status_init_gps": "INITIALIZING GPS (PRECISION)...",
+    "status_retry": "RETRYING (STANDARD SIGNAL)...",
+    "status_using_last": "USING LAST KNOWN VECTOR...",
+    "status_triangulating": "TRIANGULATING VIA NETWORK NODE...",
+    "status_failed": "CONNECTION FAILED",
+    "error_signal_lost": "SIGNAL LOST. CHECK GPS/NETWORK.",
+    "error_permission": "LOCATION PERMISSION REQUIRED",
+    "btn_initialize": "INITIALIZE UPLINK",
+    "footer_version": "v2.0 • ENCRYPTED CONNECTION"
+  },
+  "boot": {
+    "step1": "> SEARCHING LOCAL FREQUENCIES...",
+    "step2": "> TRIANGULATING SIGNAL SOURCE... [LOCKED]",
+    "step3": "> HANDSHAKE PROTOCOL... [SECURE]",
+    "step4": "> UPLINK ESTABLISHED."
   }
 }

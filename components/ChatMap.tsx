@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert, X } from 'lucide-react';
+import { Crosshair, Lock, ShieldAlert, X, Image as ImageIcon } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
@@ -29,6 +29,8 @@ interface ChatMapProps {
 
 // --- DYNAMIC MARKER ICON GENERATOR (Single Message) ---
 const getMarkerIcon = (msg: ChatMessage) => {
+    // Note: We use a static calculation here inside the memo.
+    // The visual pulse is handled by CSS, not by JS intervals re-rendering the icon.
     const ageMins = (Date.now() - msg.timestamp) / 60000;
     const shouldPulse = ageMins < 15;
     const isMasked = msg.isMasked || false;
@@ -51,10 +53,15 @@ const getMarkerIcon = (msg: ChatMessage) => {
     const visualClasses = isMasked 
         ? 'opacity-60' 
         : 'drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]';
+        
+    // Optimized Pulse: Pure CSS animation.
+    const pulseHtml = shouldPulse 
+        ? `<div class="absolute inset-0 rounded-full border border-cyan-400/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>` 
+        : '';
 
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
-            ${shouldPulse ? `<div class="absolute w-8 h-8 bg-cyan-400/30 rounded-full animate-ping"></div>` : ''}
+            ${pulseHtml}
             <div class="relative z-10 text-cyan-400 ${visualClasses} transition-all duration-300">
                 ${svgContent}
             </div>
@@ -72,14 +79,13 @@ const getMarkerIcon = (msg: ChatMessage) => {
 
 // --- CLUSTER ICON GENERATOR ---
 const getClusterIcon = (count: number) => {
-    // Size logic: min 30px, max 60px
     const size = 30 + (count / 100) * 30;
     const finalSize = Math.min(size, 60);
     const isLarge = count > 10;
     
     return L.divIcon({
         html: `<div class="kaiku-cluster ${isLarge ? 'kaiku-cluster-large' : ''}" style="width: ${finalSize}px; height: ${finalSize}px;">${count}</div>`,
-        className: 'bg-transparent border-none', // Leaflet container transparent
+        className: 'bg-transparent border-none', 
         iconSize: [finalSize, finalSize],
         iconAnchor: [finalSize / 2, finalSize / 2]
     });
@@ -149,47 +155,9 @@ const MapController: React.FC<{
   const map = useMap();
   const lastUpdateRef = useRef(0);
 
-  const updateBounds = useCallback(() => {
-      const b = map.getBounds();
-      // Leaflet: West, South, East, North
-      // Supercluster: [West, South, East, North]
-      setBounds([
-          b.getWest(),
-          b.getSouth(),
-          b.getEast(),
-          b.getNorth()
-      ]);
-  }, [map, setBounds]);
-
-  // Initial Sync
-  useEffect(() => {
-      updateBounds();
-  }, []);
-
-  useEffect(() => {
-      const invalidate = () => {
-          map.invalidateSize({ animate: false });
-      };
-      
-      invalidate();
-      
-      const timer = setTimeout(invalidate, 300);
-      window.addEventListener('resize', invalidate);
-
-      const container = map.getContainer();
-      const resizeObserver = new ResizeObserver(() => {
-          invalidate();
-      });
-      resizeObserver.observe(container);
-
-      return () => {
-          clearTimeout(timer);
-          window.removeEventListener('resize', invalidate);
-          resizeObserver.disconnect();
-      };
-  }, [map]);
-
-  const handleMove = useCallback(() => {
+  // 1. UPDATE VIEWPORT (Feed logic, frequent)
+  // This informs the App about where we are looking so the feed updates.
+  const handleViewportUpdate = useCallback(() => {
       const bounds = map.getBounds();
       const center = map.getCenter();
       const z = map.getSize().x > 0 ? map.getZoom() : 0;
@@ -203,9 +171,6 @@ const MapController: React.FC<{
           // @ts-ignore
           sectorLatLng = map.containerPointToLatLng(sectorPoint);
       } catch (e) {}
-
-      setZoom(z);
-      updateBounds();
       
       onViewportChange({
           north: bounds.getNorth(),
@@ -216,31 +181,145 @@ const MapController: React.FC<{
           center: { lat: center.lat, lng: center.lng },
           sectorCenter: { lat: sectorLatLng.lat, lng: sectorLatLng.lng }
       });
-  }, [map, onViewportChange, setZoom, updateBounds]);
+  }, [map, onViewportChange]);
+
+  // 2. UPDATE CLUSTERS (Markers, expensive/flicker-prone)
+  // Only called when movement STOPS to prevent marker regeneration during drag.
+  const handleClusterUpdate = useCallback(() => {
+      const b = map.getBounds();
+      // Leaflet: West, South, East, North -> Supercluster: [West, South, East, North]
+      setBounds([
+          b.getWest(),
+          b.getSouth(),
+          b.getEast(),
+          b.getNorth()
+      ]);
+      setZoom(map.getZoom());
+  }, [map, setBounds, setZoom]);
+
+  // Initial Sync
+  useEffect(() => {
+      handleViewportUpdate();
+      handleClusterUpdate();
+  }, []);
+
+  useEffect(() => {
+      const invalidate = () => map.invalidateSize({ animate: false });
+      invalidate();
+      window.addEventListener('resize', invalidate);
+      return () => window.removeEventListener('resize', invalidate);
+  }, [map]);
 
   useMapEvents({
     move: () => {
+        // Feed/Radar updates are allowed during move (throttled), 
+        // but we DO NOT update clusters here.
         const now = Date.now();
         if (now - lastUpdateRef.current > 100) { 
-            handleMove();
+            handleViewportUpdate();
             lastUpdateRef.current = now;
         }
     },
     moveend: () => {
-        handleMove();
+        handleViewportUpdate();
+        handleClusterUpdate(); // Update markers only when stopped
         lastUpdateRef.current = Date.now();
     },
     zoomend: () => {
-        setZoom(map.getZoom());
-        handleMove(); 
-    },
-    zoom: () => {
-        setZoom(map.getZoom());
+        handleViewportUpdate();
+        handleClusterUpdate(); // Update markers after zoom
     }
   });
 
   return null;
 };
+
+// --- MEMOIZED MARKER COMPONENT ---
+const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenThread, onClosePopup, mapInstance }: {
+    msg: ChatMessage,
+    position: [number, number],
+    isFocused: boolean,
+    isHidden: boolean,
+    onOpenThread: (msg: ChatMessage) => void,
+    onClosePopup: () => void,
+    mapInstance: L.Map | null
+}) => {
+    const { t } = useTranslation();
+    
+    // Stable icon generation
+    const icon = useMemo(() => getMarkerIcon(msg), [
+        msg.id, 
+        msg.isMasked, 
+        // Effectively constant for the lifespan of the marker component instance
+        msg.timestamp 
+    ]);
+
+    return (
+        <Marker 
+            position={position} 
+            icon={icon}
+            ref={(ref) => {
+                if (ref && isFocused) {
+                    setTimeout(() => ref.openPopup(), 600); 
+                }
+            }}
+        >
+            <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -4]}>
+                <div className="p-3 relative">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onClosePopup();
+                            mapInstance?.closePopup(); 
+                        }}
+                        className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors z-50"
+                    >
+                        <X size={14} />
+                    </button>
+
+                    <div onClick={() => !isHidden && onOpenThread(msg)} className="cursor-pointer group mt-1">
+                        <div className="flex items-center justify-between mb-2 pr-6">
+                            <span className="text-[10px] text-cyan-400 font-mono font-bold tracking-wider flex items-center gap-1">
+                                <Crosshair size={10} /> {msg.isMasked ? t('map.masked') : t('map.exact')}
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-mono">
+                                {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                        </div>
+                        
+                        {isHidden ? (
+                            <p className="text-sm text-gray-500 italic leading-relaxed mb-3 font-light border-l-2 border-gray-500/30 pl-2">
+                                {t('map.content_hidden')}
+                            </p>
+                        ) : (
+                            <div className="mb-3 border-l-2 border-cyan-500/30 pl-2 group-hover:border-cyan-400 transition-colors">
+                                <p className="text-sm text-gray-200 leading-relaxed line-clamp-3 font-light">
+                                    {msg.text ? msg.text : (msg.imageUrl && (
+                                        <span className="flex items-center gap-2 text-gray-400 italic font-mono text-xs">
+                                            <ImageIcon size={14} /> {t('thread.image_attached')}
+                                        </span>
+                                    ))}
+                                </p>
+                            </div>
+                        )}
+                        
+                        {!isHidden && (
+                            <div className="text-center py-1.5 bg-white/5 rounded text-[10px] text-cyan-400 font-bold tracking-widest group-hover:bg-cyan-500 group-hover:text-black transition-all">
+                                {t('map.open_channel')}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </Popup>
+        </Marker>
+    );
+}, (prev, next) => {
+    return prev.msg.id === next.msg.id &&
+           prev.isFocused === next.isFocused &&
+           prev.isHidden === next.isHidden &&
+           prev.position[0] === next.position[0] &&
+           prev.position[1] === next.position[1];
+});
 
 // --- MAIN CHAT MAP ---
 const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation, userLocation }) => {
@@ -255,7 +334,8 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   const startPosition: [number, number] = [52.0, 10.0]; 
   const startZoom = 3.5; 
 
-  const isMaxZoom = zoom >= 12;
+  // CHANGED: Sweeper turns red only at very deep zoom (17.5+), since Max is 18.
+  const isMaxZoom = zoom >= 17.5; 
 
   const getRadarScale = (currentZoom: number) => {
     if (currentZoom >= 13) return 1.0;
@@ -267,7 +347,15 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   const pulseMultiplier = isMaxZoom ? 1.1 : (hasSignal ? 1.05 : 1.0);
   const totalScale = baseScale * pulseMultiplier;
 
-  // 1. Prepare Points for Supercluster (GeoJSON format)
+  const handleOpenThreadStable = useCallback((msg: ChatMessage) => {
+    onOpenThread(msg);
+  }, [onOpenThread]);
+
+  const handleClosePopupStable = useCallback(() => {
+    onClosePopup();
+  }, [onClosePopup]);
+
+  // 1. Prepare Points for Supercluster
   const points = useMemo(() => {
       return messages.map(msg => ({
           type: 'Feature',
@@ -284,14 +372,13 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
     points,
     bounds: bounds ? bounds : [-180, -90, 180, 90],
     zoom: zoom,
-    options: { radius: 60, maxZoom: 14 } // Radius in pixels for clustering
+    options: { radius: 60, maxZoom: 16 } 
   });
 
-  // Handle clicking a cluster to expand
   const handleClusterClick = useCallback((id: number, lat: number, lng: number) => {
       const expansionZoom = Math.min(
           supercluster.getClusterExpansionZoom(id),
-          16
+          18
       );
       mapRef.current?.flyTo([lat, lng], expansionZoom, {
           animate: true,
@@ -300,7 +387,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   }, [supercluster]);
 
   return (
-    // FORCE FULL-SCREEN CSS for KAIKU BACKGROUND LAYER
     <div className="absolute inset-0 w-full h-full z-0 bg-[#0a0a12] overflow-hidden">
       <MapContainer
         // @ts-ignore
@@ -313,7 +399,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
         className="w-full h-full outline-none"
         style={{ width: '100%', height: '100%', background: '#0a0a12' }} 
         minZoom={3}
-        maxZoom={16} // Allow deeper zoom for clusters to break
+        maxZoom={18} // UNLOCKED: Allow full zooming
         zoomSnap={0.5} 
         maxBounds={[[-90, -220], [90, 220]]} 
         preferCanvas={true}
@@ -341,12 +427,10 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
 
         {userLocation && <UserLocationMarker position={userLocation} />}
         
-        {/* RENDER CLUSTERS & MARKERS */}
         {clusters.map((cluster) => {
             const [longitude, latitude] = cluster.geometry.coordinates;
             const { cluster: isCluster, point_count: pointCount } = cluster.properties;
 
-            // CASE 1: IT IS A CLUSTER (Group of points)
             if (isCluster) {
                 return (
                     <Marker
@@ -363,63 +447,19 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                 );
             }
 
-            // CASE 2: IT IS A SINGLE MESSAGE MARKER
-            // Extract the original message data we stashed in 'properties'
             const msg = cluster.properties as ChatMessage;
 
             return (
-                <Marker 
+                <MessageMarker 
                     key={msg.id}
-                    position={[msg.location.lat, msg.location.lng]} 
-                    icon={getMarkerIcon(msg)}
-                    ref={(ref) => {
-                        if (ref && focusedMessage?.id === msg.id) {
-                            setTimeout(() => ref.openPopup(), 600); 
-                        }
-                    }}
-                >
-                    <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -4]}>
-                        <div className="p-3 relative">
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onClosePopup();
-                                    mapRef.current?.closePopup(); // EXPLICITLY CLOSE LEAFLET POPUP
-                                }}
-                                className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors z-50"
-                            >
-                                <X size={14} />
-                            </button>
-
-                            <div onClick={() => !hiddenIds.has(msg.id) && onOpenThread(msg)} className="cursor-pointer group mt-1">
-                                <div className="flex items-center justify-between mb-2 pr-6">
-                                    <span className="text-[10px] text-cyan-400 font-mono font-bold tracking-wider flex items-center gap-1">
-                                        <Crosshair size={10} /> {msg.isMasked ? 'MASKED' : 'EXACT'}
-                                    </span>
-                                    <span className="text-[10px] text-gray-500 font-mono">
-                                        {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                    </span>
-                                </div>
-                                
-                                {hiddenIds.has(msg.id) ? (
-                                    <p className="text-sm text-gray-500 italic leading-relaxed mb-3 font-light border-l-2 border-gray-500/30 pl-2">
-                                        ** CONTENT HIDDEN **
-                                    </p>
-                                ) : (
-                                    <p className="text-sm text-gray-200 leading-relaxed line-clamp-3 mb-3 font-light border-l-2 border-cyan-500/30 pl-2 group-hover:border-cyan-400 transition-colors">
-                                        {msg.text}
-                                    </p>
-                                )}
-                                
-                                {!hiddenIds.has(msg.id) && (
-                                    <div className="text-center py-1.5 bg-white/5 rounded text-[10px] text-cyan-400 font-bold tracking-widest group-hover:bg-cyan-500 group-hover:text-black transition-all">
-                                        OPEN CHANNEL
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </Popup>
-                </Marker>
+                    msg={msg}
+                    position={[msg.location.lat, msg.location.lng]}
+                    isFocused={focusedMessage?.id === msg.id}
+                    isHidden={hiddenIds.has(msg.id)}
+                    onOpenThread={handleOpenThreadStable}
+                    onClosePopup={handleClosePopupStable}
+                    mapInstance={mapRef.current}
+                />
             );
         })}
 
@@ -438,8 +478,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                 willChange: 'transform'
             }}
           >
-              
-              {/* REPLACED CSS RADAR WITH SVG RADAR (Retained from previous fix) */}
               <div 
                    className="absolute w-64 h-64"
                    style={{ 
@@ -448,7 +486,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                        transition: 'transform 0.2s ease-out, opacity 0.5s ease-out'
                    }}
               >
-                  {/* SVG Sweep - Replaces Conic Gradient */}
                   <svg 
                     viewBox="0 0 100 100" 
                     className="absolute inset-0 w-full h-full animate-[spin_4s_linear_infinite]"
@@ -460,14 +497,12 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                             <stop offset="100%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0.4" />
                         </linearGradient>
                     </defs>
-                    {/* A wedge shape for the radar sweep */}
                     <path 
                         d="M50 50 L50 0 A50 50 0 0 1 100 50 Z" 
                         fill="url(#sweepGradient)"
                     />
                   </svg>
                   
-                  {/* Outer Rings (SVG) */}
                   <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full">
                       <circle cx="50" cy="50" r="48" 
                           fill="none" 
@@ -484,13 +519,11 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
                       />
                   </svg>
 
-                  {/* Decorative Inner Ring */}
                   <div 
                     className={`absolute inset-[25%] rounded-full border border-dashed opacity-30 animate-[spin_10s_linear_infinite_reverse] ${isMaxZoom ? 'border-red-500' : 'border-cyan-400'}`}
                   />
               </div>
 
-              {/* Icon Center - Independent of Scale */}
               <div className={`transition-all duration-300 z-10 
                   ${isMaxZoom 
                       ? 'text-red-500 drop-shadow-[0_0_12px_rgba(239,68,68,1)] scale-125' 

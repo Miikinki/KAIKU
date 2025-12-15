@@ -273,7 +273,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                          </div>
                          <div className="flex flex-col">
                              <span className={`text-xs font-bold tracking-widest uppercase ${hasSignal ? 'text-cyan-400' : 'text-gray-400'}`}>
-                                {hasSignal ? t('map.signal_locked') : "SCANNING..."}
+                                {hasSignal ? t('feed.signal_locked') : t('feed.scanning')}
                              </span>
                              <div className="flex items-center gap-2">
                                 <span className={`text-[10px] font-mono ${displayMessages.length === 0 ? 'text-gray-500' : 'text-white/60'}`}>

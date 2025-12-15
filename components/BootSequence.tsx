@@ -1,21 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 
 interface BootSequenceProps {
   onComplete: () => void;
 }
 
-// Defined outside to ensure stability
-const SEQUENCE = [
-  "> SEARCHING LOCAL FREQUENCIES...",
-  "> TRIANGULATING SIGNAL SOURCE... [LOCKED]",
-  "> HANDSHAKE PROTOCOL... [SECURE]",
-  "> UPLINK ESTABLISHED."
-];
-
 const BootSequence: React.FC<BootSequenceProps> = ({ onComplete }) => {
+  const { t } = useTranslation();
+  
   // We use a counter instead of an array to prevent "Strict Mode" duplicate appends
   const [visibleCount, setVisibleCount] = useState(0);
+
+  const SEQUENCE = useMemo(() => [
+      t('boot.step1'),
+      t('boot.step2'),
+      t('boot.step3'),
+      t('boot.step4')
+  ], [t]);
 
   useEffect(() => {
     const timeouts: NodeJS.Timeout[] = [];

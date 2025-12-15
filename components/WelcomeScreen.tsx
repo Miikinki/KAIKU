@@ -2,15 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Radio, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getIpLocation } from '../services/moderationService';
+import { useTranslation } from 'react-i18next';
 
 interface WelcomeScreenProps {
   onStart: (location: { lat: number; lng: number }, isFallback: boolean) => void;
 }
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
-  const [statusText, setStatusText] = useState("SYSTEM STANDBY");
+  const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setStatusText(t('welcome.status_standby'));
+  }, [t]);
 
   // Intro animation sequence
   const [showContent, setShowContent] = useState(false);
@@ -32,7 +38,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
 
     // --- STRATEGY 1: HIGH ACCURACY GPS (STRICT) ---
     try {
-        setStatusText("INITIALIZING GPS (PRECISION)...");
+        setStatusText(t('welcome.status_init_gps'));
         
         // maximumAge: 0 forces a fresh fix. 
         // timeout: 10000 (10s) gives enough time but fails fast enough if indoors
@@ -52,7 +58,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
 
     // --- STRATEGY 2: LOW ACCURACY / CACHED GPS (Fallback) ---
     try {
-        setStatusText("RETRYING (STANDARD SIGNAL)...");
+        setStatusText(t('welcome.status_retry'));
         
         const pos = await getPosition({ 
             enableHighAccuracy: false, 
@@ -69,8 +75,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         // If it was a permission denied error (Code 1), stop here.
         if (err.code === 1) {
             setIsLoading(false);
-            setStatusText("PERMISSION DENIED");
-            setError("LOCATION PERMISSION REQUIRED");
+            setStatusText(t('welcome.status_failed'));
+            setError(t('welcome.error_permission'));
             return;
         }
         // Continue to Strategy 3...
@@ -82,7 +88,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         try {
             const parsed = JSON.parse(savedLoc);
             if (parsed.lat && parsed.lng) {
-                setStatusText("USING LAST KNOWN VECTOR...");
+                setStatusText(t('welcome.status_using_last'));
                 setTimeout(() => {
                     onStart(parsed, true); // Mark as fallback so App knows to keep looking for better signal
                 }, 500);
@@ -93,7 +99,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
 
     // --- STRATEGY 4: IP GEOLOCATION (LAST RESORT) ---
     try {
-        setStatusText("TRIANGULATING VIA NETWORK NODE...");
+        setStatusText(t('welcome.status_triangulating'));
         const ipLoc = await getIpLocation();
         
         if (ipLoc) {
@@ -106,8 +112,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
 
     // --- FAILURE ---
     setIsLoading(false);
-    setStatusText("CONNECTION FAILED");
-    setError("SIGNAL LOST. CHECK GPS/NETWORK.");
+    setStatusText(t('welcome.status_failed'));
+    setError(t('welcome.error_signal_lost'));
   };
 
   return (
@@ -155,26 +161,26 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                     KAIKU
                 </h1>
                 <p className="text-cyan-500 font-mono text-xs tracking-[0.4em] uppercase mb-10">
-                    Hyperlocal Signal Grid
+                    {t('welcome.subtitle')}
                 </p>
 
                 <div className="w-full space-y-6 mb-12">
                     <FeatureRow 
                         icon={<Globe size={18} />} 
-                        title="SECTOR SCAN" 
-                        desc="Visible only to those within 140km." 
+                        title={t('welcome.feature_scan_title')}
+                        desc={t('welcome.feature_scan_desc')} 
                         delay={0.1}
                     />
                     <FeatureRow 
                         icon={<EyeOff size={18} />} 
-                        title="GHOST PROTOCOL" 
-                        desc="No names. No accounts. Total anonymity." 
+                        title={t('welcome.feature_ghost_title')}
+                        desc={t('welcome.feature_ghost_desc')} 
                         delay={0.2}
                     />
                     <FeatureRow 
                         icon={<Lock size={18} />} 
-                        title="SIGNAL DECAY" 
-                        desc="Messages fade and vanish automatically." 
+                        title={t('welcome.feature_decay_title')}
+                        desc={t('welcome.feature_decay_desc')}
                         delay={0.3}
                     />
                 </div>
@@ -203,7 +209,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                             </>
                         ) : (
                             <>
-                                <span className="font-bold tracking-[0.2em] text-sm">INITIALIZE UPLINK</span>
+                                <span className="font-bold tracking-[0.2em] text-sm">{t('welcome.btn_initialize')}</span>
                                 <ChevronRight size={20} className="group-hover/btn:translate-x-1 transition-transform" />
                             </>
                         )}
@@ -220,7 +226,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                 </button>
 
                 <p className="mt-6 text-[10px] text-gray-600 font-mono">
-                    v2.0 • ENCRYPTED CONNECTION
+                    {t('welcome.footer_version')}
                 </p>
 
             </div>

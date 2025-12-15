@@ -15,7 +15,9 @@ import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './consta
 import { AnimatePresence, motion } from 'framer-motion';
 import { triggerHaptic } from './services/hapticService';
 
-const SCAN_RADIUS_PX = 150; 
+// BASE SCAN RADIUS (Visual Reference)
+// This matches the visual size of the Radar SVG in ChatMap (w-64 = 256px diameter => 128px radius)
+const BASE_SCAN_RADIUS_PX = 128; 
 
 type AppState = 'welcome' | 'boot' | 'app';
 
@@ -143,13 +145,15 @@ function App() {
             },
             (err) => {
                 console.warn("GPS Watch Error:", err.code, err.message);
-                setGpsAccuracy(null); // Signal lost
+                // Do NOT set gpsAccuracy to null here immediately on minor errors, 
+                // as Mobile Chrome sometimes throws transient errors in background.
             },
             { 
-                // CRITICAL: High Precision Settings
+                // CRITICAL: High Precision Settings for Mobile Chrome
+                // These settings force the device to use hardware GPS instead of Wi-Fi triangulation.
                 enableHighAccuracy: true, 
-                maximumAge: 0, // Do not use cached positions
-                timeout: 10000 // 10s timeout to force updates
+                maximumAge: 0, // CRITICAL: Never use cached position. Always ping satellite.
+                timeout: 20000 // 20s timeout gives GPS radio time to warm up.
             }
         );
     }
@@ -243,8 +247,20 @@ function App() {
     const centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
     const centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
 
+    // MATCHES VISUAL LOGIC IN ChatMap.tsx
+    // The radar shrinks visually at low zoom (0.4x) and grows at high zoom (1.0x).
+    // We must mirror this scale in logic to avoid capturing distant messages (e.g. Porvoo from Sweden).
+    const getRadarScale = (currentZoom: number) => {
+        if (currentZoom >= 13) return 1.0;
+        if (currentZoom <= 7) return 0.4;
+        return 0.4 + ((currentZoom - 7) / (13 - 7)) * (1.0 - 0.4);
+    };
+
+    const scale = getRadarScale(currentBounds.zoom);
+    const effectiveRadiusPx = BASE_SCAN_RADIUS_PX * scale;
+
     const metersPerPx = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
-    const radiusKm = (metersPerPx * SCAN_RADIUS_PX) / 1000;
+    const radiusKm = (metersPerPx * effectiveRadiusPx) / 1000;
 
     let visible = messages.filter(m => {
       const expiry = m.expiresAt || (m.timestamp + MESSAGE_LIFESPAN_MS);
@@ -269,37 +285,42 @@ function App() {
     setVisibleMessages(visible);
   }, [messages, currentBounds]);
 
-  const handleViewportChange = (bounds: ViewportBounds) => {
+  const handleViewportChange = useCallback((bounds: ViewportBounds) => {
     setCurrentBounds(bounds);
-  };
+  }, []);
 
-  const handleMapClick = () => {
+  const handleMapClick = useCallback(() => {
     if (isFeedOpen) {
         SoundService.playClick();
         setIsFeedOpen(false);
     } else {
         SoundService.playClick();
     }
-  };
+  }, [isFeedOpen]);
 
-  const handleMessageClick = (msg: ChatMessage) => {
+  const handleMessageClick = useCallback((msg: ChatMessage) => {
       SoundService.playClick();
       triggerHaptic('light'); 
       setFocusedMessage(msg); 
       setIsFeedOpen(false);   
-  };
+  }, []);
 
-  const handleOpenThread = (msg: ChatMessage) => {
+  const handleOpenThread = useCallback((msg: ChatMessage) => {
       SoundService.playClick();
       setSelectedMessage(msg);
-  };
+  }, []);
 
-  const handleTagClick = (tag: string) => {
+  const handleTagClick = useCallback((tag: string) => {
       SoundService.playClick();
       setActiveTag(tag);
       setIsFeedOpen(true);
       setSelectedMessage(null);
-  };
+  }, []);
+
+  const handleClosePopup = useCallback(() => {
+      SoundService.playClick(); 
+      setFocusedMessage(null);
+  }, []);
 
   // UPDATED: Robust getLocation with strict rules
   const getLocation = useCallback(async (forceRefresh = false): Promise<{lat: number, lng: number}> => {
@@ -309,8 +330,9 @@ function App() {
         new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, opts));
 
      try {
-         // 2. ATTEMPT HIGH ACCURACY (Strict)
-         const pos = await getPos({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+         // 2. ATTEMPT HIGH ACCURACY (Strict & Aggressive)
+         // maximumAge: 0 is vital here to prevent Chrome from returning a cached Wi-Fi location.
+         const pos = await getPos({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
          
          locationCache.current = loc;
@@ -320,7 +342,8 @@ function App() {
          return loc;
      } catch (e) {
          console.warn("High Accuracy GPS failed, falling back to cache if available.");
-         setGpsAccuracy(null); // Mark as lost/unknown
+         // Note: If manual fetch fails, we don't nullify gpsAccuracy immediately to avoid UI flickering,
+         // but rely on the watcher to correct it or persistent failure.
          if (locationCache.current) return locationCache.current;
          throw new Error("GPS Signal Lost. Please move to a clearer area.");
      }
@@ -347,8 +370,13 @@ function App() {
       SoundService.playClick();
       setTargetLocation(null); 
       
+      // TRIGGER GPS WAKEUP: 
+      // Force a manual refresh immediately to wake up the hardware radio on mobile.
+      // We don't await this to open the modal, but it starts the process.
+      getLocation(true).catch(e => console.log("Background wake-up GPS fetch failed", e));
+      
       try {
-          // Use cached location immediately for speed
+          // Use cached location immediately for speed while hardware warms up
           const userLoc = await getLocation(false); 
           const lat = userLoc.lat;
           const lng = userLoc.lng;
@@ -420,7 +448,7 @@ function App() {
       }
   };
 
-  const handleVote = async (msgId: string, direction: 'up' | 'down') => {
+  const handleVote = useCallback(async (msgId: string, direction: 'up' | 'down') => {
     SoundService.playClick();
     setMessages(prev => prev.map(m => {
         if (m.id === msgId) {
@@ -430,20 +458,20 @@ function App() {
         return m;
     }));
     await castVote(msgId, direction);
-  };
+  }, []);
 
-  const handleDelete = async (msgId: string, parentId?: string | null) => {
+  const handleDelete = useCallback(async (msgId: string, parentId?: string | null) => {
     setMessages(prev => prev.filter(m => m.id !== msgId));
     if (selectedMessage?.id === msgId) setSelectedMessage(null);
     if (focusedMessage?.id === msgId) setFocusedMessage(null);
     await deleteMessage(msgId);
-  };
+  }, [selectedMessage, focusedMessage]);
 
-  const handleToggleHidden = (msgId: string) => {
+  const handleToggleHidden = useCallback((msgId: string) => {
       const newSet = toggleHiddenMessage(msgId);
       setHiddenIds(newSet);
       triggerHaptic('light'); 
-  };
+  }, []);
   
   const toggleMute = () => {
       const newState = SoundService.toggleMute();
@@ -491,7 +519,7 @@ function App() {
                 flyToLocation={flyToLocation}
                 focusedMessage={focusedMessage}
                 onOpenThread={handleOpenThread}
-                onClosePopup={() => { SoundService.playClick(); setFocusedMessage(null); }}
+                onClosePopup={handleClosePopup}
                 hiddenIds={hiddenIds}
                 getUserLocation={getLocation}
                 userLocation={currentUserLocation} 

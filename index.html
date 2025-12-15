@@ -44,14 +44,8 @@
         -webkit-tap-highlight-color: transparent;
       }
 
-      /* 2. Prevent "floating squares" by flattening the render layer */
-      .leaflet-map-pane,
-      .leaflet-tile-pane,
-      .leaflet-marker-pane,
-      .leaflet-overlay-pane {
-        transform-style: flat !important; /* Forces 2D rendering context */
-        z-index: auto;
-      }
+      /* 2. REMOVED aggressive flattening to fix marker drift on pan */
+      /* The previous 'transform-style: flat' caused markers to detach visually during drag */
 
       /* 3. Fix Tile Tearing/Flickering/White Lines on Zoom */
       .leaflet-tile {

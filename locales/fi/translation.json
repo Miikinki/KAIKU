@@ -11,7 +11,9 @@
     "replies": "Vastausta",
     "delete_confirm": "Haluatko varmasti poistaa tämän signaalin?",
     "visitor_remote": "Etäsignaali maasta: {{country}}",
-    "visitor_global": "Globaali signaali maasta: {{country}}"
+    "visitor_global": "Globaali signaali maasta: {{country}}",
+    "scanning": "SKANNATAAN...",
+    "signal_locked": "SIGNAALI LUKITTU"
   },
   "input": {
     "broadcast_signal": "Lähetä Signaali",
@@ -34,11 +36,41 @@
     "no_replies": "Ei vastauksia. Ole ensimmäinen.",
     "post_reply_placeholder": "Kirjoita vastaus...",
     "delete_signal_tooltip": "Poista signaali",
-    "error_send_reply": "Vastauksen lähetys epäonnistui. Yritä uudelleen."
+    "error_send_reply": "Vastauksen lähetys epäonnistui. Yritä uudelleen.",
+    "image_attached": "Kuvaliite"
   },
   "map": {
     "sector_scan_active": "SEKTORISKANNAUS AKTIIVINEN",
     "signal_locked": "SIGNAALI LUKITTU",
-    "zoom_limit": "TURVALLISUUSPROTOKOLLA: TARKKA SIJAINTI SALATTU"
+    "zoom_limit": "TURVALLISUUSPROTOKOLLA: TARKKA SIJAINTI SALATTU",
+    "masked": "MASKATTU",
+    "exact": "TARKKA",
+    "content_hidden": "** SISÄLTÖ PIILOTETTU **",
+    "open_channel": "AVAA KANAVA"
+  },
+  "welcome": {
+    "subtitle": "Hyperlokaali Signaaliverkko",
+    "feature_scan_title": "SEKTORISKANNAUS",
+    "feature_scan_desc": "Näkyy vain 140km säteellä oleville.",
+    "feature_ghost_title": "GHOST PROTOKOLLA",
+    "feature_ghost_desc": "Ei nimiä. Ei tilejä. Täysi anonymiteetti.",
+    "feature_decay_title": "SIGNAALIN HÄIPYMINEN",
+    "feature_decay_desc": "Viestit katoavat automaattisesti.",
+    "status_standby": "JÄRJESTELMÄ VALMIUSTILASSA",
+    "status_init_gps": "ALUSTETAAN GPS (TARKKUUS)...",
+    "status_retry": "Y RITETÄÄN UUDELLEEN (NORMAALI SIGNAALI)...",
+    "status_using_last": "KÄYTETÄÄN VIIMEISINTÄ VEKTORIA...",
+    "status_triangulating": "KOLMIOIDAAN VERKKOSOLMUN KAUTTA...",
+    "status_failed": "YHTEYS EPÄONNISTUI",
+    "error_signal_lost": "SIGNAALI KATKESI. TARKISTA GPS/VERKKO.",
+    "error_permission": "SIJAINTILUPA VAADITAAN",
+    "btn_initialize": "ALUSTA YHTEYS",
+    "footer_version": "v2.0 • SALATTU YHTEYS"
+  },
+  "boot": {
+    "step1": "> ETSITÄÄN PAIKALLISIA TAAJUUKSIA...",
+    "step2": "> KOLMIOIDAAN SIGNAALILÄHDETTÄ... [LUKITTU]",
+    "step3": "> KÄTTELYPROTOKOLLA... [TURVATTU]",
+    "step4": "> YHTEYS MUODOSTETTU."
   }
 }

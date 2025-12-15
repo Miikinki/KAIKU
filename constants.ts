@@ -16,11 +16,6 @@ export const SCORE_THRESHOLD_HIDE = -999; // Deprecated (since we don't downvote
 export const THEME_COLOR = '#06b6d4'; // Cyan-500
 export const THEME_COLOR_GLOW = '#22d3ee'; // Cyan-400
 
-// PRIVACY SETTINGS
-// 0.03 degrees is roughly ~3km jitter. 
-// This ensures that even if IP geolocation is accurate, the saved point is never the user's exact house.
-export const PRIVACY_JITTER_DEG = 0.03; 
-
 // Basic moderation list
 export const BANNED_WORDS = [
   'spam', 'scam', 'buy', 'sell', 'crypto', 'nft' 

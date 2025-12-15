@@ -1,6 +1,6 @@
 import { ChatMessage, RateLimitStatus } from '../types';
 import { supabase } from './supabaseClient';
-import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS, PRIVACY_JITTER_DEG } from '../constants';
+import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -275,15 +275,12 @@ export const subscribeToPresence = (
         setTyping: async (isTyping: boolean, loc?: { lat: number, lng: number }) => {
             if (!presenceChannel) return;
             
-            // Jitter location slightly so we don't leak exact house via Presence
-            const safeLat = loc ? loc.lat + (Math.random() - 0.5) * 0.01 : 0;
-            const safeLng = loc ? loc.lng + (Math.random() - 0.5) * 0.01 : 0;
-
+            // RAW DATA POLICY: No jitter/noise added to user coordinates.
             await presenceChannel.track({
                 user: myId,
                 isTyping,
-                lat: safeLat,
-                lng: safeLng,
+                lat: loc ? loc.lat : 0,
+                lng: loc ? loc.lng : 0,
                 lastActive: Date.now()
             });
         },
@@ -447,11 +444,9 @@ export const saveMessage = async (
   }
   
   // SIGNAL MASKING LOGIC (Location Fuzzing)
-  // If useSignalMasking is true, we apply a significant random offset (~500m - 1km).
-  // If false, we use the exact coordinates.
+  // ONLY APPLIED if useSignalMasking is true.
   const applyMask = (coord: number) => {
       // 0.01 degrees is approx 1.1km latitude
-      // (Math.random() - 0.5) * 0.01 gives a range of +/- 0.005 degrees (~550m)
       const offset = (Math.random() - 0.5) * 0.01;
       return coord + offset;
   };

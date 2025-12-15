@@ -309,7 +309,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                   disabled={isSendDisabled}
                   className={`w-full py-3 font-bold rounded-xl flex items-center justify-center gap-2 transition-all 
                       ${isExactModeBlocked 
-                          ? 'bg-red-900/50 text-red-300 cursor-not-allowed border border-red-500/30' 
+                          ? 'bg-amber-900/50 text-amber-200 cursor-not-allowed border border-amber-500/30' 
                           : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
                       }`}
                 >
@@ -320,8 +320,8 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                       </>
                   ) : isExactModeBlocked ? (
                       <>
-                        <AlertTriangle size={18} />
-                        <span>WEAK GPS SIGNAL (ENABLE MASKING)</span>
+                        <Loader2 className="animate-spin" />
+                        <span className="animate-pulse">ACQUIRING SATELLITES...</span>
                       </>
                   ) : (
                       <>
