@@ -133,112 +133,121 @@ const GlowLayer = L.Layer.extend({
         const now = Date.now();
 
         // 1. Process Pings (Calculate current radius in pixels for this frame)
-        // We project the ping origin to container point to measure pixel distance
         const activePings = this._pings.map((ping: any) => {
              const elapsed = now - ping.startTime;
-             // Remove old pings from calculation to save perf
              if (elapsed > 2000) return null;
              
              const p = this._map.latLngToContainerPoint([ping.lat, ping.lng]);
              return {
                  x: p.x * dpr,
                  y: p.y * dpr,
-                 radius: elapsed * SPEED_PX_PER_MS * dpr, // Expand rate
+                 radius: elapsed * SPEED_PX_PER_MS * dpr,
                  id: ping.id
              };
         }).filter(Boolean);
         
-        // Clean up raw array
         this._pings = this._pings.filter((p: any) => (now - p.startTime) < 2000);
 
+        // 2. Base Scale Logic
+        // We make the radius LARGER but more transparent.
+        // This allows clusters to merge into a "fog" rather than hard dots.
+        let baseRadius = 20 * dpr; 
+        
+        // Intensity needs to be much lower for 'screen' blending to work nicely with overlapping
+        let baseIntensity = 0.15; 
 
-        // 2. Base Size Logic
-        let baseRadius = 15 * dpr;
-        let baseIntensity = 0.4;
+        if (zoom < 5) { baseRadius = 10 * dpr; baseIntensity = 0.3; } // World view: dots are distinct lights
+        else if (zoom < 8) { baseRadius = 25 * dpr; baseIntensity = 0.15; } // Region view: soft large clouds
+        else if (zoom < 10) { baseRadius = 50 * dpr; baseIntensity = 0.12; } // City view
+        else { baseRadius = 100 * dpr; baseIntensity = 0.08; } // Street view: huge ambient glow
 
-        if (zoom < 5) { baseRadius = 6 * dpr; baseIntensity = 0.6; }
-        else if (zoom < 8) { baseRadius = 13 * dpr; baseIntensity = 0.5; }
-        else if (zoom < 10) { baseRadius = 25 * dpr; baseIntensity = 0.35; }
-        else { baseRadius = 55 * dpr; baseIntensity = 0.25; } 
+        // ENABLE ADDITIVE BLENDING (The "Sci-Fi" Glow Trick)
+        // Overlapping pixels will get brighter, creating a hot white center naturally
+        ctx.globalCompositeOperation = 'screen'; 
 
         // 3. Draw Loop
         this._data.forEach((msg: ChatMessage) => {
-            if (!bounds.contains([msg.location.lat, msg.location.lng])) return;
+            // Optimization: Skip if far outside view
+            // We use a margin because the glow radius is large
+            const margin = 0.5; // degrees
+            if (msg.location.lat > bounds.getNorth() + margin || 
+                msg.location.lat < bounds.getSouth() - margin ||
+                msg.location.lng > bounds.getEast() + margin || 
+                msg.location.lng < bounds.getWest() - margin) return;
 
             const p = this._map.latLngToContainerPoint([msg.location.lat, msg.location.lng]);
             const x = p.x * dpr;
             const y = p.y * dpr;
 
             // --- A. DECAY COLOR LOGIC ---
-            // Calculate Remaining Life
             const expiry = msg.expiresAt || (msg.timestamp + MESSAGE_LIFESPAN_MS);
             const msLeft = expiry - now;
             const hoursLeft = msLeft / (1000 * 60 * 60);
             const totalAgeHours = (now - msg.timestamp) / (1000 * 60 * 60);
 
-            let r=34, g=211, b=238; // Default Cyan (Tailwind Cyan-400)
+            let r=34, g=211, b=238; // Default Cyan
 
             if (totalAgeHours < 1) {
-                // NEW (Fresh): White/Blue hot
-                r=200; g=245; b=255; 
-                baseIntensity += 0.2; // Brighter
+                // NEW (Fresh): Higher Blue/White mix
+                r=150; g=230; b=255; 
             } else if (hoursLeft < 4) {
-                // DYING: Red/Orange fade
-                // Transition from Cyan to Red based on remaining time
-                r=239; g=68; b=68; // Red-500
+                // DYING: Red/Orange
+                r=239; g=68; b=68; 
             }
 
             // --- B. SONAR INTERACTION ---
             let sonarBoost = 0;
-            
             activePings.forEach((ping: any) => {
                 const dx = x - ping.x;
                 const dy = y - ping.y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
-                
-                // If point is within the "wave band"
                 const distDiff = Math.abs(dist - ping.radius);
-                
                 if (distDiff < (WAVE_WIDTH_PX * dpr)) {
-                    // Calculate intensity based on how close to center of wave
-                    // 1.0 = dead center of wave, 0.0 = edge
                     const waveIntensity = 1 - (distDiff / (WAVE_WIDTH_PX * dpr));
                     sonarBoost = Math.max(sonarBoost, waveIntensity);
                 }
             });
 
-
-            // --- C. PULSE ANIMATION ---
-            const phase = (msg.timestamp % 5000) / 5000 * (Math.PI * 2);
+            // --- C. ASYNC PULSE ANIMATION (The "Shimmer" Fix) ---
+            // We use the Message ID to create a unique random offset.
+            // This prevents all messages in a cluster from pulsing in sync (the "blob" effect).
+            // We fake a hash from the ID string.
+            const uniqueOffset = (msg.id.charCodeAt(0) * 100) + (msg.id.charCodeAt(msg.id.length-1) * 50);
+            
+            // Standard pulse
+            const phase = ((now + uniqueOffset) % 4000) / 4000 * (Math.PI * 2);
+            
             // If dying, pulse faster (heartbeat)
-            const pulseSpeed = hoursLeft < 4 ? 0.008 : 0.002;
-            const breathing = 1.0 + Math.sin(now * pulseSpeed + phase) * 0.2;
+            const pulseSpeed = hoursLeft < 4 ? 0.01 : 0.003;
+            const breathing = 1.0 + Math.sin((now * pulseSpeed) + uniqueOffset) * 0.3;
 
             let radius = baseRadius * breathing;
             let intensity = baseIntensity * breathing;
             
             // Apply Sonar Boost
             if (sonarBoost > 0) {
-                // Flash White when hit
                 const boostAmount = sonarBoost * 0.8; 
                 intensity += boostAmount;
-                radius *= (1 + (sonarBoost * 0.5));
-                
-                // Shift color towards white on hit
+                radius *= (1 + (sonarBoost * 0.3));
+                // Shift to white
                 r = Math.min(255, r + (255-r)*sonarBoost);
                 g = Math.min(255, g + (255-g)*sonarBoost);
                 b = Math.min(255, b + (255-b)*sonarBoost);
             }
 
-            if (msg.score > 5) { radius *= 1.25; intensity += 0.1; }
-            if (msg.score > 20) { radius *= 1.5; intensity = 0.8; }
+            if (msg.score > 5) { radius *= 1.2; intensity *= 1.2; }
+            if (msg.score > 20) { radius *= 1.4; intensity *= 1.3; }
 
-            intensity = Math.min(intensity, 1.0);
+            // Ensure we don't blow out transparency too much
+            intensity = Math.min(intensity, 0.8);
 
             // --- D. DRAW ---
             const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+            
+            // CRITICAL: Softer gradient stops to prevent hard edges in clusters
             grad.addColorStop(0, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity})`);
-            grad.addColorStop(0.4, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity * 0.4})`);
+            // The middle stop is very transparent to create a "mist" effect
+            grad.addColorStop(0.4, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity * 0.3})`);
             grad.addColorStop(1, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, 0)`);
 
             ctx.fillStyle = grad;
@@ -246,6 +255,9 @@ const GlowLayer = L.Layer.extend({
             ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.fill();
         });
+
+        // Reset composition mode so other layers (if any) draw normally
+        ctx.globalCompositeOperation = 'source-over';
     }
 });
 
@@ -273,7 +285,6 @@ const HeatmapLayer = forwardRef<HeatmapLayerRef, HeatmapLayerProps>(({ messages 
     }
   }, [map, messages]);
 
-  // Clean up
   useEffect(() => {
       return () => {
           if (layerRef.current && map) {
