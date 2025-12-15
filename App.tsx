@@ -106,7 +106,7 @@ function App() {
                             // If distance > 2km, assume meaningful correction
                             if (dist > 2) {
                                 console.log("KAIKU: Auto-correcting location from fallback to GPS");
-                                setFlyToLocation(newLoc);
+                                setFlyToLocation({ ...newLoc }); // Spread to force update
                                 setIsFallbackLocation(false); // We are no longer in fallback mode
                             }
                         }
@@ -278,15 +278,16 @@ function App() {
       setSelectedMessage(null);
   };
 
-  const getLocation = useCallback(async (): Promise<{lat: number, lng: number}> => {
-     if (locationCache.current) return locationCache.current;
+  // UPDATED: getLocation now accepts forceRefresh to bypass cache
+  const getLocation = useCallback(async (forceRefresh = false): Promise<{lat: number, lng: number}> => {
+     if (locationCache.current && !forceRefresh) return locationCache.current;
      
      return new Promise((resolve, reject) => {
          if (!navigator.geolocation) {
              reject(new Error("Geolocation not supported"));
              return;
          }
-         // Try fast first
+         // High Accuracy Mode for precision
          navigator.geolocation.getCurrentPosition(
              (pos) => {
                  const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -294,18 +295,14 @@ function App() {
                  resolve(loc);
              }, 
              (err) => {
-                 // Retry high accuracy if fast failed
-                  navigator.geolocation.getCurrentPosition(
-                     (pos2) => {
-                         const loc2 = { lat: pos2.coords.latitude, lng: pos2.coords.longitude };
-                         locationCache.current = loc2;
-                         resolve(loc2);
-                     }, 
-                     (err2) => reject(new Error("GPS signal required.")),
-                     { timeout: 10000, enableHighAccuracy: true }
-                  );
+                 // Retry high accuracy if fast failed, or fall back to cache if available
+                 if (locationCache.current && !forceRefresh) {
+                     resolve(locationCache.current);
+                     return;
+                 }
+                 reject(new Error("GPS signal required."));
              }, 
-             { timeout: 5000, enableHighAccuracy: false }
+             { timeout: 10000, enableHighAccuracy: true, maximumAge: forceRefresh ? 0 : 60000 }
          );
      });
   }, []);
@@ -316,14 +313,10 @@ function App() {
       triggerHaptic('light');
       
       try {
-          // If we have a cached location, fly there immediately for responsiveness
-          if (locationCache.current) {
-              setFlyToLocation(locationCache.current);
-          }
-          
-          // Then get fresh location to refine it
-          const loc = await getLocation();
-          setFlyToLocation(loc);
+          // Force fresh GPS data to fix accuracy issues
+          const loc = await getLocation(true); 
+          // Spread object to create new reference -> Forces Map FlyTo even if coords are same
+          setFlyToLocation({ ...loc }); 
       } catch (e) {
           console.warn("Locate failed", e);
       } finally {
@@ -336,7 +329,8 @@ function App() {
       setTargetLocation(null); 
 
       try {
-          const userLoc = await getLocation();
+          // Force fresh GPS data so the "Target" is perfectly accurate
+          const userLoc = await getLocation(true);
           const lat = userLoc.lat;
           const lng = userLoc.lng;
 
@@ -350,23 +344,26 @@ function App() {
 
   const handleSaveMessage = async (text: string, imageUrl?: string, isMasked: boolean = false) => {
     if (!targetLocation) return;
-    const userLoc = await getLocation(); 
+    
+    // Ensure the sender metadata is also precise
+    const userLoc = await getLocation(true); 
+    
     await saveMessage(
         text, 
-        targetLocation.lat, 
+        targetLocation.lat, // Use the locked target location from modal open
         targetLocation.lng, 
         userLoc.lat, 
         userLoc.lng,
         undefined, 
         imageUrl,
-        isMasked // Pass the masking flag
+        isMasked 
     );
     await loadData();
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
       try {
-          const userLoc = await getLocation(); 
+          const userLoc = await getLocation(true); 
           let targetLat = userLoc.lat;
           let targetLng = userLoc.lng;
 
