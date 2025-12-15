@@ -411,7 +411,8 @@ export const saveMessage = async (
     userLat: number, 
     userLng: number, 
     parentId?: string,
-    imageUrl?: string
+    imageUrl?: string,
+    useSignalMasking: boolean = false
 ): Promise<ChatMessage> => {
   // Rate Limit
   const lastPostTimeStr = localStorage.getItem(LAST_POST_TIMESTAMP_KEY);
@@ -439,19 +440,32 @@ export const saveMessage = async (
       originCountry = (userLocationData.countryCode || "").toUpperCase();
   }
   
-  // JITTER (Privacy)
-  const jitter = (coord: number) => {
-      const offset = (Math.random() - 0.5) * (PRIVACY_JITTER_DEG * 2); 
+  // SIGNAL MASKING LOGIC (Location Fuzzing)
+  // If useSignalMasking is true, we apply a significant random offset (~500m - 1km).
+  // If false, we use the exact coordinates.
+  const applyMask = (coord: number) => {
+      // 0.01 degrees is approx 1.1km latitude
+      // (Math.random() - 0.5) * 0.01 gives a range of +/- 0.005 degrees (~550m)
+      const offset = (Math.random() - 0.5) * 0.01;
       return coord + offset;
   };
 
-  const finalLat = jitter(targetLat);
-  const finalLng = jitter(targetLng);
-  const senderLatJitter = jitter(userLat);
-  const senderLngJitter = jitter(userLng);
-  
+  // Determine final coordinates based on masking preference
+  let finalLat = targetLat;
+  let finalLng = targetLng;
+  let finalSenderLat = userLat;
+  let finalSenderLng = userLng;
+
+  if (useSignalMasking) {
+      finalLat = applyMask(targetLat);
+      finalLng = applyMask(targetLng);
+      finalSenderLat = applyMask(userLat);
+      finalSenderLng = applyMask(userLng);
+  }
+
   const tags = extractTags(text);
-  tags.push(`__loc:${senderLatJitter.toFixed(5)},${senderLngJitter.toFixed(5)}`);
+  // Store the sender's location (possibly masked) in the hidden tag for arcs
+  tags.push(`__loc:${finalSenderLat.toFixed(5)},${finalSenderLng.toFixed(5)}`);
 
   const now = Date.now();
   
@@ -470,7 +484,7 @@ export const saveMessage = async (
     isRemote: isRemote,
     originCountry: isRemote ? originCountry : undefined,
     tags: tags,
-    preciseOrigin: { lat: senderLatJitter, lng: senderLngJitter },
+    preciseOrigin: { lat: finalSenderLat, lng: finalSenderLng },
     imageUrl: imageUrl
   };
 

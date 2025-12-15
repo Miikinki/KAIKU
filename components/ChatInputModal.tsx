@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, MapPin, AlertCircle, Loader2, Clock, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { X, Send, MapPin, AlertCircle, Loader2, Clock, Image as ImageIcon, Trash2, Shield, Crosshair } from 'lucide-react';
 import { THEME_COLOR } from '../constants';
 import { SoundService } from '../services/soundService';
 import { triggerHaptic } from '../services/hapticService';
@@ -10,7 +10,7 @@ import { canSendImages, uploadImage } from '../services/storageService';
 interface ChatInputModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (text: string, imageUrl?: string) => Promise<void>; // Updated signature
+  onSave: (text: string, imageUrl?: string, isMasked?: boolean) => Promise<void>;
   cooldownUntil: number | null;
   targetLocationName?: string;
   onTypingStateChange?: (isTyping: boolean) => void;
@@ -29,6 +29,9 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Signal Masking State
+  const [isMasked, setIsMasked] = useState(false);
+
   // Typing Debounce
   const typingTimeoutRef = useRef<any>(null);
 
@@ -36,10 +39,11 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
     if (isOpen) {
         setError(null);
     } else {
-        // Reset image state on close
+        // Reset image and mask state on close
         setSelectedFile(null);
         setPreviewUrl(null);
         setText('');
+        setIsMasked(false); // Reset to unmasked by default
         // Ensure typing stops when closed
         if (onTypingStateChange) onTypingStateChange(false);
     }
@@ -106,6 +110,11 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
       }
   };
 
+  const handleToggleMask = () => {
+      triggerHaptic('light');
+      setIsMasked(!isMasked);
+  };
+
   const handleSubmit = async () => {
     if (!text.trim() && !selectedFile) return;
     
@@ -129,9 +138,8 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
           setIsUploading(false);
       }
 
-      // 2. Save Message with Image URL
-      // @ts-ignore - The parent component might expect (text) only if not updated, but we updated storageService
-      await onSave(text, uploadedImageUrl);
+      // 2. Save Message with Image URL and Masking Flag
+      await onSave(text, uploadedImageUrl, isMasked);
       
       SoundService.playSuccess();
       triggerHaptic('success');
@@ -213,7 +221,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                     value={text}
                     onChange={handleTextChange}
                     placeholder={t('input.placeholder')}
-                    className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-gray-200 focus:outline-none focus:border-cyan-500/50 resize-none mb-4 pb-12"
+                    className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-gray-200 focus:outline-none focus:border-cyan-500/50 resize-none mb-3 pb-12"
                     />
                     
                     {/* Toolbar inside Textarea area */}
@@ -236,6 +244,36 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                                 </button>
                             </>
                         )}
+                    </div>
+                </div>
+
+                {/* SIGNAL MASKING TOGGLE */}
+                <div 
+                    onClick={handleToggleMask}
+                    className={`mb-4 flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all duration-300 group
+                        ${isMasked 
+                            ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.1)]' 
+                            : 'bg-white/5 border-white/10 hover:bg-white/10'
+                        }
+                    `}
+                >
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg transition-colors ${isMasked ? 'bg-cyan-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
+                            <Shield size={18} className={isMasked ? 'animate-pulse' : ''} />
+                        </div>
+                        <div className="flex flex-col">
+                            <span className={`text-xs font-bold tracking-wider ${isMasked ? 'text-cyan-400' : 'text-gray-400'}`}>
+                                {t('input.mask_coordinates')}
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-mono">
+                                {t('input.mask_description')}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    {/* Visual Toggle Switch */}
+                    <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${isMasked ? 'bg-cyan-500' : 'bg-gray-700'}`}>
+                        <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 shadow-md ${isMasked ? 'left-6' : 'left-1'}`} />
                     </div>
                 </div>
 
@@ -266,9 +304,16 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
               </>
             )}
             
-            <div className="mt-4 flex items-start gap-2 text-[10px] text-gray-500">
-               <MapPin size={12} className="mt-0.5" />
-               <p>{t('input.disclaimer')}</p>
+            {/* DYNAMIC SYSTEM STATUS FOOTER */}
+            <div className={`mt-4 flex items-center gap-2 text-[10px] font-mono tracking-widest uppercase transition-colors duration-300 ${isMasked ? 'text-cyan-400' : 'text-amber-500'}`}>
+               {isMasked ? (
+                   <Shield size={12} className="mt-0.5" />
+               ) : (
+                   <Crosshair size={12} className="mt-0.5" />
+               )}
+               <p className="animate-pulse">
+                   {isMasked ? t('input.status_masked') : t('input.status_precise')}
+               </p>
             </div>
           </motion.div>
         </div>

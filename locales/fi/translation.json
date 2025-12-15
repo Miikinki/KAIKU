@@ -21,8 +21,11 @@
     "wait_message": "Odota {{time}} ennen seuraavaa lähetystä.",
     "placeholder": "Mitä lähistöllä tapahtuu?",
     "broadcast_btn": "LÄHETÄ",
-    "disclaimer": "Signaalisi yhdistetään alueelliseen verkkoon yksityisyyden turvaamiseksi. Tarkkaa sijaintia ei koskaan näytetä.",
-    "error_transmission": "Lähetys epäonnistui."
+    "error_transmission": "Lähetys epäonnistui.",
+    "mask_coordinates": "NAAMIOI SIJAINTI",
+    "mask_description": "Satunnaistaa sijainnin n. 1km yksityisyyden vuoksi.",
+    "status_masked": "> SALAUS: AKTIIVINEN [SIJAINTI HÄIRITTY]",
+    "status_precise": "> KOHDISTUS: TARKKA [TARKKA SIJAINTI NÄKYY]"
   },
   "thread": {
     "title": "KETJU",

@@ -28,8 +28,11 @@ const resources = {
         "wait_message": "Please wait {{time}} before broadcasting again.",
         "placeholder": "What's happening nearby?",
         "broadcast_btn": "BROADCAST",
-        "disclaimer": "Your signal will be aggregated into the regional grid for privacy. No precise location is ever displayed.",
-        "error_transmission": "Transmission failed."
+        "error_transmission": "Transmission failed.",
+        "mask_coordinates": "MASK COORDINATES",
+        "mask_description": "Randomizes location by ~1km for privacy.",
+        "status_masked": "> ENCRYPTION: ACTIVE [LOCATION SCRAMBLED]",
+        "status_precise": "> TARGETING: PRECISE [EXACT LOCATION VISIBLE]"
       },
       "thread": {
         "title": "THREAD",
@@ -71,8 +74,11 @@ const resources = {
         "wait_message": "Odota {{time}} ennen seuraavaa lähetystä.",
         "placeholder": "Mitä lähistöllä tapahtuu?",
         "broadcast_btn": "LÄHETÄ",
-        "disclaimer": "Signaalisi yhdistetään alueelliseen verkkoon yksityisyyden turvaamiseksi. Tarkkaa sijaintia ei koskaan näytetä.",
-        "error_transmission": "Lähetys epäonnistui."
+        "error_transmission": "Lähetys epäonnistui.",
+        "mask_coordinates": "NAAMIOI SIJAINTI",
+        "mask_description": "Satunnaistaa sijainnin n. 1km yksityisyyden vuoksi.",
+        "status_masked": "> SALAUS: AKTIIVINEN [SIJAINTI HÄIRITTY]",
+        "status_precise": "> KOHDISTUS: TARKKA [TARKKA SIJAINTI NÄKYY]"
       },
       "thread": {
         "title": "KETJU",

@@ -348,7 +348,7 @@ function App() {
       }
   };
 
-  const handleSaveMessage = async (text: string, imageUrl?: string) => {
+  const handleSaveMessage = async (text: string, imageUrl?: string, isMasked: boolean = false) => {
     if (!targetLocation) return;
     const userLoc = await getLocation(); 
     await saveMessage(
@@ -358,7 +358,8 @@ function App() {
         userLoc.lat, 
         userLoc.lng,
         undefined, 
-        imageUrl
+        imageUrl,
+        isMasked // Pass the masking flag
     );
     await loadData();
   };
@@ -475,7 +476,7 @@ function App() {
                     </button>
                 </div>
 
-                {/* LOCATE ME - Moved Top Right (Header) to avoid being covered */}
+                {/* LOCATE ME - Top Right */}
                 <button
                     onClick={handleLocateMe}
                     className={`
@@ -509,10 +510,10 @@ function App() {
                 onCompose={handleOpenInput}
             />
 
-            {/* FLOATING ACTION BUTTON - Visible when Feed is CLOSED or PEEKING */}
-            {/* Placed at bottom-24 to clear the peek bar. When Feed opens, this hides, and Header button takes over. */}
+            {/* FLOATING ACTION BUTTON - Styled to match "Sector Scan" aesthetic */}
+            {/* Visible only when map is empty (No signals) */}
             <AnimatePresence>
-                {!isInputOpen && !isFeedOpen && (
+                {!isInputOpen && !isFeedOpen && !hasSignal && (
                     <motion.div 
                         initial={{ opacity: 0, scale: 0.5, y: 100 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -521,13 +522,10 @@ function App() {
                     >
                         <button
                             onClick={handleOpenInput}
-                            className="pointer-events-auto group relative flex items-center justify-center h-14 px-6 bg-cyan-500 hover:bg-cyan-400 text-black rounded-full shadow-[0_0_30px_rgba(6,182,212,0.5)] hover:shadow-[0_0_50px_rgba(6,182,212,0.7)] active:scale-95 transition-all duration-300 overflow-hidden"
+                            className="pointer-events-auto flex items-center gap-2 px-5 py-3 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/40 rounded-lg text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)] hover:bg-cyan-950/80 hover:text-white hover:border-cyan-400 transition-all active:scale-95 group"
                         >
-                            {/* Pulsing ring inside */}
-                            <div className="absolute inset-0 rounded-full border-2 border-cyan-400 opacity-0 group-hover:animate-ping" />
-                            
-                            <Plus size={24} strokeWidth={3} className="mr-2" />
-                            <span className="font-black tracking-widest text-sm">SIGNAL</span>
+                             <Plus size={18} strokeWidth={3} className="group-hover:rotate-90 transition-transform duration-300" />
+                             <span className="font-mono font-bold tracking-widest text-xs uppercase">SIGNAL</span>
                         </button>
                     </motion.div>
                 )}

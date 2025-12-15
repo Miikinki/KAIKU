@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useEffect, useRef, forwardRef } from 'react';
 import { useMap } from 'react-leaflet';
 import { ChatMessage } from '../types';
 import L from 'leaflet';
@@ -8,20 +8,17 @@ interface HeatmapLayerProps {
   messages: ChatMessage[];
 }
 
-export interface HeatmapLayerRef {
-    // Ping removed, no longer needed
-}
+export interface HeatmapLayerRef {}
 
 // @ts-ignore
 const GlowLayer = L.Layer.extend({
     initialize: function (data: ChatMessage[]) {
         this._data = data;
-        this._animating = false;
-        this._rafId = null;
     },
 
     setData: function (data: ChatMessage[]) {
         this._data = data;
+        this._redraw();
     },
 
     onAdd: function (map: L.Map) {
@@ -31,26 +28,24 @@ const GlowLayer = L.Layer.extend({
             this._initCanvas();
         }
 
-        map.getContainer().appendChild(this._canvas);
+        // CRITICAL FIX: Attach to the 'overlayPane' so it moves with the map during drag.
+        // Previously it was attached to getContainer() which made it static on screen.
+        this.getPane().appendChild(this._canvas);
 
-        this._resizeBound = this._resize.bind(this);
-        map.on('resize', this._resizeBound);
+        // We only redraw on 'moveend' (after drag finishes).
+        // During drag, the overlayPane CSS transform handles the visual movement perfectly.
+        map.on('moveend', this._reset, this);
+        map.on('zoomanim', this._animateZoom, this);
         
-        this._resize();
-        this._startAnimation();
+        this._reset();
     },
 
     onRemove: function (map: L.Map) {
-        this._stopAnimation();
-
         if (this._canvas) {
-             const container = map.getContainer();
-             if (container.contains(this._canvas)) {
-                 container.removeChild(this._canvas);
-             }
+             L.DomUtil.remove(this._canvas);
         }
-
-        map.off('resize', this._resizeBound);
+        map.off('moveend', this._reset, this);
+        map.off('zoomanim', this._animateZoom, this);
     },
 
     addTo: function (map: L.Map) {
@@ -59,43 +54,34 @@ const GlowLayer = L.Layer.extend({
     },
 
     _initCanvas: function () {
-        const canvas = this._canvas = L.DomUtil.create('canvas', 'leaflet-glow-layer-hud') as HTMLCanvasElement;
+        const canvas = this._canvas = L.DomUtil.create('canvas', 'leaflet-glow-layer-hud leaflet-zoom-animated');
         canvas.style.position = 'absolute';
-        canvas.style.top = '0';
-        canvas.style.left = '0';
+        // 'transform-origin' is handled by Leaflet's L.DomUtil.setPosition usually, but strictly 0 0 helps for overlay
+        canvas.style.transformOrigin = '50% 50%'; 
         canvas.style.pointerEvents = 'none';
         canvas.style.zIndex = '400';
     },
 
-    _resize: function () {
-        if (!this._map) return;
-        const size = this._map.getSize();
+    _reset: function () {
+        const map = this._map;
+        const bounds = map.getBounds();
+        const topLeft = map.containerPointToLayerPoint([0, 0]);
+        
+        // Position the canvas at the top-left of the current view, in layer coordinates
+        L.DomUtil.setPosition(this._canvas, topLeft);
+
+        const size = map.getSize();
         const dpr = window.devicePixelRatio || 1;
-        this._canvas.width = size.x * dpr;
-        this._canvas.height = size.y * dpr;
-        this._canvas.style.width = size.x + 'px';
-        this._canvas.style.height = size.y + 'px';
-    },
 
-    _startAnimation: function() {
-        if (!this._animating) {
-            this._animating = true;
-            this._animate();
+        // Resize canvas to cover the viewport
+        if (this._canvas.width !== size.x * dpr || this._canvas.height !== size.y * dpr) {
+            this._canvas.width = size.x * dpr;
+            this._canvas.height = size.y * dpr;
+            this._canvas.style.width = size.x + 'px';
+            this._canvas.style.height = size.y + 'px';
         }
-    },
 
-    _stopAnimation: function() {
-        this._animating = false;
-        if (this._rafId) {
-            cancelAnimationFrame(this._rafId);
-            this._rafId = null;
-        }
-    },
-
-    _animate: function () {
-        if (!this._animating) return;
         this._redraw();
-        this._rafId = requestAnimationFrame(this._animate.bind(this));
     },
 
     _redraw: function () {
@@ -107,8 +93,6 @@ const GlowLayer = L.Layer.extend({
         const dpr = window.devicePixelRatio || 1;
         const width = this._canvas.width;
         const height = this._canvas.height;
-        // const centerX = width / 2;
-        // const centerY = height / 2;
 
         ctx.clearRect(0, 0, width, height);
 
@@ -128,6 +112,9 @@ const GlowLayer = L.Layer.extend({
         ctx.globalCompositeOperation = 'screen'; 
 
         // 2. Draw Loop
+        // Note: latLngToContainerPoint returns coords relative to the top-left of the viewport.
+        // Since we positioned our canvas at the top-left of the viewport (in _reset),
+        // these coordinates map 1:1 to our canvas pixels.
         this._data.forEach((msg: ChatMessage) => {
             // Margin check for performance
             const margin = 0.5;
@@ -149,20 +136,13 @@ const GlowLayer = L.Layer.extend({
             let r=34, g=211, b=238; // Default Cyan
 
             if (totalAgeHours < 1) {
-                r=150; g=230; b=255; 
+                r=150; g=230; b=255; // White-ish for new
             } else if (hoursLeft < 4) {
-                r=239; g=68; b=68; 
+                r=239; g=68; b=68; // Red for dying
             }
 
-            // --- B. PULSE ANIMATION (Breathing Only) ---
-            // No radar sweep math here anymore.
-            
-            const uniqueOffset = (msg.id.charCodeAt(0) * 100) + (msg.id.charCodeAt(msg.id.length-1) * 50);
-            const pulseSpeed = hoursLeft < 4 ? 0.01 : 0.003;
-            const breathing = 1.0 + Math.sin((now * pulseSpeed) + uniqueOffset) * 0.3;
-
-            let radius = baseRadius * breathing;
-            let intensity = baseIntensity * breathing;
+            let radius = baseRadius;
+            let intensity = baseIntensity;
             
             if (msg.score > 5) { radius *= 1.2; intensity *= 1.2; }
             if (msg.score > 20) { radius *= 1.4; intensity *= 1.3; }
@@ -182,6 +162,14 @@ const GlowLayer = L.Layer.extend({
         });
 
         ctx.globalCompositeOperation = 'source-over';
+    },
+    
+    // Hook into Leaflet's zoom animation to scale the canvas smoothly
+    _animateZoom: function (e: any) {
+        const scale = this._map.getZoomScale(e.zoom);
+        const offset = this._map._latLngToNewLayerPoint(this._map.getBounds().getNorthWest(), e.zoom, e.center);
+
+        L.DomUtil.setTransform(this._canvas, offset, scale);
     }
 });
 
@@ -200,7 +188,7 @@ const HeatmapLayer = forwardRef<HeatmapLayerRef, HeatmapLayerProps>(({ messages 
         layerRef.current.setData(messages);
     }
   }, [map, messages]);
-
+  
   useEffect(() => {
       return () => {
           if (layerRef.current && map) {
