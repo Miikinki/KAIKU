@@ -13,9 +13,10 @@ interface ChatInputModalProps {
   onSave: (text: string, imageUrl?: string) => Promise<void>; // Updated signature
   cooldownUntil: number | null;
   targetLocationName?: string;
+  onTypingStateChange?: (isTyping: boolean) => void;
 }
 
-const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName }) => {
+const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName, onTypingStateChange }) => {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -28,6 +29,9 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Typing Debounce
+  const typingTimeoutRef = useRef<any>(null);
+
   useEffect(() => {
     if (isOpen) {
         setError(null);
@@ -36,6 +40,8 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
         setSelectedFile(null);
         setPreviewUrl(null);
         setText('');
+        // Ensure typing stops when closed
+        if (onTypingStateChange) onTypingStateChange(false);
     }
   }, [isOpen]);
 
@@ -85,12 +91,33 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
       if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setText(e.target.value);
+      
+      // Trigger Typing Indicator
+      if (onTypingStateChange) {
+          onTypingStateChange(true);
+          
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          
+          typingTimeoutRef.current = setTimeout(() => {
+              onTypingStateChange(false);
+          }, 1000);
+      }
+  };
+
   const handleSubmit = async () => {
     if (!text.trim() && !selectedFile) return;
     
     setIsSubmitting(true);
     setError(null);
     SoundService.playClick();
+    
+    // Stop typing immediately on submit
+    if (onTypingStateChange) {
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        onTypingStateChange(false);
+    }
     
     try {
       let uploadedImageUrl: string | undefined = undefined;
@@ -184,7 +211,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                 <div className="relative">
                     <textarea
                     value={text}
-                    onChange={(e) => setText(e.target.value)}
+                    onChange={handleTextChange}
                     placeholder={t('input.placeholder')}
                     className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-gray-200 focus:outline-none focus:border-cyan-500/50 resize-none mb-4 pb-12"
                     />

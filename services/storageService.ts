@@ -2,6 +2,7 @@ import { ChatMessage, RateLimitStatus } from '../types';
 import { supabase } from './supabaseClient';
 import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS, PRIVACY_JITTER_DEG } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'kaiku_local_data'; 
 const USER_ID_KEY = 'kaiku_session_id'; 
@@ -187,6 +188,83 @@ export const uploadImage = async (file: File): Promise<string> => {
 
     const { data } = supabase.storage.from('chat-images').getPublicUrl(filePath);
     return data.publicUrl;
+};
+
+// --- PRESENCE SERVICE (TYPING INDICATOR) ---
+
+export interface PresenceState {
+    user: string;
+    isTyping: boolean;
+    lat: number;
+    lng: number;
+    lastActive: number;
+}
+
+let presenceChannel: RealtimeChannel | null = null;
+
+export const subscribeToPresence = (
+    currentLocation: { lat: number, lng: number } | null,
+    onStateChange: (others: PresenceState[]) => void
+) => {
+    const myId = getAnonymousID();
+
+    if (presenceChannel) {
+        // If channel exists, just ensure we are untracked before re-subscribing or leaving
+        // For simplicity, we'll unsubscribe and resubscribe to ensure clean state
+        presenceChannel.unsubscribe();
+    }
+
+    presenceChannel = supabase.channel('kaiku_presence', {
+        config: {
+            presence: {
+                key: myId,
+            },
+        },
+    });
+
+    presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+            const state = presenceChannel!.presenceState<PresenceState>();
+            const others: PresenceState[] = [];
+            
+            Object.keys(state).forEach(key => {
+                if (key !== myId) {
+                    // Supabase returns an array for each key, usually length 1
+                    const userState = state[key][0];
+                    if (userState && userState.isTyping) {
+                        others.push(userState);
+                    }
+                }
+            });
+            onStateChange(others);
+        })
+        .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                // Initial track (optional, usually we only track when typing)
+            }
+        });
+
+    return {
+        setTyping: async (isTyping: boolean, loc?: { lat: number, lng: number }) => {
+            if (!presenceChannel) return;
+            
+            // Jitter location slightly so we don't leak exact house via Presence
+            const safeLat = loc ? loc.lat + (Math.random() - 0.5) * 0.01 : 0;
+            const safeLng = loc ? loc.lng + (Math.random() - 0.5) * 0.01 : 0;
+
+            await presenceChannel.track({
+                user: myId,
+                isTyping,
+                lat: safeLat,
+                lng: safeLng,
+                lastActive: Date.now()
+            });
+        },
+        unsubscribe: () => {
+            if (presenceChannel) presenceChannel.unsubscribe();
+            presenceChannel = null;
+        }
+    };
 };
 
 // --- DATA ACCESS ---

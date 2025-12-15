@@ -347,21 +347,31 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
       <div className="pointer-events-none absolute inset-0 z-[400] flex flex-col items-center justify-center pb-48">
           
           <div className="relative flex items-center justify-center transition-all duration-200">
-              <div className={`absolute flex items-center justify-center w-64 h-64 transition-all duration-200 ease-out 
-                  ${isMaxZoom ? 'opacity-100 scale-110' : (hasSignal ? 'opacity-100 scale-105' : 'opacity-20 scale-100')}
+              {/* HYBRID RADAR SWEEP ANIMATION */}
+              <div className={`absolute flex items-center justify-center w-64 h-64 rounded-full transition-all duration-500 ease-out 
+                  ${isMaxZoom ? 'opacity-100 scale-110' : (hasSignal ? 'opacity-100 scale-105' : 'opacity-60 scale-100')}
               `}>
-                   <div className={`absolute inset-0 border rounded-full animate-[spin_10s_linear_infinite] transition-colors duration-300 
-                       ${isMaxZoom 
-                            ? 'border-red-500 shadow-[0_0_25px_rgba(239,68,68,0.6)]' 
-                            : (hasSignal ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]' : 'border-cyan-500/30')
-                       }`} 
+                   {/* Layer 1: Sonar Pulse (The Ripple) */}
+                   <div className={`absolute inset-0 border border-cyan-500/40 rounded-full animate-[ping_3s_linear_infinite] 
+                       ${isMaxZoom ? 'border-red-500/40' : ''}`} 
                    />
                    
-                   <div className={`absolute inset-4 border rounded-full border-dashed animate-[spin_15s_linear_infinite_reverse] transition-colors duration-300 
-                       ${isMaxZoom 
-                            ? 'border-red-400/50 shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
-                            : (hasSignal ? 'border-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'border-cyan-500/20')
-                       }`} 
+                   {/* Layer 2: Rotating Sweep (The Radar Trail) */}
+                   <div 
+                       className="absolute inset-0 rounded-full animate-[spin_4s_linear_infinite]"
+                       style={{ 
+                           background: isMaxZoom
+                            ? `conic-gradient(from 0deg, transparent 0deg, transparent 240deg, rgba(239, 68, 68, 0.4) 360deg)`
+                            : `conic-gradient(from 0deg, transparent 0deg, transparent 240deg, rgba(6, 182, 212, 0.3) 360deg)`
+                       }} 
+                   />
+
+                   {/* Static Rim for definition */}
+                   <div className={`absolute inset-0 border border-white/10 rounded-full ${isMaxZoom ? 'border-red-500/30' : 'border-cyan-500/30'}`} />
+
+                   {/* Inner decorative ring */}
+                   <div className={`absolute inset-[25%] border border-dashed rounded-full animate-[spin_10s_linear_infinite_reverse] opacity-30 
+                       ${isMaxZoom ? 'border-red-500' : 'border-cyan-500'}`} 
                    />
               </div>
               

@@ -6,7 +6,7 @@ import FeedPanel from './components/FeedPanel';
 import ThreadView from './components/ThreadView';
 import WelcomeScreen from './components/WelcomeScreen';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, subscribeToPresence } from './services/storageService';
 import { getCityName } from './services/moderationService';
 import { SoundService } from './services/soundService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
@@ -44,6 +44,10 @@ function App() {
     isLimited: false,
     cooldownUntil: null
   });
+
+  // TYPING INDICATOR STATE
+  const [nearbyTypingCount, setNearbyTypingCount] = useState(0);
+  const presenceActions = useRef<{ setTyping: (t: boolean, l?: {lat: number, lng: number}) => void } | null>(null);
 
   // START HANDLER
   const handleStart = (startLoc: { lat: number, lng: number }) => {
@@ -101,14 +105,13 @@ function App() {
     };
   }, [hasStarted]);
 
+  // SUPABASE REALTIME (Presence & Messages)
   useEffect(() => {
     if (!hasStarted) return;
     loadData();
     
-    // SERVER-DRIVEN EVENT LISTENER
-    // This is the core of the "Network Logic".
-    // We listen for messages broadcast by the server.
-    const sub = subscribeToMessages(({ type, message, id }) => {
+    // 1. MESSAGE LISTENER
+    const subMessages = subscribeToMessages(({ type, message, id }) => {
       
       // --- AUDIO SPAM PREVENTION LOGIC ---
       // Check distance before playing sound.
@@ -125,7 +128,7 @@ function App() {
           }
       }
 
-      // 1. UPDATE HEATMAP DATA (MESSAGES)
+      // UPDATE HEATMAP DATA (MESSAGES)
       setMessages(prev => {
         let next = [...prev];
         if (type === 'DELETE') {
@@ -154,19 +157,40 @@ function App() {
         return next;
       });
 
-      // 2. TRIGGER ARC ANIMATION (SIGNALS) via NETWORK BROADCAST
-      // The ArcLayer is now driven 100% by this server event.
-      // When ANY user (including me) receives this INSERT event, we draw the arc.
+      // TRIGGER ARC ANIMATION (SIGNALS) via NETWORK BROADCAST
       if (message && message.parentId) {
            setSignals(prevSignals => {
                // Deduplicate based on ID to ensure clean animation
                if (prevSignals.some(s => s.id === message.id)) return prevSignals;
                return [...prevSignals.slice(-10), message];
            });
-           // Sound handled above in Audio Logic block
       }
     });
-    return () => { if (sub) sub.unsubscribe(); };
+
+    // 2. PRESENCE LISTENER (Typing Indicator)
+    // We only count people typing within 150km radius
+    const presenceHelper = subscribeToPresence(locationCache.current, (others) => {
+        if (!locationCache.current) return;
+        
+        let nearbyCount = 0;
+        const myLat = locationCache.current.lat;
+        const myLng = locationCache.current.lng;
+
+        others.forEach(user => {
+             const dist = calculateDistance(myLat, myLng, user.lat, user.lng);
+             if (dist < 150) {
+                 nearbyCount++;
+             }
+        });
+        setNearbyTypingCount(nearbyCount);
+    });
+
+    presenceActions.current = presenceHelper;
+
+    return () => { 
+        if (subMessages) subMessages.unsubscribe();
+        if (presenceHelper) presenceHelper.unsubscribe();
+    };
   }, [hasStarted]);
 
   useEffect(() => {
@@ -322,6 +346,14 @@ function App() {
       }
   };
 
+  // --- TYPING BROADCAST ---
+  const handleTypingChange = async (isTyping: boolean) => {
+      if (presenceActions.current) {
+           const loc = await getLocation();
+           presenceActions.current.setTyping(isTyping, loc);
+      }
+  };
+
   const handleVote = async (msgId: string, direction: 'up' | 'down') => {
     SoundService.playClick();
     setMessages(prev => prev.map(m => {
@@ -399,6 +431,7 @@ function App() {
         activeTag={activeTag}
         onTagClick={handleTagClick}
         onClearTag={() => { SoundService.playClick(); setActiveTag(null); }}
+        nearbyTypingCount={nearbyTypingCount}
       />
 
       <AnimatePresence>
@@ -427,6 +460,7 @@ function App() {
         onSave={handleSaveMessage}
         cooldownUntil={rateLimit.cooldownUntil}
         targetLocationName={targetLocation?.name}
+        onTypingStateChange={handleTypingChange}
       />
 
       {selectedMessage && (

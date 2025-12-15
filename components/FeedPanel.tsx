@@ -19,6 +19,7 @@ interface FeedPanelProps {
   activeTag: string | null;
   onTagClick: (tag: string) => void;
   onClearTag: () => void;
+  nearbyTypingCount?: number; 
 }
 
 // Helper: Calculate if signal is dying
@@ -49,7 +50,7 @@ const formatRelativeTime = (timestamp: number) => {
 
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
     visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel,
-    activeTag, onTagClick, onClearTag
+    activeTag, onTagClick, onClearTag, nearbyTypingCount = 0
 }) => {
   const { t } = useTranslation();
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
@@ -509,6 +510,26 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 </motion.div>
             )})
             )}
+            
+            {/* ANONYMOUS TYPING INDICATOR (GHOST) */}
+            {nearbyTypingCount > 0 && (
+                <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="sticky bottom-0 left-0 right-0 p-3 mt-4 bg-[#0a0a12]/90 backdrop-blur-md border-t border-cyan-500/20 flex items-center justify-center gap-3 z-30"
+                >
+                     <div className="flex space-x-1">
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.2 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1.5, delay: 0.4 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />
+                     </div>
+                     <span className="text-[10px] text-cyan-400 font-mono tracking-widest animate-pulse">
+                         DETECTING INCOMING TRANSMISSION...
+                     </span>
+                </motion.div>
+            )}
+
             <div className="h-20" /> 
         </div>
       </motion.div>
