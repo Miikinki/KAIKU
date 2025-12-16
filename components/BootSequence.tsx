@@ -20,7 +20,7 @@ const BootSequence: React.FC<BootSequenceProps> = ({ onComplete }) => {
   ], [t]);
 
   useEffect(() => {
-    const timeouts: NodeJS.Timeout[] = [];
+    const timeouts: ReturnType<typeof setTimeout>[] = [];
 
     // Timeline of events (ms)
     const schedule = [

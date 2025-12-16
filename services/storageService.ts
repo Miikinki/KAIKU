@@ -251,7 +251,7 @@ export const subscribeToPresence = (
 
     presenceChannel
         .on('presence', { event: 'sync' }, () => {
-            const state = presenceChannel!.presenceState<PresenceState>();
+            const state = presenceChannel!.presenceState() as Record<string, PresenceState[]>;
             const others: PresenceState[] = [];
             
             Object.keys(state).forEach(key => {

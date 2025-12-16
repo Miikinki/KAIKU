@@ -254,6 +254,8 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
         msg.timestamp 
     ]);
 
+    const hasText = msg.text && msg.text.trim().length > 0;
+
     return (
         <Marker 
             position={position} 
@@ -293,9 +295,16 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
                             </p>
                         ) : (
                             <div className="mb-3 border-l-2 border-cyan-500/30 pl-2 group-hover:border-cyan-400 transition-colors">
+                                {/* IMAGE THUMBNAIL (IF EXISTS) */}
+                                {msg.imageUrl && (
+                                    <div className="mb-2 rounded overflow-hidden border border-white/10">
+                                        <img src={msg.imageUrl} alt="attached" className="w-full h-16 object-cover opacity-80" />
+                                    </div>
+                                )}
+                                
                                 <p className="text-sm text-gray-200 leading-relaxed line-clamp-3 font-light">
-                                    {msg.text ? msg.text : (msg.imageUrl && (
-                                        <span className="flex items-center gap-2 text-gray-400 italic font-mono text-xs">
+                                    {hasText ? msg.text : (msg.imageUrl && (
+                                        <span className="flex items-center gap-2 text-cyan-400 italic font-mono text-xs">
                                             <ImageIcon size={14} /> {t('thread.image_attached')}
                                         </span>
                                     ))}
