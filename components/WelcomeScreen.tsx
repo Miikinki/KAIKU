@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Radio, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { getIpLocation } from '../services/moderationService';
+import { getPreciseLocation } from '../services/locationService';
 import { useTranslation } from 'react-i18next';
 
 interface WelcomeScreenProps {
@@ -28,58 +29,25 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const handleConnect = async () => {
     setIsLoading(true);
     setError(null);
+    setStatusText(t('welcome.status_init_gps'));
     
-    // Helper to wrap geolocation in a Promise
-    const getPosition = (options: PositionOptions): Promise<GeolocationPosition> => {
-        return new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, options);
-        });
-    };
-
-    // --- STRATEGY 1: HIGH ACCURACY GPS (STRICT) ---
+    // --- STRATEGY 1 & 2: AGGRESSIVE HARDWARE GPS + FALLBACK ---
+    // Uses the new robust service in services/locationService.ts
     try {
-        setStatusText(t('welcome.status_init_gps'));
-        
-        // maximumAge: 0 forces a fresh fix. 
-        // timeout: 10000 (10s) gives enough time but fails fast enough if indoors
-        const pos = await getPosition({ 
-            enableHighAccuracy: true, 
-            timeout: 10000, 
-            maximumAge: 0 
-        });
-        
-        onStart({ lat: pos.coords.latitude, lng: pos.coords.longitude }, false);
+        const result = await getPreciseLocation();
+        onStart({ lat: result.lat, lng: result.lng }, result.isFallback);
         return;
-
     } catch (err: any) {
-        console.warn("High Accuracy GPS failed/timed out:", err.code, err.message);
-        // Continue to Strategy 2...
-    }
-
-    // --- STRATEGY 2: LOW ACCURACY / CACHED GPS (Fallback) ---
-    try {
-        setStatusText(t('welcome.status_retry'));
+        console.warn("Location Service Failed:", err.message);
         
-        const pos = await getPosition({ 
-            enableHighAccuracy: false, 
-            timeout: 15000, 
-            maximumAge: 60000 
-        });
-        
-        onStart({ lat: pos.coords.latitude, lng: pos.coords.longitude }, false);
-        return;
-
-    } catch (err: any) {
-        console.warn("Low Accuracy GPS failed:", err.code, err.message);
-        
-        // If it was a permission denied error (Code 1), stop here.
-        if (err.code === 1) {
-            setIsLoading(false);
-            setStatusText(t('welcome.status_failed'));
-            setError(t('welcome.error_permission'));
-            return;
+        // If permission explicitly denied, show error and stop.
+        if (err.message.includes("permission denied")) {
+             setIsLoading(false);
+             setStatusText(t('welcome.status_failed'));
+             setError(t('welcome.error_permission'));
+             return;
         }
-        // Continue to Strategy 3...
+        // Otherwise, continue to Last Resort strategies...
     }
 
     // --- STRATEGY 3: LOCAL STORAGE (LAST KNOWN) ---
@@ -90,7 +58,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
             if (parsed.lat && parsed.lng) {
                 setStatusText(t('welcome.status_using_last'));
                 setTimeout(() => {
-                    onStart(parsed, true); // Mark as fallback so App knows to keep looking for better signal
+                    onStart(parsed, true); // Mark as fallback
                 }, 500);
                 return;
             }

@@ -1,3 +1,3 @@
-// DEPRECATED FILE
-// Use components/ThreadView.tsx instead.
-export default function DreamDetailPopup() { return null; }
+// OBSOLETE FILE - PENDING DELETION
+// See components/ThreadView.tsx
+export default function ObsoletePopup() { return null; }

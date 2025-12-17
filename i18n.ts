@@ -53,7 +53,9 @@ const resources = {
         "masked": "MASKED",
         "exact": "EXACT",
         "content_hidden": "** CONTENT HIDDEN **",
-        "open_channel": "OPEN CHANNEL"
+        "open_channel": "OPEN CHANNEL",
+        "search_placeholder": "Search coordinates...",
+        "search_not_found": "TARGET NOT FOUND"
       },
       "welcome": {
         "subtitle": "Hyperlocal Signal Grid",
@@ -131,7 +133,9 @@ const resources = {
         "masked": "MASKATTU",
         "exact": "TARKKA",
         "content_hidden": "** SISÄLTÖ PIILOTETTU **",
-        "open_channel": "AVAA KANAVA"
+        "open_channel": "AVAA KANAVA",
+        "search_placeholder": "Etsi koordinaatteja...",
+        "search_not_found": "KOHDETTA EI LÖYDY"
       },
       "welcome": {
         "subtitle": "Hyperlokaali Signaaliverkko",

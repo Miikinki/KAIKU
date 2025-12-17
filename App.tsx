@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Radio, Volume2, VolumeX, Plus, Locate } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Radio, Volume2, VolumeX, Plus, Locate, Search, X, Zap, Terminal } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -9,23 +9,27 @@ import BootSequence from './components/BootSequence';
 import DesktopLanding from './components/DesktopLanding';
 import { ChatMessage, ViewportBounds } from './types';
 import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, subscribeToPresence, getHiddenIds, toggleHiddenMessage } from './services/storageService';
-import { getCityName } from './services/moderationService';
+import { scanGlobalNetwork } from './services/globalRadarService'; // NEW IMPORT
+import { getCityName, searchLocations } from './services/moderationService';
+import { getPreciseLocation } from './services/locationService';
 import { SoundService } from './services/soundService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
 import { triggerHaptic } from './services/hapticService';
+import { useTranslation } from 'react-i18next';
 
 // BASE SCAN RADIUS (Visual Reference)
-// This matches the visual size of the Radar SVG in ChatMap (w-64 = 256px diameter => 128px radius)
 const BASE_SCAN_RADIUS_PX = 128; 
 
 type AppState = 'welcome' | 'boot' | 'app';
 
 function App() {
+  const { t } = useTranslation();
   const [appState, setAppState] = useState<AppState>('welcome');
   const [isDesktop, setIsDesktop] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
+  const [globalEvents, setGlobalEvents] = useState<ChatMessage[]>([]); 
   const [signals, setSignals] = useState<ChatMessage[]>([]);
   
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
@@ -46,11 +50,17 @@ function App() {
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
   // Visual Rendering States
   const [currentUserLocation, setCurrentUserLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); // NEW: Track accuracy for gating
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); 
   
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
   const [flyToLocation, setFlyToLocation] = useState<{lat: number, lng: number, timestamp: number} | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+
+  // Search State (TERMINAL UI)
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [isScanningGlobal, setIsScanningGlobal] = useState(false); 
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenIds());
 
@@ -66,10 +76,9 @@ function App() {
   useEffect(() => {
     const checkDevice = () => {
       const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      const isSmallScreen = window.innerWidth < 1024; // Treat screens >= 1024px width as Desktop (Landscape Tablets included)
+      const isSmallScreen = window.innerWidth < 1024; // Treat screens >= 1024px width as Desktop
       const hasDevFlag = new URLSearchParams(window.location.search).get('dev') === 'true';
 
-      // Desktop if: NOT mobile UA AND NOT small screen AND NOT dev flag
       if (!isMobileUA && !isSmallScreen && !hasDevFlag) {
         setIsDesktop(true);
       } else {
@@ -110,6 +119,48 @@ function App() {
       setRateLimit(await getRateLimitStatus());
   };
 
+  // Perform Global Scan on Boot (Automatic Cache-First)
+  useEffect(() => {
+      if (appState === 'app') {
+          performGlobalScan();
+      }
+  }, [appState]);
+
+  const performGlobalScan = async (specificQuery?: string) => {
+      if (isScanningGlobal) return;
+      setIsScanningGlobal(true);
+      
+      // If targeted scan (specific query), play stronger feedback
+      if (specificQuery) {
+          SoundService.playScan(); 
+          triggerHaptic('heavy');
+      } else {
+          SoundService.playScan();
+          triggerHaptic('light');
+      }
+      
+      try {
+          // Fetch real news via Gemini (handles DB cache or API call)
+          const events = await scanGlobalNetwork(specificQuery);
+          
+          if (events.length > 0) {
+              setGlobalEvents(prev => {
+                  // Merge new events with existing ones, avoiding duplicates
+                  const map = new Map(prev.map(p => [p.id, p]));
+                  events.forEach(e => map.set(e.id, e));
+                  return Array.from(map.values());
+              });
+              SoundService.playSuccess();
+          } else {
+              if (specificQuery) alert("No active signals found in sector.");
+          }
+      } catch (e) {
+          console.error("Global scan failed", e);
+      } finally {
+          setIsScanningGlobal(false);
+      }
+  };
+
   // CONTINUOUS GPS TRACKING - STRICT MODE
   useEffect(() => {
     if (!isRunning) return; 
@@ -137,7 +188,7 @@ function App() {
 
                     // Auto-correction from IP fallback to GPS
                     if (isFallbackLocation) {
-                        console.log("KAIKU: GPS Lock Acquired. Switching to Precision Mode.");
+                        console.log("KAIKU: GPS Lock Acquired via Watcher. Switching to Precision Mode.");
                         setFlyToLocation({ ...newLoc, timestamp: Date.now() }); 
                         setIsFallbackLocation(false); 
                     }
@@ -150,10 +201,9 @@ function App() {
             },
             { 
                 // CRITICAL: High Precision Settings for Mobile Chrome
-                // These settings force the device to use hardware GPS instead of Wi-Fi triangulation.
                 enableHighAccuracy: true, 
-                maximumAge: 0, // CRITICAL: Never use cached position. Always ping satellite.
-                timeout: 20000 // 20s timeout gives GPS radio time to warm up.
+                maximumAge: 0, 
+                timeout: 20000 
             }
         );
     }
@@ -240,6 +290,14 @@ function App() {
     };
   }, [isRunning]);
 
+  // --- MERGE & DEDUPE MESSAGES ---
+  const mapMessages = useMemo(() => {
+      const combined = [...globalEvents, ...messages];
+      const unique = new Map();
+      combined.forEach(m => unique.set(m.id, m));
+      return Array.from(unique.values());
+  }, [globalEvents, messages]);
+
   useEffect(() => {
     if (!currentBounds) return;
     
@@ -247,9 +305,6 @@ function App() {
     const centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
     const centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
 
-    // MATCHES VISUAL LOGIC IN ChatMap.tsx
-    // The radar shrinks visually at low zoom (0.4x) and grows at high zoom (1.0x).
-    // We must mirror this scale in logic to avoid capturing distant messages (e.g. Porvoo from Sweden).
     const getRadarScale = (currentZoom: number) => {
         if (currentZoom >= 13) return 1.0;
         if (currentZoom <= 7) return 0.4;
@@ -262,7 +317,7 @@ function App() {
     const metersPerPx = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
     const radiusKm = (metersPerPx * effectiveRadiusPx) / 1000;
 
-    let visible = messages.filter(m => {
+    let visible = mapMessages.filter(m => {
       const expiry = m.expiresAt || (m.timestamp + MESSAGE_LIFESPAN_MS);
       if (expiry <= now || m.score <= SCORE_THRESHOLD_HIDE) return false;
 
@@ -273,7 +328,9 @@ function App() {
           m.location.lng
       );
       
-      return dist <= radiusKm;
+      const effectiveRadius = m.postType === 'GLOBAL_EVENT' ? radiusKm * 2 : radiusKm;
+
+      return dist <= effectiveRadius;
     });
 
     if (currentBounds.zoom < 10) {
@@ -283,25 +340,30 @@ function App() {
     }
 
     setVisibleMessages(visible);
-  }, [messages, currentBounds]);
+  }, [mapMessages, currentBounds]); 
 
   const handleViewportChange = useCallback((bounds: ViewportBounds) => {
     setCurrentBounds(bounds);
   }, []);
 
   const handleMapClick = useCallback(() => {
+    setFocusedMessage(null);
+    if (isSearchOpen) setIsSearchOpen(false);
     if (isFeedOpen) {
         SoundService.playClick();
         setIsFeedOpen(false);
     } else {
         SoundService.playClick();
     }
-  }, [isFeedOpen]);
+  }, [isFeedOpen, isSearchOpen]);
 
   const handleMessageClick = useCallback((msg: ChatMessage) => {
       SoundService.playClick();
       triggerHaptic('light'); 
-      setFocusedMessage(msg); 
+      setFocusedMessage(null);
+      setTimeout(() => {
+          setFocusedMessage(msg); 
+      }, 50);
       setIsFeedOpen(false);   
   }, []);
 
@@ -322,30 +384,24 @@ function App() {
       setFocusedMessage(null);
   }, []);
 
-  // UPDATED: Robust getLocation with strict rules
   const getLocation = useCallback(async (forceRefresh = false): Promise<{lat: number, lng: number}> => {
      if (locationCache.current && !forceRefresh) return locationCache.current;
      
-     const getPos = (opts: PositionOptions): Promise<GeolocationPosition> => 
-        new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, opts));
-
      try {
-         // 2. ATTEMPT HIGH ACCURACY (Strict & Aggressive)
-         // maximumAge: 0 is vital here to prevent Chrome from returning a cached Wi-Fi location.
-         const pos = await getPos({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
-         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+         const result = await getPreciseLocation();
+         const loc = { lat: result.lat, lng: result.lng };
          
          locationCache.current = loc;
-         setCurrentUserLocation(loc); // Update visual
-         setGpsAccuracy(pos.coords.accuracy); // Update accuracy state from manual fetch too
+         setCurrentUserLocation(loc); 
+         setGpsAccuracy(result.accuracy);
+         
+         if (result.isFallback) setIsFallbackLocation(true);
 
          return loc;
-     } catch (e) {
-         console.warn("High Accuracy GPS failed, falling back to cache if available.");
-         // Note: If manual fetch fails, we don't nullify gpsAccuracy immediately to avoid UI flickering,
-         // but rely on the watcher to correct it or persistent failure.
+     } catch (e: any) {
+         console.warn("Location service failed:", e);
          if (locationCache.current) return locationCache.current;
-         throw new Error("GPS Signal Lost. Please move to a clearer area.");
+         throw new Error(e.message || "GPS Signal Lost.");
      }
   }, []);
 
@@ -355,9 +411,7 @@ function App() {
       triggerHaptic('light');
       
       try {
-          // Force fresh GPS data
           const loc = await getLocation(true); 
-          // Use timestamp to ensure unique state update every time, triggering map flyTo
           setFlyToLocation({ ...loc, timestamp: Date.now() }); 
       } catch (e) {
           console.warn("Locate failed", e);
@@ -366,17 +420,50 @@ function App() {
       }
   };
 
+  const handleSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setIsSearching(true);
+    SoundService.playClick();
+    
+    // --- TERMINAL COMMAND LOGIC ---
+    let queryLocation = searchQuery;
+    let isCommand = false;
+
+    if (searchQuery.startsWith('/scan ')) {
+        isCommand = true;
+        queryLocation = searchQuery.replace('/scan ', '').trim();
+    }
+
+    // 1. Resolve Location
+    const result = await searchLocations(queryLocation);
+
+    if (result) {
+        // Fly to location
+        setFlyToLocation({ lat: result.lat, lng: result.lng, timestamp: Date.now() });
+        setSearchQuery('');
+        SoundService.playSuccess();
+        
+        // 2. Execute Scan Logic if Command or Implicit Wish
+        if (isCommand) {
+            setIsSearchOpen(false);
+            performGlobalScan(queryLocation);
+        } else {
+            setIsSearchOpen(false);
+        }
+    } else {
+        alert(t('map.search_not_found'));
+        triggerHaptic('error');
+    }
+    setIsSearching(false);
+  };
+
   const handleOpenInput = async () => {
       SoundService.playClick();
       setTargetLocation(null); 
-      
-      // TRIGGER GPS WAKEUP: 
-      // Force a manual refresh immediately to wake up the hardware radio on mobile.
-      // We don't await this to open the modal, but it starts the process.
       getLocation(true).catch(e => console.log("Background wake-up GPS fetch failed", e));
-      
       try {
-          // Use cached location immediately for speed while hardware warms up
           const userLoc = await getLocation(false); 
           const lat = userLoc.lat;
           const lng = userLoc.lng;
@@ -394,19 +481,14 @@ function App() {
 
   const handleSaveMessage = async (text: string, imageUrl?: string, isMasked: boolean = false) => {
     if (!targetLocation) return;
-    
-    // START with the exact target location (usually user's current location)
     let finalLat = targetLocation.lat;
     let finalLng = targetLocation.lng;
     
-    // Try to refresh precision just before sending to be sure
     try {
         const freshLoc = await getLocation(true);
         finalLat = freshLoc.lat;
         finalLng = freshLoc.lng;
-    } catch (e) {
-        // Fallback to what we had when modal opened
-    }
+    } catch (e) {}
     
     const userLoc = { lat: finalLat, lng: finalLng };
     
@@ -479,10 +561,7 @@ function App() {
       if (!newState) SoundService.playClick();
   };
 
-  // IF DESKTOP MODE DETECTED, SHOW GATE
-  if (isDesktop) {
-      return <DesktopLanding />;
-  }
+  if (isDesktop) return <DesktopLanding />;
 
   const hasSignal = visibleMessages.length > 0;
 
@@ -509,7 +588,7 @@ function App() {
             <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
             
             <ChatMap 
-                messages={messages} 
+                messages={mapMessages} 
                 signals={signals}
                 onViewportChange={handleViewportChange}
                 onMapClick={handleMapClick}
@@ -527,21 +606,76 @@ function App() {
 
             {/* TOP HEADER CONTROLS */}
             <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex justify-between items-start">
+                
+                {/* TERMINAL SEARCH BAR & LOGO */}
                 <div className="flex items-center gap-2 pointer-events-auto">
-                    <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg">
-                        <Radio size={18} style={{ color: THEME_COLOR }} className="animate-pulse" />
-                        <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
-                    </div>
-                    
-                    <button 
-                        onClick={toggleMute}
-                        className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-colors shadow-lg"
-                    >
-                        {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                    </button>
+                    <AnimatePresence mode="wait">
+                        {isSearchOpen ? (
+                             <motion.form 
+                                initial={{ width: 0, opacity: 0 }}
+                                animate={{ width: "auto", opacity: 1 }}
+                                exit={{ width: 0, opacity: 0 }}
+                                className="flex items-center bg-[#0a0a12]/95 backdrop-blur-xl rounded-md border border-cyan-500 shadow-lg overflow-hidden h-10 font-mono"
+                                onSubmit={handleSearchSubmit}
+                             >
+                                <div className="pl-3 text-cyan-500 animate-pulse">
+                                    <Terminal size={14} />
+                                </div>
+                                <input 
+                                    autoFocus
+                                    type="text" 
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="> ENTER COORDINATES OR /SCAN"
+                                    className="bg-transparent text-cyan-400 text-xs px-3 py-2 w-56 focus:outline-none placeholder-cyan-900 font-bold uppercase tracking-wider"
+                                />
+                                <button type="submit" disabled={isSearching} className="p-2 text-cyan-500 hover:text-white transition-colors bg-cyan-950/30 border-l border-cyan-900">
+                                    {isSearching ? <span className="animate-spin text-xs">|</span> : <span className="text-xs">EXE</span>}
+                                </button>
+                                <button type="button" onClick={() => setIsSearchOpen(false)} className="p-2 text-red-500 hover:text-white border-l border-cyan-900">
+                                    <X size={14} />
+                                </button>
+                             </motion.form>
+                        ) : (
+                            <motion.div 
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                className="flex items-center gap-2"
+                            >
+                                <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg h-10">
+                                    <Radio size={18} style={{ color: THEME_COLOR }} className={isScanningGlobal ? "animate-spin" : "animate-pulse"} />
+                                    <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
+                                </div>
+
+                                <button 
+                                    onClick={() => setIsSearchOpen(true)}
+                                    className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors shadow-lg"
+                                >
+                                    <Search size={16} />
+                                </button>
+
+                                <button 
+                                    onClick={toggleMute}
+                                    className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-colors shadow-lg"
+                                >
+                                    {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                                </button>
+
+                                {/* GLOBAL SCAN BUTTON */}
+                                <button 
+                                    onClick={() => performGlobalScan()}
+                                    disabled={isScanningGlobal}
+                                    className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-red-400 hover:text-red-300 transition-colors shadow-lg"
+                                    title="Global Radar Scan"
+                                >
+                                    <Zap size={16} className={isScanningGlobal ? "animate-spin" : ""} />
+                                </button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
 
-                {/* LOCATE ME - Top Right */}
+                {/* LOCATE ME */}
                 <button
                     onClick={handleLocateMe}
                     className={`
@@ -575,7 +709,6 @@ function App() {
                 onCompose={handleOpenInput}
             />
 
-            {/* FLOATING ACTION BUTTON - HIDDEN WHEN FEED IS OPEN (hasSignal) */}
             <div 
                 className={`fixed bottom-24 right-5 z-[500] transition-all duration-300 ${(isInputOpen || isFeedOpen || hasSignal) ? 'opacity-0 translate-y-10 pointer-events-none' : 'opacity-100 translate-y-0 pointer-events-auto'}`}
             >

@@ -86,7 +86,8 @@ const generateSeedData = (): ChatMessage[] => {
         isRemote: Math.random() > 0.8,
         originCountry: city.country,
         tags: extractTags(text),
-        isMasked: Math.random() > 0.5 // Random masking for seed data
+        isMasked: Math.random() > 0.5,
+        postType: 'USER'
       });
       count++;
     }
@@ -311,6 +312,32 @@ export const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
   return onlyRoot ? valid.filter((m: ChatMessage) => !m.parentId) : valid;
 };
 
+// Helper for mapping DB row to ChatMessage
+const mapRowToMessage = (d: any): ChatMessage => {
+    const { tags, preciseOrigin, isMasked } = processTags(d.tags);
+    return {
+        id: d.id,
+        text: d.text,
+        timestamp: new Date(d.created_at).getTime(),
+        expiresAt: d.expires_at ? new Date(d.expires_at).getTime() : (Date.now() + BASE_LIFESPAN_MS),
+        location: { lat: Number(d.latitude), lng: Number(d.longitude) },
+        city: d.city_name,
+        country: d.target_country,
+        sessionId: d.session_id,
+        score: d.score ?? 0,
+        parentId: d.parent_post_id,
+        replyCount: d.replies?.[0]?.count || 0,
+        isRemote: d.is_remote,
+        originCountry: d.origin_country,
+        tags: tags,
+        preciseOrigin: preciseOrigin,
+        imageUrl: d.image_url,
+        isMasked: isMasked,
+        postType: d.post_type || 'USER', // Map new column
+        eventMetadata: d.event_metadata || {} // Map new column
+    };
+};
+
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
   const nowISO = new Date().toISOString();
 
@@ -338,28 +365,7 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
     
     return data
         .filter((d: any) => !deleted.has(d.id))
-        .map((d: any) => {
-            const { tags, preciseOrigin, isMasked } = processTags(d.tags);
-            return {
-                id: d.id,
-                text: d.text,
-                timestamp: new Date(d.created_at).getTime(),
-                expiresAt: d.expires_at ? new Date(d.expires_at).getTime() : (Date.now() + BASE_LIFESPAN_MS),
-                location: { lat: Number(d.latitude), lng: Number(d.longitude) }, 
-                city: d.city_name,
-                country: d.target_country,
-                sessionId: d.session_id,
-                score: d.score ?? 0,
-                parentId: d.parent_post_id,
-                replyCount: d.replies?.[0]?.count || 0,
-                isRemote: d.is_remote,
-                originCountry: d.origin_country,
-                tags: tags,
-                preciseOrigin: preciseOrigin,
-                imageUrl: d.image_url,
-                isMasked: isMasked
-            };
-        });
+        .map(mapRowToMessage);
   }
 };
 
@@ -384,27 +390,7 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
 
     return data
         .filter((d: any) => !deleted.has(d.id))
-        .map((d: any) => {
-            const { tags, preciseOrigin, isMasked } = processTags(d.tags);
-            return {
-                id: d.id,
-                text: d.text,
-                timestamp: new Date(d.created_at).getTime(),
-                expiresAt: d.expires_at ? new Date(d.expires_at).getTime() : (Date.now() + BASE_LIFESPAN_MS),
-                location: { lat: Number(d.latitude), lng: Number(d.longitude) },
-                city: d.city_name,
-                country: d.target_country,
-                sessionId: d.session_id,
-                score: d.score ?? 0,
-                parentId: d.parent_post_id,
-                isRemote: d.is_remote,
-                originCountry: d.origin_country,
-                tags: tags,
-                preciseOrigin: preciseOrigin,
-                imageUrl: d.image_url,
-                isMasked: isMasked
-            };
-        });
+        .map(mapRowToMessage);
 };
 
 export const saveMessage = async (
@@ -433,7 +419,8 @@ export const saveMessage = async (
   }
 
   const distKm = calculateDistance(userLat, userLng, targetLat, targetLng);
-  const isRemote = distKm > 25; 
+  // NEW: Increased remote threshold from 25km to 50km
+  const isRemote = distKm > 50; 
   
   const targetLocationData = await getCityName(targetLat, targetLng);
   
@@ -492,7 +479,8 @@ export const saveMessage = async (
     tags: tags,
     preciseOrigin: { lat: finalSenderLat, lng: finalSenderLng },
     imageUrl: imageUrl,
-    isMasked: useSignalMasking
+    isMasked: useSignalMasking,
+    postType: 'USER' // Defaults to User
   };
 
   // We don't send expires_at explicitly here; we let the DB Default (now() + 24h) handle it.
@@ -510,7 +498,8 @@ export const saveMessage = async (
           origin_country: newMessage.originCountry,
           is_remote: newMessage.isRemote,
           tags: newMessage.tags,
-          image_url: newMessage.imageUrl
+          image_url: newMessage.imageUrl,
+          post_type: 'USER' // Explicitly set
       }]);
 
   if (error) {
@@ -592,26 +581,7 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
             
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                 const d = payload.new;
-                const { tags, preciseOrigin, isMasked } = processTags(d.tags);
-
-                const msg: ChatMessage = {
-                    id: d.id,
-                    text: d.text,
-                    timestamp: new Date(d.created_at).getTime(),
-                    expiresAt: d.expires_at ? new Date(d.expires_at).getTime() : (Date.now() + BASE_LIFESPAN_MS),
-                    location: { lat: Number(d.latitude), lng: Number(d.longitude) },
-                    city: d.city_name,
-                    country: d.target_country,
-                    sessionId: d.session_id,
-                    score: d.score || 0,
-                    parentId: d.parent_post_id,
-                    isRemote: d.is_remote,
-                    originCountry: d.origin_country,
-                    tags: tags,
-                    preciseOrigin: preciseOrigin,
-                    imageUrl: d.image_url,
-                    isMasked: isMasked
-                };
+                const msg = mapRowToMessage(d); // Use helper
                 
                 // If update, we might just re-insert to refresh state in UI
                 callback({ type: 'INSERT', message: msg });

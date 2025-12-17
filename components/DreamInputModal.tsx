@@ -1,3 +1,3 @@
-// DEPRECATED FILE
-// Use components/ChatInputModal.tsx instead.
-export default function DreamInputModal() { return null; }
+// OBSOLETE FILE - PENDING DELETION
+// See components/ChatInputModal.tsx
+export default function ObsoleteInput() { return null; }

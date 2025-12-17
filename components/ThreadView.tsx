@@ -164,6 +164,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       const isBoosted = userVotes[msg.id] === 'up';
       const { isCritical, isWeak } = getSignalHealth(msg);
       const isHidden = hiddenIds.has(msg.id);
+      const isGlobal = msg.postType === 'GLOBAL_EVENT';
       
       // Check if this message is from the Original Poster
       const isOp = !isParent && msg.sessionId === parentMessage.sessionId;
@@ -194,9 +195,15 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     <Zap size={18} className={isBoosted ? "fill-cyan-400" : ""} />
                 </button>
                 {!isHidden && (
-                    <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
-                        {msg.score}
-                    </span>
+                    isGlobal ? (
+                        <span className="text-[10px] text-red-500 font-mono font-bold animate-pulse tracking-widest bg-red-500/10 px-1 rounded border border-red-500/30">
+                            SYS
+                        </span>
+                    ) : (
+                        <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
+                            {msg.score}
+                        </span>
+                    )
                 )}
             </div>
             

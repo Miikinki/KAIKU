@@ -1,3 +1,3 @@
-// DEPRECATED FILE
-// Use components/ChatMap.tsx instead.
-export default function DreamMap() { return null; }
+// OBSOLETE FILE - PENDING DELETION
+// See components/ChatMap.tsx
+export default function ObsoleteMap() { return null; }

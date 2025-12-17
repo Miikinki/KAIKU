@@ -114,7 +114,9 @@ async function seedDatabase() {
       session_id: city.faker.string.uuid(),
       created_at: createdAt,
       parent_post_id: null,
-      tags: extractTags(text)
+      tags: extractTags(text),
+      post_type: 'USER', // NEW: Explicitly set as USER content
+      event_metadata: {} // NEW: Empty metadata for regular users
     });
   }
 
@@ -133,8 +135,8 @@ async function seedDatabase() {
         console.error("TIP: You need to create the table in Supabase first!");
         process.exit(1);
       }
-      if (error.message.includes('column "target_country" of relation "kaiku_posts" does not exist')) {
-        console.error("TIP: You need to run the ALTER TABLE SQL command to add new columns!");
+      if (error.message.includes('column "post_type" of relation "kaiku_posts" does not exist')) {
+        console.error("TIP: You need to run the ALTER TABLE SQL command to add 'post_type' column!");
         process.exit(1);
       }
     } else {

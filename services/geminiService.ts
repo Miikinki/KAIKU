@@ -1,5 +1,5 @@
-// TÄMÄ TIEDOSTO ON VANHENTUNUT (DEPRECATED).
-// KAIKU ei käytä enää unien analysointia.
-// Voit poistaa tämän tiedoston turvallisesti.
+// OBSOLETE FILE
+// This service is no longer used in KAIKU.
+// Safe to delete.
 
-export const analyzeDream = async () => null;
+export const obsoleteService = async () => null;

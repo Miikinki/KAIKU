@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert, X, Image as ImageIcon } from 'lucide-react';
+import { Crosshair, Lock, ShieldAlert, X, Image as ImageIcon, AlertTriangle } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
@@ -29,40 +29,60 @@ interface ChatMapProps {
 
 // --- DYNAMIC MARKER ICON GENERATOR (Single Message) ---
 const getMarkerIcon = (msg: ChatMessage) => {
-    // Note: We use a static calculation here inside the memo.
-    // The visual pulse is handled by CSS, not by JS intervals re-rendering the icon.
     const ageMins = (Date.now() - msg.timestamp) / 60000;
     const shouldPulse = ageMins < 15;
     const isMasked = msg.isMasked || false;
+    const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
 
     const iconSize = isMasked ? 18 : 22;
-    const containerSize = 40;
+    // Global events get a bigger hit area and icon
+    const containerSize = isGlobalEvent ? 50 : 40; 
 
-    const svgContent = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" 
-            fill="${isMasked ? 'none' : 'currentColor'}" 
-            stroke="currentColor" 
-            stroke-width="2" 
-            stroke-linecap="round" 
-            stroke-linejoin="round"
-        >
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-        </svg>
-    `;
+    let svgContent = '';
+    let visualClasses = '';
+    let pulseHtml = '';
 
-    const visualClasses = isMasked 
-        ? 'opacity-60' 
-        : 'drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]';
-        
-    // Optimized Pulse: Pure CSS animation.
-    const pulseHtml = shouldPulse 
-        ? `<div class="absolute inset-0 rounded-full border border-cyan-400/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>` 
-        : '';
+    if (isGlobalEvent) {
+        // --- GLOBAL EVENT STYLE (RED TRIANGLE ALERT) ---
+        // Enhanced version with stronger colors
+        svgContent = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="#7f1d1d" stroke-width="1">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9a1 1 0 0 1 1 1v4a1 1 0 0 1-2 0v-4a1 1 0 0 1 1-1zm0 8a1 1 0 1 1-1-1 1 1 0 0 1 1 1z"/>
+            </svg>
+        `;
+        visualClasses = 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,1)]';
+        // Double pulse for global events
+        pulseHtml = `
+            <div class="absolute inset-0 rounded-full bg-red-500/20 animate-ping"></div>
+            <div class="absolute inset-2 rounded-full border border-red-500/80 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+        `;
+    } else {
+        // --- USER SIGNAL STYLE (CYAN) ---
+        svgContent = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" 
+                fill="${isMasked ? 'none' : 'currentColor'}" 
+                stroke="currentColor" 
+                stroke-width="2" 
+                stroke-linecap="round" 
+                stroke-linejoin="round"
+            >
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+        `;
+
+        visualClasses = isMasked 
+            ? 'text-cyan-400 opacity-60' 
+            : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]';
+            
+        pulseHtml = shouldPulse 
+            ? `<div class="absolute inset-0 rounded-full border border-cyan-400/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>` 
+            : '';
+    }
 
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
             ${pulseHtml}
-            <div class="relative z-10 text-cyan-400 ${visualClasses} transition-all duration-300">
+            <div class="relative z-10 ${visualClasses} transition-all duration-300">
                 ${svgContent}
             </div>
         </div>
@@ -113,7 +133,7 @@ const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
         if (target) {
             map.flyTo([target.location.lat, target.location.lng], 14, {
                 animate: true,
-                duration: 1.5,
+                duration: 1.2, 
                 easeLinearity: 0.25
             });
         }
@@ -155,8 +175,6 @@ const MapController: React.FC<{
   const map = useMap();
   const lastUpdateRef = useRef(0);
 
-  // 1. UPDATE VIEWPORT (Feed logic, frequent)
-  // This informs the App about where we are looking so the feed updates.
   const handleViewportUpdate = useCallback(() => {
       const bounds = map.getBounds();
       const center = map.getCenter();
@@ -183,11 +201,8 @@ const MapController: React.FC<{
       });
   }, [map, onViewportChange]);
 
-  // 2. UPDATE CLUSTERS (Markers, expensive/flicker-prone)
-  // Only called when movement STOPS to prevent marker regeneration during drag.
   const handleClusterUpdate = useCallback(() => {
       const b = map.getBounds();
-      // Leaflet: West, South, East, North -> Supercluster: [West, South, East, North]
       setBounds([
           b.getWest(),
           b.getSouth(),
@@ -197,7 +212,6 @@ const MapController: React.FC<{
       setZoom(map.getZoom());
   }, [map, setBounds, setZoom]);
 
-  // Initial Sync
   useEffect(() => {
       handleViewportUpdate();
       handleClusterUpdate();
@@ -212,8 +226,6 @@ const MapController: React.FC<{
 
   useMapEvents({
     move: () => {
-        // Feed/Radar updates are allowed during move (throttled), 
-        // but we DO NOT update clusters here.
         const now = Date.now();
         if (now - lastUpdateRef.current > 100) { 
             handleViewportUpdate();
@@ -222,12 +234,12 @@ const MapController: React.FC<{
     },
     moveend: () => {
         handleViewportUpdate();
-        handleClusterUpdate(); // Update markers only when stopped
+        handleClusterUpdate(); 
         lastUpdateRef.current = Date.now();
     },
     zoomend: () => {
         handleViewportUpdate();
-        handleClusterUpdate(); // Update markers after zoom
+        handleClusterUpdate(); 
     }
   });
 
@@ -245,28 +257,51 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
     mapInstance: L.Map | null
 }) => {
     const { t } = useTranslation();
+    const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
+    const markerRef = useRef<L.Marker>(null);
     
     // Stable icon generation
     const icon = useMemo(() => getMarkerIcon(msg), [
         msg.id, 
         msg.isMasked, 
-        // Effectively constant for the lifespan of the marker component instance
+        msg.postType, 
         msg.timestamp 
     ]);
 
     const hasText = msg.text && msg.text.trim().length > 0;
 
+    // --- FIX: POPUP OPENING LOGIC ---
+    useEffect(() => {
+        if (isFocused && markerRef.current) {
+            // We need a significant delay here because the map performs a 'flyTo' animation
+            // when a message is clicked. Leaflet often closes popups if opened *during* movement.
+            // 800ms gives enough time for the flyTo (1.2s duration usually, but eases out) to settle.
+            // INCREASED to 1250ms to be safe (flyTo is 1200ms)
+            const timer = setTimeout(() => {
+                markerRef.current?.openPopup();
+            }, 1250);
+            return () => clearTimeout(timer);
+        }
+    }, [isFocused]);
+
+    const handleOpenClick = (e: React.MouseEvent) => {
+        e.stopPropagation(); 
+        e.preventDefault();
+        
+        if (!isHidden) {
+            onOpenThread(msg);
+            mapInstance?.closePopup(); 
+        }
+    };
+
     return (
         <Marker 
             position={position} 
             icon={icon}
-            ref={(ref) => {
-                if (ref && isFocused) {
-                    setTimeout(() => ref.openPopup(), 600); 
-                }
-            }}
+            ref={markerRef}
+            zIndexOffset={isGlobalEvent ? 2000 : 0} // Ensure global events are on top
         >
-            <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -4]}>
+            <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}>
                 <div className="p-3 relative">
                     <button
                         onClick={(e) => {
@@ -279,10 +314,14 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
                         <X size={14} />
                     </button>
 
-                    <div onClick={() => !isHidden && onOpenThread(msg)} className="cursor-pointer group mt-1">
+                    <div className="group mt-1">
                         <div className="flex items-center justify-between mb-2 pr-6">
-                            <span className="text-[10px] text-cyan-400 font-mono font-bold tracking-wider flex items-center gap-1">
-                                <Crosshair size={10} /> {msg.isMasked ? t('map.masked') : t('map.exact')}
+                            <span className={`text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 ${isGlobalEvent ? 'text-red-500' : 'text-cyan-400'}`}>
+                                {isGlobalEvent ? (
+                                    <><span className="animate-pulse bg-red-500/10 px-1 rounded border border-red-500/30">SYS</span> // SYSTEM ALERT</>
+                                ) : (
+                                    msg.isMasked ? <><Crosshair size={10} /> {t('map.masked')}</> : <><Crosshair size={10} /> {t('map.exact')}</>
+                                )}
                             </span>
                             <span className="text-[10px] text-gray-500 font-mono">
                                 {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
@@ -294,7 +333,10 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
                                 {t('map.content_hidden')}
                             </p>
                         ) : (
-                            <div className="mb-3 border-l-2 border-cyan-500/30 pl-2 group-hover:border-cyan-400 transition-colors">
+                            <div 
+                                onClick={handleOpenClick} // Make content clickable too
+                                className={`mb-3 border-l-2 pl-2 transition-colors cursor-pointer ${isGlobalEvent ? 'border-red-500/50 group-hover:border-red-500' : 'border-cyan-500/30 group-hover:border-cyan-400'}`}
+                            >
                                 {/* IMAGE THUMBNAIL (IF EXISTS) */}
                                 {msg.imageUrl && (
                                     <div className="mb-2 rounded overflow-hidden border border-white/10">
@@ -302,7 +344,7 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
                                     </div>
                                 )}
                                 
-                                <p className="text-sm text-gray-200 leading-relaxed line-clamp-3 font-light">
+                                <p className="text-sm text-gray-200 leading-relaxed line-clamp-4 font-light whitespace-pre-line">
                                     {hasText ? msg.text : (msg.imageUrl && (
                                         <span className="flex items-center gap-2 text-cyan-400 italic font-mono text-xs">
                                             <ImageIcon size={14} /> {t('thread.image_attached')}
@@ -313,9 +355,12 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
                         )}
                         
                         {!isHidden && (
-                            <div className="text-center py-1.5 bg-white/5 rounded text-[10px] text-cyan-400 font-bold tracking-widest group-hover:bg-cyan-500 group-hover:text-black transition-all">
-                                {t('map.open_channel')}
-                            </div>
+                            <button
+                                onClick={handleOpenClick}
+                                className={`w-full text-center py-1.5 rounded text-[10px] font-bold tracking-widest transition-all ${isGlobalEvent ? 'bg-red-900/30 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-white/5 text-cyan-400 hover:bg-cyan-500 hover:text-black'}`}
+                            >
+                                {isGlobalEvent ? 'READ PROTOCOL' : t('map.open_channel')}
+                            </button>
                         )}
                     </div>
                 </div>
@@ -343,7 +388,6 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
   const startPosition: [number, number] = [52.0, 10.0]; 
   const startZoom = 3.5; 
 
-  // CHANGED: Sweeper turns red only at very deep zoom (17.5+), since Max is 18.
   const isMaxZoom = zoom >= 17.5; 
 
   const getRadarScale = (currentZoom: number) => {
@@ -548,7 +592,7 @@ const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewp
 }, (prevProps, nextProps) => {
     return prevProps.messages === nextProps.messages && 
            prevProps.signals === nextProps.signals && 
-           prevProps.lastNewMessage === nextProps.lastNewMessage &&
+           prevProps.lastNewMessage === nextProps.lastNewMessage && 
            prevProps.hasSignal === nextProps.hasSignal &&
            prevProps.focusedMessage === nextProps.focusedMessage &&
            prevProps.hiddenIds === nextProps.hiddenIds &&

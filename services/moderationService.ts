@@ -1,4 +1,3 @@
-
 import { BANNED_WORDS } from '../constants';
 
 // 1. Content Moderation (Basic)
@@ -41,7 +40,31 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
   }
 };
 
-// 3. IP-Based Location Fallback
+// 3. Forward Geocoding (Search)
+// Using Nominatim (OpenStreetMap)
+export const searchLocations = async (query: string): Promise<{ lat: number, lng: number, name: string } | null> => {
+    try {
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
+        );
+        if (!response.ok) throw new Error("Search failed");
+        
+        const data = await response.json();
+        if (data && data.length > 0) {
+            return {
+                lat: parseFloat(data[0].lat),
+                lng: parseFloat(data[0].lon),
+                name: data[0].display_name.split(',')[0] // Take first part of name
+            };
+        }
+        return null;
+    } catch (e) {
+        console.warn("Search location failed", e);
+        return null;
+    }
+};
+
+// 4. IP-Based Location Fallback
 // Used when GPS is unavailable or timed out.
 export const getIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
     // Strategy: Try Primary API -> If fail, try Secondary API

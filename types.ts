@@ -1,5 +1,3 @@
-
-
 export interface ChatMessage {
   id: string;
   text: string;
@@ -22,6 +20,12 @@ export interface ChatMessage {
   preciseOrigin?: { lat: number, lng: number }; // PERSISTENT: Extracted from metadata for accurate remote arcs
   imageUrl?: string; // NEW: URL for attached image
   isMasked?: boolean; // NEW: Indicates if the location is fuzzy/masked
+  
+  // GLOBAL RADAR FIELDS
+  postType?: 'USER' | 'GLOBAL_EVENT';
+  eventMetadata?: {
+    source_url?: string;
+  };
 }
 
 export interface ViewportBounds {
