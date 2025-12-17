@@ -145,7 +145,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     if (!msg.isRemote) return null;
 
     const isDomestic = msg.country && msg.originCountry === msg.country;
-    const flagUrl = getFlagUrl(msg.originCountry);
     const title = isDomestic 
         ? t('feed.visitor_remote', { country: msg.originCountry })
         : t('feed.visitor_global', { country: msg.originCountry });
@@ -153,8 +152,10 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     return (
         <div className="text-amber-400 flex items-center gap-1.5" title={title}>
             <Satellite size={12} />
-            {!isDomestic && flagUrl && (
-                <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
+            {!isDomestic && msg.originCountry && (
+                <span className="text-sm leading-none" role="img" aria-label={msg.originCountry}>
+                    {getFlagEmoji(msg.originCountry)}
+                </span>
             )}
         </div>
     );
@@ -211,7 +212,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
             <div className="flex-1">
                 <div className="flex justify-between items-start mb-1">
                     <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                        <span className="font-mono text-cyan-400">ID: {msg.sessionId.slice(0, 6)}</span>
+                        {isGlobal ? (
+                           <div className="flex items-center gap-1.5">
+                              {/* Removed large SYSTEM ALERT badge */}
+                              {msg.originCountry === "SYSTEM" && <Satellite size={12} className="text-amber-500" />}
+                           </div>
+                        ) : (
+                           <span className="font-mono text-cyan-400">ID: {msg.sessionId.slice(0, 6)}</span>
+                        )}
                         
                         {/* OP BADGE */}
                         {isOp && (
@@ -221,7 +229,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                             </span>
                         )}
 
-                        <span>•</span>
+                        {(isGlobal || !isOp) && <span>•</span>}
                         <div className="flex items-center gap-1 font-mono font-bold">
                             <Clock size={10} />
                             {formatRelativeTime(msg.timestamp)}
@@ -232,7 +240,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     </div>
                     <div className="flex items-center gap-2">
                         
-                        {!isHidden && renderVisitorBadge(msg)}
+                        {!isHidden && !isGlobal && renderVisitorBadge(msg)}
 
                         {msg.sessionId === currentSessionId ? (
                             <button 
@@ -256,7 +264,9 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                                 <MapPin size={10} /> 
                                 <span>{msg.city}</span>
                                 {isGlobal && msg.country && (
-                                    <span className="text-sm ml-1 filter grayscale-[0.3]">{getFlagEmoji(msg.country)}</span>
+                                    <span className="text-sm leading-none ml-1" role="img" aria-label={msg.country}>
+                                        {getFlagEmoji(msg.country)}
+                                    </span>
                                 )}
                             </div>
                         )}

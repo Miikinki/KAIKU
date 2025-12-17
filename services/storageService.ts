@@ -1,3 +1,4 @@
+
 import { ChatMessage, RateLimitStatus } from '../types';
 import { supabase } from './supabaseClient';
 import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS } from '../constants';
@@ -127,7 +128,7 @@ export const getFlagUrl = (countryCode?: string) => {
 
 // NEW: Convert ISO code to Unicode Flag Emoji
 export const getFlagEmoji = (countryCode?: string) => {
-  if (!countryCode) return '';
+  if (!countryCode || countryCode.length !== 2) return '';
   const codePoints = countryCode
     .toUpperCase()
     .split('')

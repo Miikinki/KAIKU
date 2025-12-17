@@ -221,7 +221,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
     if (!msg.isRemote) return null;
 
     const isDomestic = msg.country && msg.originCountry === msg.country;
-    const flagUrl = getFlagUrl(msg.originCountry);
     const title = isDomestic 
         ? t('feed.visitor_remote', { country: msg.originCountry })
         : t('feed.visitor_global', { country: msg.originCountry });
@@ -229,8 +228,10 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
     return (
         <div className="text-amber-400 flex items-center gap-1.5" title={title}>
             <Satellite size={12} />
-            {!isDomestic && flagUrl && (
-                <img src={flagUrl} alt={msg.originCountry} className="w-4 h-3 rounded-[2px] object-cover" />
+            {!isDomestic && msg.originCountry && (
+                <span className="text-sm leading-none" role="img" aria-label={msg.originCountry}>
+                    {getFlagEmoji(msg.originCountry)}
+                </span>
             )}
         </div>
     );
@@ -493,7 +494,9 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                 {msg.city || 'UNKNOWN SECTOR'}
                                 {/* COUNTRY FLAG for Global Events */}
                                 {isGlobal && msg.country && (
-                                    <span className="text-sm ml-1 filter grayscale-[0.3]">{getFlagEmoji(msg.country)}</span>
+                                    <span className="text-sm leading-none ml-1" role="img" aria-label={msg.country}>
+                                        {getFlagEmoji(msg.country)}
+                                    </span>
                                 )}
                             </span>
                         </div>

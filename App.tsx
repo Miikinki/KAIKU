@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Radio, Volume2, VolumeX, Plus, Locate, Search, X, Zap, Terminal } from 'lucide-react';
 import ChatMap from './components/ChatMap';
@@ -8,7 +9,8 @@ import WelcomeScreen from './components/WelcomeScreen';
 import BootSequence from './components/BootSequence';
 import DesktopLanding from './components/DesktopLanding';
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, subscribeToPresence, getHiddenIds, toggleHiddenMessage } from './services/storageService';
+// Add getAnonymousID to the imports from storageService
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, subscribeToPresence, getHiddenIds, toggleHiddenMessage, getAnonymousID } from './services/storageService';
 import { scanGlobalNetwork } from './services/globalRadarService'; // NEW IMPORT
 import { getCityName, searchLocations } from './services/moderationService';
 import { getPreciseLocation } from './services/locationService';
@@ -77,7 +79,10 @@ function App() {
     const checkDevice = () => {
       const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       const isSmallScreen = window.innerWidth < 1024; // Treat screens >= 1024px width as Desktop
-      const hasDevFlag = new URLSearchParams(window.location.search).get('dev') === 'true';
+      
+      // Joustavampi dev-tunnistus
+      const searchParams = new URLSearchParams(window.location.search);
+      const hasDevFlag = searchParams.has('dev') || searchParams.get('dev') === 'true';
 
       if (!isMobileUA && !isSmallScreen && !hasDevFlag) {
         setIsDesktop(true);
@@ -270,6 +275,7 @@ function App() {
         if (!locationCache.current) return;
         
         let nearbyCount = 0;
+        const myId = getAnonymousID();
         const myLat = locationCache.current.lat;
         const myLng = locationCache.current.lng;
 

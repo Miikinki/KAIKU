@@ -1,3 +1,4 @@
+
 import React from 'react';
 import QRCode from 'react-qr-code';
 import { ShieldAlert, Smartphone } from 'lucide-react';

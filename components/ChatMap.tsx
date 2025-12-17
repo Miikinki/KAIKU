@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert, X, Image as ImageIcon, AlertTriangle } from 'lucide-react';
+import { Crosshair, Lock, ShieldAlert, X, Image as ImageIcon, AlertTriangle, User } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
@@ -43,12 +44,15 @@ const getMarkerIcon = (msg: ChatMessage) => {
     let pulseHtml = '';
 
     if (isGlobalEvent) {
+        // FIXED: Using a standard, centered AlertTriangle path to ensure it's not crooked.
         svgContent = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="#7f1d1d" stroke-width="1">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9a1 1 0 0 1 1 1v4a1 1 0 0 1-2 0v-4a1 1 0 0 1 1-1zm0 8a1 1 0 1 1-1-1 1 1 0 0 1 1 1z"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
         `;
-        visualClasses = 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,1)]';
+        visualClasses = 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,1)] transform-none';
         pulseHtml = `
             <div class="absolute inset-0 rounded-full bg-red-500/20 animate-ping"></div>
             <div class="absolute inset-2 rounded-full border border-red-500/80 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
@@ -76,7 +80,7 @@ const getMarkerIcon = (msg: ChatMessage) => {
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
             ${pulseHtml}
-            <div class="relative z-10 ${visualClasses} transition-all duration-300">
+            <div class="relative z-10 ${visualClasses} transition-all duration-300 flex items-center justify-center">
                 ${svgContent}
             </div>
         </div>
@@ -107,15 +111,21 @@ const UserLocationMarker = ({ position }: { position: { lat: number, lng: number
     const icon = L.divIcon({
         className: 'bg-transparent border-none',
         html: `
-            <div class="relative w-6 h-6 flex items-center justify-center">
-                <div class="absolute w-6 h-6 bg-blue-500/30 rounded-full animate-ping"></div>
-                <div class="relative w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg"></div>
+            <div class="relative flex flex-col items-center">
+                <div class="relative w-8 h-8 flex items-center justify-center">
+                    <div class="absolute w-8 h-8 bg-cyan-500/20 rounded-full animate-ping"></div>
+                    <div class="absolute inset-0 border border-cyan-400/40 rounded-full animate-[spin_4s_linear_infinite]"></div>
+                    <div class="relative w-4 h-4 bg-cyan-500 border-2 border-[#0a0a12] rounded-full shadow-[0_0_15px_rgba(6,182,212,0.8)]"></div>
+                </div>
+                <div class="mt-1 px-1.5 py-0.5 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/30 rounded text-[8px] font-mono font-black text-cyan-400 tracking-widest uppercase shadow-lg select-none">
+                    YOU
+                </div>
             </div>
         `,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
+        iconSize: [40, 50],
+        iconAnchor: [20, 25]
     });
-    return <Marker position={[position.lat, position.lng]} icon={icon} zIndexOffset={1000} />;
+    return <Marker position={[position.lat, position.lng]} icon={icon} zIndexOffset={5000} />;
 };
 
 const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
@@ -234,10 +244,10 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
             <Popup 
                 className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}
                 autoPan={true}
-                autoPanPaddingTopLeft={[50, 250]} // Ensure it doesn't hide behind search bar
-                autoPanPaddingBottomRight={[50, 50]}
+                autoPanPaddingTopLeft={[50, 100]} // Keep clear of search bar (approx 60-80px)
+                autoPanPaddingBottomRight={[50, 150]} // Increased from 50 to 150 to stay clear of the bottom feed panel
             >
-                <div className="p-3 relative">
+                <div className="p-3 pb-5 relative">
                     <button onClick={(e) => { e.stopPropagation(); onClosePopup(); mapInstance?.closePopup(); }}
                         className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors z-50">
                         <X size={14} />
@@ -259,7 +269,7 @@ const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenTh
                                 <p className="text-sm text-gray-200 leading-relaxed line-clamp-4 font-light whitespace-pre-line">{hasText ? msg.text : (msg.imageUrl && <span className="flex items-center gap-2 text-cyan-400 italic font-mono text-xs"><ImageIcon size={14} /> {t('thread.image_attached')}</span>)}</p>
                             </div>
                         )}
-                        {!isHidden && <button onClick={handleOpenClick} className={`w-full text-center py-1.5 rounded text-[10px] font-bold tracking-widest transition-all ${isGlobalEvent ? 'bg-red-900/30 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-white/5 text-cyan-400 hover:bg-cyan-500 hover:text-black'}`}>{isGlobalEvent ? 'READ PROTOCOL' : t('map.open_channel')}</button>}
+                        {!isHidden && <button onClick={handleOpenClick} className={`w-full text-center py-2 rounded text-[10px] font-bold tracking-widest transition-all ${isGlobalEvent ? 'bg-red-900/30 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-white/5 text-cyan-400 hover:bg-cyan-500 hover:text-black'}`}>{isGlobalEvent ? 'READ PROTOCOL' : t('map.open_channel')}</button>}
                     </div>
                 </div>
             </Popup>
