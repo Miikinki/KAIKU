@@ -7,6 +7,7 @@ import ArcLayer from './ArcLayer';
 import HeatmapLayer, { HeatmapLayerRef } from './HeatmapLayer';
 import { useTranslation } from 'react-i18next';
 import L from 'leaflet';
+import { getFlagEmoji } from '../services/storageService';
 // @ts-ignore
 import useSupercluster from 'use-supercluster';
 
@@ -35,7 +36,6 @@ const getMarkerIcon = (msg: ChatMessage) => {
     const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
 
     const iconSize = isMasked ? 18 : 22;
-    // Global events get a bigger hit area and icon
     const containerSize = isGlobalEvent ? 50 : 40; 
 
     let svgContent = '';
@@ -43,21 +43,17 @@ const getMarkerIcon = (msg: ChatMessage) => {
     let pulseHtml = '';
 
     if (isGlobalEvent) {
-        // --- GLOBAL EVENT STYLE (RED TRIANGLE ALERT) ---
-        // Enhanced version with stronger colors
         svgContent = `
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="#7f1d1d" stroke-width="1">
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9a1 1 0 0 1 1 1v4a1 1 0 0 1-2 0v-4a1 1 0 0 1 1-1zm0 8a1 1 0 1 1-1-1 1 1 0 0 1 1 1z"/>
             </svg>
         `;
         visualClasses = 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,1)]';
-        // Double pulse for global events
         pulseHtml = `
             <div class="absolute inset-0 rounded-full bg-red-500/20 animate-ping"></div>
             <div class="absolute inset-2 rounded-full border border-red-500/80 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
         `;
     } else {
-        // --- USER SIGNAL STYLE (CYAN) ---
         svgContent = `
             <svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" 
                 fill="${isMasked ? 'none' : 'currentColor'}" 
@@ -69,11 +65,9 @@ const getMarkerIcon = (msg: ChatMessage) => {
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
             </svg>
         `;
-
         visualClasses = isMasked 
             ? 'text-cyan-400 opacity-60' 
             : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]';
-            
         pulseHtml = shouldPulse 
             ? `<div class="absolute inset-0 rounded-full border border-cyan-400/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>` 
             : '';
@@ -97,12 +91,10 @@ const getMarkerIcon = (msg: ChatMessage) => {
     });
 };
 
-// --- CLUSTER ICON GENERATOR ---
 const getClusterIcon = (count: number) => {
     const size = 30 + (count / 100) * 30;
     const finalSize = Math.min(size, 60);
     const isLarge = count > 10;
-    
     return L.divIcon({
         html: `<div class="kaiku-cluster ${isLarge ? 'kaiku-cluster-large' : ''}" style="width: ${finalSize}px; height: ${finalSize}px;">${count}</div>`,
         className: 'bg-transparent border-none', 
@@ -123,7 +115,6 @@ const UserLocationMarker = ({ position }: { position: { lat: number, lng: number
         iconSize: [24, 24],
         iconAnchor: [12, 12]
     });
-
     return <Marker position={[position.lat, position.lng]} icon={icon} zIndexOffset={1000} />;
 };
 
@@ -131,10 +122,10 @@ const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
     const map = useMap();
     useEffect(() => {
         if (target) {
-            map.flyTo([target.location.lat, target.location.lng], 14, {
+            // FIX: Fly directly to the coordinates. Leaflet Popup autoPan handles the padding.
+            map.flyTo([target.location.lat, target.location.lng], 18, {
                 animate: true,
-                duration: 1.2, 
-                easeLinearity: 0.25
+                duration: 1.5
             });
         }
     }, [target, map]);
@@ -147,79 +138,52 @@ const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number, timestamp:
         if (target) {
             map.flyTo([target.lat, target.lng], 16.5, {
                 animate: true,
-                duration: 2.0,
-                easeLinearity: 0.2
+                duration: 2.0
             });
         }
     }, [target?.timestamp, map]);
     return null;
 };
 
-const MapEventsHandler: React.FC<{ 
-    onMapClick: () => void
-}> = ({ onMapClick }) => {
-    useMapEvents({
-        click: () => {
-            onMapClick();
-        }
-    });
+const MapEventsHandler: React.FC<{ onMapClick: () => void }> = ({ onMapClick }) => {
+    useMapEvents({ click: () => onMapClick() });
     return null;
 };
 
 const MapController: React.FC<{ 
     onViewportChange: (b: ViewportBounds) => void, 
     setZoom: (z: number) => void,
-    setBounds: (b: [number, number, number, number] | null) => void // Format: [W, S, E, N]
+    setBounds: (b: [number, number, number, number] | null) => void 
 }> = ({ onViewportChange, setZoom, setBounds }) => {
-  
   const map = useMap();
   const lastUpdateRef = useRef(0);
-
   const handleViewportUpdate = useCallback(() => {
       const bounds = map.getBounds();
       const center = map.getCenter();
       const z = map.getSize().x > 0 ? map.getZoom() : 0;
       const size = map.getSize();
-
       const visualOffsetY = 96; 
       const sectorPoint = [size.x / 2, (size.y / 2) - visualOffsetY];
-      
       let sectorLatLng = center;
       try {
           // @ts-ignore
           sectorLatLng = map.containerPointToLatLng(sectorPoint);
       } catch (e) {}
-      
       onViewportChange({
-          north: bounds.getNorth(),
-          south: bounds.getSouth(),
-          east: bounds.getEast(),
-          west: bounds.getWest(),
-          zoom: z,
-          center: { lat: center.lat, lng: center.lng },
-          sectorCenter: { lat: sectorLatLng.lat, lng: sectorLatLng.lng }
+          north: bounds.getNorth(), south: bounds.getSouth(), east: bounds.getEast(), west: bounds.getWest(),
+          zoom: z, center: { lat: center.lat, lng: center.lng }, sectorCenter: { lat: sectorLatLng.lat, lng: sectorLatLng.lng }
       });
   }, [map, onViewportChange]);
 
   const handleClusterUpdate = useCallback(() => {
       const b = map.getBounds();
-      setBounds([
-          b.getWest(),
-          b.getSouth(),
-          b.getEast(),
-          b.getNorth()
-      ]);
+      setBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
       setZoom(map.getZoom());
   }, [map, setBounds, setZoom]);
 
   useEffect(() => {
-      handleViewportUpdate();
-      handleClusterUpdate();
-  }, []);
-
-  useEffect(() => {
+      handleViewportUpdate(); handleClusterUpdate();
       const invalidate = () => map.invalidateSize({ animate: false });
-      invalidate();
       window.addEventListener('resize', invalidate);
       return () => window.removeEventListener('resize', invalidate);
   }, [map]);
@@ -228,377 +192,141 @@ const MapController: React.FC<{
     move: () => {
         const now = Date.now();
         if (now - lastUpdateRef.current > 100) { 
-            handleViewportUpdate();
-            lastUpdateRef.current = now;
+            handleViewportUpdate(); lastUpdateRef.current = now;
         }
     },
-    moveend: () => {
-        handleViewportUpdate();
-        handleClusterUpdate(); 
-        lastUpdateRef.current = Date.now();
-    },
-    zoomend: () => {
-        handleViewportUpdate();
-        handleClusterUpdate(); 
-    }
+    moveend: () => { handleViewportUpdate(); handleClusterUpdate(); lastUpdateRef.current = Date.now(); },
+    zoomend: () => { handleViewportUpdate(); handleClusterUpdate(); }
   });
-
   return null;
 };
 
-// --- MEMOIZED MARKER COMPONENT ---
 const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenThread, onClosePopup, mapInstance }: {
-    msg: ChatMessage,
-    position: [number, number],
-    isFocused: boolean,
-    isHidden: boolean,
-    onOpenThread: (msg: ChatMessage) => void,
-    onClosePopup: () => void,
-    mapInstance: L.Map | null
+    msg: ChatMessage, position: [number, number], isFocused: boolean, isHidden: boolean,
+    onOpenThread: (msg: ChatMessage) => void, onClosePopup: () => void, mapInstance: L.Map | null
 }) => {
     const { t } = useTranslation();
     const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
     const markerRef = useRef<L.Marker>(null);
-    
-    // Stable icon generation
-    const icon = useMemo(() => getMarkerIcon(msg), [
-        msg.id, 
-        msg.isMasked, 
-        msg.postType, 
-        msg.timestamp 
-    ]);
-
+    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType, msg.timestamp]);
     const hasText = msg.text && msg.text.trim().length > 0;
 
-    // --- FIX: POPUP OPENING LOGIC ---
     useEffect(() => {
-        if (isFocused && markerRef.current) {
-            // We need a significant delay here because the map performs a 'flyTo' animation
-            // when a message is clicked. Leaflet often closes popups if opened *during* movement.
-            // 800ms gives enough time for the flyTo (1.2s duration usually, but eases out) to settle.
-            // INCREASED to 1250ms to be safe (flyTo is 1200ms)
-            const timer = setTimeout(() => {
-                markerRef.current?.openPopup();
-            }, 1250);
-            return () => clearTimeout(timer);
+        if (isFocused && markerRef.current && mapInstance) {
+            const openPopupSafe = () => { if (markerRef.current) markerRef.current.openPopup(); };
+            // @ts-ignore
+            const isAnimating = mapInstance._animatingZoom || mapInstance._panAnim;
+            if (isAnimating) {
+                mapInstance.once('moveend', () => setTimeout(openPopupSafe, 150));
+            } else {
+                setTimeout(openPopupSafe, 200);
+            }
         }
-    }, [isFocused]);
+    }, [isFocused, mapInstance]);
 
     const handleOpenClick = (e: React.MouseEvent) => {
-        e.stopPropagation(); 
-        e.preventDefault();
-        
-        if (!isHidden) {
-            onOpenThread(msg);
-            mapInstance?.closePopup(); 
-        }
+        e.stopPropagation(); e.preventDefault();
+        if (!isHidden) { onOpenThread(msg); mapInstance?.closePopup(); }
     };
 
     return (
-        <Marker 
-            position={position} 
-            icon={icon}
-            ref={markerRef}
-            zIndexOffset={isGlobalEvent ? 2000 : 0} // Ensure global events are on top
-        >
-            <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}>
+        <Marker position={position} icon={icon} ref={markerRef} zIndexOffset={isFocused ? 3000 : (isGlobalEvent ? 2000 : 0)}>
+            <Popup 
+                className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}
+                autoPan={true}
+                autoPanPaddingTopLeft={[50, 250]} // Ensure it doesn't hide behind search bar
+                autoPanPaddingBottomRight={[50, 50]}
+            >
                 <div className="p-3 relative">
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onClosePopup();
-                            mapInstance?.closePopup(); 
-                        }}
-                        className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors z-50"
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); onClosePopup(); mapInstance?.closePopup(); }}
+                        className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors z-50">
                         <X size={14} />
                     </button>
-
                     <div className="group mt-1">
                         <div className="flex items-center justify-between mb-2 pr-6">
                             <span className={`text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 ${isGlobalEvent ? 'text-red-500' : 'text-cyan-400'}`}>
                                 {isGlobalEvent ? (
-                                    <><span className="animate-pulse bg-red-500/10 px-1 rounded border border-red-500/30">SYS</span> // SYSTEM ALERT</>
-                                ) : (
-                                    msg.isMasked ? <><Crosshair size={10} /> {t('map.masked')}</> : <><Crosshair size={10} /> {t('map.exact')}</>
-                                )}
+                                    <><span className="animate-pulse bg-red-500/10 px-1 rounded border border-red-500/30">SYS</span> <span className="ml-1">SYSTEM ALERT</span> {msg.country && <span className="ml-1 text-sm">{getFlagEmoji(msg.country)}</span>}</>
+                                ) : (msg.isMasked ? <><Crosshair size={10} /> {t('map.masked')}</> : <><Crosshair size={10} /> {t('map.exact')}</>)}
                             </span>
-                            <span className="text-[10px] text-gray-500 font-mono">
-                                {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                            </span>
+                            <span className="text-[10px] text-gray-500 font-mono">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                         </div>
-                        
                         {isHidden ? (
-                            <p className="text-sm text-gray-500 italic leading-relaxed mb-3 font-light border-l-2 border-gray-500/30 pl-2">
-                                {t('map.content_hidden')}
-                            </p>
+                            <p className="text-sm text-gray-500 italic leading-relaxed mb-3 font-light border-l-2 border-gray-500/30 pl-2">{t('map.content_hidden')}</p>
                         ) : (
-                            <div 
-                                onClick={handleOpenClick} // Make content clickable too
-                                className={`mb-3 border-l-2 pl-2 transition-colors cursor-pointer ${isGlobalEvent ? 'border-red-500/50 group-hover:border-red-500' : 'border-cyan-500/30 group-hover:border-cyan-400'}`}
-                            >
-                                {/* IMAGE THUMBNAIL (IF EXISTS) */}
-                                {msg.imageUrl && (
-                                    <div className="mb-2 rounded overflow-hidden border border-white/10">
-                                        <img src={msg.imageUrl} alt="attached" className="w-full h-16 object-cover opacity-80" />
-                                    </div>
-                                )}
-                                
-                                <p className="text-sm text-gray-200 leading-relaxed line-clamp-4 font-light whitespace-pre-line">
-                                    {hasText ? msg.text : (msg.imageUrl && (
-                                        <span className="flex items-center gap-2 text-cyan-400 italic font-mono text-xs">
-                                            <ImageIcon size={14} /> {t('thread.image_attached')}
-                                        </span>
-                                    ))}
-                                </p>
+                            <div onClick={handleOpenClick} className={`mb-3 border-l-2 pl-2 transition-colors cursor-pointer ${isGlobalEvent ? 'border-red-500/50 group-hover:border-red-500' : 'border-cyan-500/30 group-hover:border-cyan-400'}`}>
+                                {msg.imageUrl && <div className="mb-2 rounded overflow-hidden border border-white/10"><img src={msg.imageUrl} alt="attached" className="w-full h-16 object-cover opacity-80" /></div>}
+                                <p className="text-sm text-gray-200 leading-relaxed line-clamp-4 font-light whitespace-pre-line">{hasText ? msg.text : (msg.imageUrl && <span className="flex items-center gap-2 text-cyan-400 italic font-mono text-xs"><ImageIcon size={14} /> {t('thread.image_attached')}</span>)}</p>
                             </div>
                         )}
-                        
-                        {!isHidden && (
-                            <button
-                                onClick={handleOpenClick}
-                                className={`w-full text-center py-1.5 rounded text-[10px] font-bold tracking-widest transition-all ${isGlobalEvent ? 'bg-red-900/30 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-white/5 text-cyan-400 hover:bg-cyan-500 hover:text-black'}`}
-                            >
-                                {isGlobalEvent ? 'READ PROTOCOL' : t('map.open_channel')}
-                            </button>
-                        )}
+                        {!isHidden && <button onClick={handleOpenClick} className={`w-full text-center py-1.5 rounded text-[10px] font-bold tracking-widest transition-all ${isGlobalEvent ? 'bg-red-900/30 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-white/5 text-cyan-400 hover:bg-cyan-500 hover:text-black'}`}>{isGlobalEvent ? 'READ PROTOCOL' : t('map.open_channel')}</button>}
                     </div>
                 </div>
             </Popup>
         </Marker>
     );
-}, (prev, next) => {
-    return prev.msg.id === next.msg.id &&
-           prev.isFocused === next.isFocused &&
-           prev.isHidden === next.isHidden &&
-           prev.position[0] === next.position[0] &&
-           prev.position[1] === next.position[1];
 });
 
-// --- MAIN CHAT MAP ---
 const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation, userLocation }) => {
   const [zoom, setZoom] = useState(3.5);
-  // Bounds for Supercluster: [West, South, East, North]
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null);
-  
   const { t } = useTranslation();
   const mapRef = useRef<L.Map | null>(null);
-  const heatmapRef = useRef<HeatmapLayerRef>(null);
-
   const startPosition: [number, number] = [52.0, 10.0]; 
-  const startZoom = 3.5; 
-
   const isMaxZoom = zoom >= 17.5; 
+  const baseScale = isMaxZoom ? 1.0 : (zoom <= 7 ? 0.4 : 0.4 + ((zoom - 7) / (13 - 7)) * 0.6);
+  const totalScale = baseScale * (isMaxZoom ? 1.1 : (hasSignal ? 1.05 : 1.0));
 
-  const getRadarScale = (currentZoom: number) => {
-    if (currentZoom >= 13) return 1.0;
-    if (currentZoom <= 7) return 0.4;
-    return 0.4 + ((currentZoom - 7) / (13 - 7)) * (1.0 - 0.4);
-  };
+  const points = useMemo(() => messages.map(msg => ({
+      type: 'Feature', properties: { cluster: false, messageId: msg.id, ...msg },
+      geometry: { type: 'Point', coordinates: [msg.location.lng, msg.location.lat] }
+  })), [messages]);
 
-  const baseScale = getRadarScale(zoom);
-  const pulseMultiplier = isMaxZoom ? 1.1 : (hasSignal ? 1.05 : 1.0);
-  const totalScale = baseScale * pulseMultiplier;
-
-  const handleOpenThreadStable = useCallback((msg: ChatMessage) => {
-    onOpenThread(msg);
-  }, [onOpenThread]);
-
-  const handleClosePopupStable = useCallback(() => {
-    onClosePopup();
-  }, [onClosePopup]);
-
-  // 1. Prepare Points for Supercluster
-  const points = useMemo(() => {
-      return messages.map(msg => ({
-          type: 'Feature',
-          properties: { cluster: false, messageId: msg.id, ...msg },
-          geometry: {
-              type: 'Point',
-              coordinates: [msg.location.lng, msg.location.lat]
-          }
-      }));
-  }, [messages]);
-
-  // 2. Use Supercluster Hook
   const { clusters, supercluster } = useSupercluster({
-    points,
-    bounds: bounds ? bounds : [-180, -90, 180, 90],
-    zoom: zoom,
-    options: { radius: 60, maxZoom: 16 } 
+    points, bounds: bounds || [-180, -90, 180, 90], zoom: zoom, options: { radius: 60, maxZoom: 16 } 
   });
 
   const handleClusterClick = useCallback((id: number, lat: number, lng: number) => {
-      const expansionZoom = Math.min(
-          supercluster.getClusterExpansionZoom(id),
-          18
-      );
-      mapRef.current?.flyTo([lat, lng], expansionZoom, {
-          animate: true,
-          duration: 1
-      });
+      const expansionZoom = Math.min(supercluster.getClusterExpansionZoom(id), 18);
+      mapRef.current?.flyTo([lat, lng], expansionZoom, { animate: true, duration: 1 });
   }, [supercluster]);
 
   return (
     <div className="absolute inset-0 w-full h-full z-0 bg-[#0a0a12] overflow-hidden">
       <MapContainer
         // @ts-ignore
-        center={startPosition} 
-        zoom={startZoom}
-        scrollWheelZoom={true}
-        doubleClickZoom={false} 
-        zoomControl={false}
-        attributionControl={false}
-        className="w-full h-full outline-none"
-        style={{ width: '100%', height: '100%', background: '#0a0a12' }} 
-        minZoom={3}
-        maxZoom={18} // UNLOCKED: Allow full zooming
-        zoomSnap={0.5} 
-        maxBounds={[[-90, -220], [90, 220]]} 
-        preferCanvas={true}
-        worldCopyJump={false} 
-        ref={mapRef}
+        center={startPosition} zoom={3.5} scrollWheelZoom={true} doubleClickZoom={false} zoomControl={false} attributionControl={false}
+        className="w-full h-full outline-none" style={{ width: '100%', height: '100%', background: '#0a0a12' }} 
+        minZoom={3} maxZoom={18} zoomSnap={0.5} maxBounds={[[-90, -220], [90, 220]]} preferCanvas={true} ref={mapRef}
       >
-        <TileLayer
-          attribution={MAP_ATTRIBUTION}
-          url={MAP_TILE_URL}
-          noWrap={true}
-          opacity={0.8}
-          keepBuffer={4}
-        />
-
-        <MapController 
-            onViewportChange={onViewportChange}
-            setZoom={setZoom}
-            setBounds={setBounds}
-        />
-
+        <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} noWrap={true} opacity={0.8} keepBuffer={4} />
+        <MapController onViewportChange={onViewportChange} setZoom={setZoom} setBounds={setBounds} />
         <MessageFlyTo target={focusedMessage} />
         <CoordinateFlyTo target={flyToLocation} />
-        
         <MapEventsHandler onMapClick={onMapClick} />
-
         {userLocation && <UserLocationMarker position={userLocation} />}
-        
         {clusters.map((cluster) => {
             const [longitude, latitude] = cluster.geometry.coordinates;
             const { cluster: isCluster, point_count: pointCount } = cluster.properties;
-
-            if (isCluster) {
-                return (
-                    <Marker
-                        key={`cluster-${cluster.id}`}
-                        position={[latitude, longitude]}
-                        icon={getClusterIcon(pointCount)}
-                        eventHandlers={{
-                            click: (e) => {
-                                e.originalEvent.stopPropagation();
-                                handleClusterClick(cluster.id, latitude, longitude);
-                            }
-                        }}
-                    />
-                );
-            }
-
+            if (isCluster) return <Marker key={`cluster-${cluster.id}`} position={[latitude, longitude]} icon={getClusterIcon(pointCount)} eventHandlers={{ click: (e) => { e.originalEvent.stopPropagation(); handleClusterClick(cluster.id, latitude, longitude); } }} />;
             const msg = cluster.properties as ChatMessage;
-
-            return (
-                <MessageMarker 
-                    key={msg.id}
-                    msg={msg}
-                    position={[msg.location.lat, msg.location.lng]}
-                    isFocused={focusedMessage?.id === msg.id}
-                    isHidden={hiddenIds.has(msg.id)}
-                    onOpenThread={handleOpenThreadStable}
-                    onClosePopup={handleClosePopupStable}
-                    mapInstance={mapRef.current}
-                />
-            );
+            return <MessageMarker key={msg.id} msg={msg} position={[msg.location.lat, msg.location.lng]} isFocused={focusedMessage?.id === msg.id} isHidden={hiddenIds.has(msg.id)} onOpenThread={onOpenThread} onClosePopup={onClosePopup} mapInstance={mapRef.current} />;
         })}
-
         <ArcLayer messages={signals} />
-        <HeatmapLayer ref={heatmapRef} messages={messages} />
-        
+        <HeatmapLayer messages={messages} />
       </MapContainer>
-
-      {/* OVERLAY CONTAINER - RADAR */}
       <div className="pointer-events-none absolute inset-0 z-[400] flex flex-col items-center justify-center pb-48">
-          
-          <div 
-            className="relative flex items-center justify-center transition-all duration-200" 
-            style={{ 
-                transform: 'translate3d(0,0,0)', 
-                willChange: 'transform'
-            }}
-          >
-              <div 
-                   className="absolute w-64 h-64"
-                   style={{ 
-                       transform: `scale(${totalScale})`,
-                       opacity: isMaxZoom || hasSignal ? 1 : 0.6,
-                       transition: 'transform 0.2s ease-out, opacity 0.5s ease-out'
-                   }}
-              >
-                  <svg 
-                    viewBox="0 0 100 100" 
-                    className="absolute inset-0 w-full h-full animate-[spin_4s_linear_infinite]"
-                  >
-                    <defs>
-                        <linearGradient id="sweepGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0" />
-                            <stop offset="50%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0.1" />
-                            <stop offset="100%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0.4" />
-                        </linearGradient>
-                    </defs>
-                    <path 
-                        d="M50 50 L50 0 A50 50 0 0 1 100 50 Z" 
-                        fill="url(#sweepGradient)"
-                    />
-                  </svg>
-                  
-                  <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full">
-                      <circle cx="50" cy="50" r="48" 
-                          fill="none" 
-                          stroke={isMaxZoom ? "#ef4444" : "#22d3ee"} 
-                          strokeWidth="0.5" 
-                          strokeOpacity="0.3"
-                          strokeDasharray="4 2"
-                      />
-                      <circle cx="50" cy="50" r="35" 
-                          fill="none" 
-                          stroke={isMaxZoom ? "#ef4444" : "#22d3ee"} 
-                          strokeWidth="0.2" 
-                          strokeOpacity="0.2"
-                      />
-                  </svg>
-
-                  <div 
-                    className={`absolute inset-[25%] rounded-full border border-dashed opacity-30 animate-[spin_10s_linear_infinite_reverse] ${isMaxZoom ? 'border-red-500' : 'border-cyan-400'}`}
-                  />
+          <div className="relative flex items-center justify-center transition-all duration-200" style={{ transform: 'translate3d(0,0,0)', willChange: 'transform' }}>
+              <div className="absolute w-64 h-64" style={{ transform: `scale(${totalScale})`, opacity: isMaxZoom || hasSignal ? 1 : 0.6, transition: 'transform 0.2s ease-out, opacity 0.5s ease-out' }}>
+                  <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full animate-[spin_4s_linear_infinite]"><defs><linearGradient id="sweepGradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0" /><stop offset="50%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0.1" /><stop offset="100%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0.4" /></linearGradient></defs><path d="M50 50 L50 0 A50 50 0 0 1 100 50 Z" fill="url(#sweepGradient)"/></svg>
+                  <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full"><circle cx="50" cy="50" r="48" fill="none" stroke={isMaxZoom ? "#ef4444" : "#22d3ee"} strokeWidth="0.5" strokeOpacity="0.3" strokeDasharray="4 2"/><circle cx="50" cy="50" r="35" fill="none" stroke={isMaxZoom ? "#ef4444" : "#22d3ee"} strokeWidth="0.2" strokeOpacity="0.2"/></svg>
+                  <div className={`absolute inset-[25%] rounded-full border border-dashed opacity-30 animate-[spin_10s_linear_infinite_reverse] ${isMaxZoom ? 'border-red-500' : 'border-cyan-400'}`}/>
               </div>
-
-              <div className={`transition-all duration-300 z-10 
-                  ${isMaxZoom 
-                      ? 'text-red-500 drop-shadow-[0_0_12px_rgba(239,68,68,1)] scale-125' 
-                      : (hasSignal ? 'text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.9)] scale-110' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]')
-                  }`}>
-                  {isMaxZoom ? <ShieldAlert size={32} strokeWidth={2} /> : (hasSignal ? <Lock size={32} strokeWidth={2} /> : <Crosshair size={32} strokeWidth={1.5} />)}
-              </div>
+              <div className={`transition-all duration-300 z-10 ${isMaxZoom ? 'text-red-500 drop-shadow-[0_0_12px_rgba(239,68,68,1)] scale-125' : (hasSignal ? 'text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.9)] scale-110' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]')}`}>{isMaxZoom ? <ShieldAlert size={32} strokeWidth={2} /> : (hasSignal ? <Lock size={32} strokeWidth={2} /> : <Crosshair size={32} strokeWidth={1.5} />)}</div>
           </div>
-          
       </div>
     </div>
   );
-}, (prevProps, nextProps) => {
-    return prevProps.messages === nextProps.messages && 
-           prevProps.signals === nextProps.signals && 
-           prevProps.lastNewMessage === nextProps.lastNewMessage && 
-           prevProps.hasSignal === nextProps.hasSignal &&
-           prevProps.focusedMessage === nextProps.focusedMessage &&
-           prevProps.hiddenIds === nextProps.hiddenIds &&
-           prevProps.getUserLocation === nextProps.getUserLocation &&
-           prevProps.userLocation === nextProps.userLocation &&
-           prevProps.flyToLocation === nextProps.flyToLocation; 
 });
 
 export default ChatMap;

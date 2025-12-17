@@ -125,6 +125,16 @@ export const getFlagUrl = (countryCode?: string) => {
   return `https://flagcdn.com/w20/${countryCode.toLowerCase()}.png`;
 };
 
+// NEW: Convert ISO code to Unicode Flag Emoji
+export const getFlagEmoji = (countryCode?: string) => {
+  if (!countryCode) return '';
+  const codePoints = countryCode
+    .toUpperCase()
+    .split('')
+    .map(char =>  127397 + char.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
+};
+
 export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
   const R = 6371; 
   const dLat = deg2rad(lat2 - lat1);

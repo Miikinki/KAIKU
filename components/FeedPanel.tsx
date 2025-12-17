@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock } from 'lucide-react';
 import { ChatMessage } from '../types';
-import { getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
+import { getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
 import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
@@ -489,8 +489,12 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-1.5 text-[10px] text-gray-400 uppercase tracking-wider font-mono">
                             <MapPin size={10} className="text-cyan-500" />
-                            <span className="font-bold text-gray-300 truncate max-w-[140px] sm:max-w-[200px]">
-                            {msg.city || 'UNKNOWN SECTOR'}
+                            <span className="font-bold text-gray-300 truncate max-w-[140px] sm:max-w-[200px] flex items-center gap-1">
+                                {msg.city || 'UNKNOWN SECTOR'}
+                                {/* COUNTRY FLAG for Global Events */}
+                                {isGlobal && msg.country && (
+                                    <span className="text-sm ml-1 filter grayscale-[0.3]">{getFlagEmoji(msg.country)}</span>
+                                )}
                             </span>
                         </div>
                         <div className="flex items-center gap-2">

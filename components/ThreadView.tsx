@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
 import { ChatMessage } from '../types';
-import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl } from '../services/storageService';
+import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
 import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
@@ -253,7 +253,11 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                         )}
                         {isParent && (
                             <div className="flex items-center gap-1 text-[10px] text-gray-500 uppercase">
-                                <MapPin size={10} /> {msg.city}
+                                <MapPin size={10} /> 
+                                <span>{msg.city}</span>
+                                {isGlobal && msg.country && (
+                                    <span className="text-sm ml-1 filter grayscale-[0.3]">{getFlagEmoji(msg.country)}</span>
+                                )}
                             </div>
                         )}
                     </div>
