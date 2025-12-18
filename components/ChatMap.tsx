@@ -96,10 +96,15 @@ const getClusterIcon = (count: number) => {
     });
 };
 
-const MessageMarker = ({ msg, position, isHidden, onOpenThread, mapInstance }: {
-    msg: ChatMessage, position: [number, number], isHidden: boolean,
-    onOpenThread: (msg: ChatMessage) => void, mapInstance: L.Map | null
-}) => {
+interface MessageMarkerProps {
+    msg: ChatMessage;
+    position: [number, number];
+    isHidden: boolean;
+    onOpenThread: (msg: ChatMessage) => void;
+    mapInstance: L.Map | null;
+}
+
+const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, onOpenThread, mapInstance }) => {
     const { t } = useTranslation();
     const isNews = isNewsPost(msg);
     // Include userAvatar/Color in dependency array to refresh markers on profile update

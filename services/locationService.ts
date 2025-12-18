@@ -9,17 +9,18 @@ export interface LocationResult {
 }
 
 /**
- * GRACEFUL FALLBACK GEOLOCATION STRATEGY
- * Designed specifically to handle "High Accuracy" failures on Chrome Android.
- * 1. Step 1: Attempt High Accuracy (GPS) with 5s timeout (Reduced from 10s).
- * 2. Step 2: On failure, attempt Low Accuracy (Network/WiFi) with 10s timeout.
- * 3. Step 3: Use maximumAge: 0 to ensure fresh readings and prevent stale Android cache.
+ * ROBUST GEOLOCATION STRATEGY FOR MOBILE CHROME
+ * 
+ * Android Chrome issues addressed:
+ * 1. Increased timeout (5s -> 15s) to allow cold GPS start.
+ * 2. Enabled cached positions (maximumAge: 10000) to prevent lock-ups.
+ * 3. Automatic fall-through to IP location if hardware fails.
  */
 export const getPreciseLocation = async (): Promise<LocationResult> => {
   
   // 0. SECURE CONTEXT CHECK (Critical for Chrome)
   if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.protocol !== 'file:') {
-      throw new Error("Secure Context Required (HTTPS) for location access.");
+      console.warn("KAIKU_GPS: Non-secure context. Geolocation might fail.");
   }
 
   const getPos = (options: PositionOptions): Promise<GeolocationPosition> =>
@@ -28,12 +29,13 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
     });
 
   // STEP 1: Attempt High Accuracy (GPS Hardware)
+  // Timeout increased to 15s for Android "Cold Start"
   try {
-    console.log("KAIKU_GPS: Attempting High Accuracy (5s timeout)...");
+    console.log("KAIKU_GPS: Step 1 - High Accuracy...");
     const pos = await getPos({
       enableHighAccuracy: true,
-      timeout: 5000, // Reduced to 5s for Chrome Android responsiveness
-      maximumAge: 0   // Force fresh reading
+      timeout: 15000, 
+      maximumAge: 10000 // Accept positions up to 10s old to allow instant UI response
     });
 
     console.log(`KAIKU_GPS: High Accuracy Lock. ±${Math.round(pos.coords.accuracy)}m`);
@@ -46,22 +48,21 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
     };
 
   } catch (err: any) {
-    // Check if permission was explicitly denied
+    // Check if permission was explicitly denied - STOP HERE if so.
     if (err.code === 1) { // PERMISSION_DENIED
         console.error("KAIKU_GPS: Permission Denied.");
         throw new Error("Permission Denied: Please enable Location in Browser Settings.");
     }
 
-    console.warn(`KAIKU_GPS: High Accuracy Failed (Code: ${err.code}). Error: ${err.message}`);
-    console.log("KAIKU_GPS: Reverting to Step 2: Low Accuracy (Network/WiFi)...");
+    console.warn(`KAIKU_GPS: High Accuracy Failed (Code: ${err.code}). Reverting to Network/IP...`);
 
     // STEP 2: Low Accuracy Fallback (Network Triangulation)
-    // This is much more reliable on Chrome Android in indoor or power-saving modes.
+    // Faster timeout (7s) since network location should be quick if available.
     try {
       const pos = await getPos({
         enableHighAccuracy: false,
-        timeout: 10000, // 10s timeout for network fallback
-        maximumAge: 0
+        timeout: 7000, 
+        maximumAge: 30000 
       });
 
       console.log(`KAIKU_GPS: Low Accuracy Lock. ±${Math.round(pos.coords.accuracy)}m`);
@@ -73,13 +74,22 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
         isFallback: true
       };
     } catch (fallbackErr: any) {
-      console.error("KAIKU_GPS: All hardware/network methods failed.", fallbackErr);
+      console.warn("KAIKU_GPS: Hardware methods failed. Attempting IP fallback...");
       
-      if (fallbackErr.code === 1) throw new Error("Permission Denied");
-      if (fallbackErr.code === 2) throw new Error("Position Unavailable: Check GPS Settings."); // POSITION_UNAVAILABLE
-      if (fallbackErr.code === 3) throw new Error("Connection Timeout: GPS Signal weak."); // TIMEOUT
+      // STEP 3: IP LOCATION FALLBACK (Last Resort)
+      // This ensures the UI never gets stuck on "Locating..."
+      const ipLoc = await getIpLocation();
+      if (ipLoc) {
+          console.log("KAIKU_GPS: IP Location used.");
+          return {
+              lat: ipLoc.lat,
+              lng: ipLoc.lng,
+              accuracy: 5000, // Low accuracy for IP
+              isFallback: true
+          };
+      }
       
-      throw new Error("Could not determine location.");
+      throw new Error("Could not determine location via GPS or IP.");
     }
   }
 };
@@ -103,7 +113,7 @@ export const getHumanizedDistance = (
     if (distKm <= 1.0) {
         return { 
             text: t('distance.here'), 
-            style: 'text-cyan-400 font-black tracking-wide' // Removed 'uppercase'
+            style: 'text-cyan-400 font-black tracking-wide' 
         };
     }
     // 1 - 3 km: Very Close (NEW)
