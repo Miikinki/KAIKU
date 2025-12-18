@@ -9,8 +9,8 @@ const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000; // 15 minutes for scan results
 const RADAR_MODEL = 'gemini-3-flash-preview';
 
 // --- CONFIGURATION ---
-// DEVELOPER: If you are not using an .env file, paste your Google Gemini API Key here.
-// This key will be used for ALL users of the app.
+// User provided key. NOTE: In a frontend app, this is visible in network requests.
+// Restrict it to your domain in Google Cloud Console.
 const HARDCODED_API_KEY = "AIzaSyBu9BLySGeO_lkJv9m3DcWsxt1JfLGE7Hc"; 
 
 /**
@@ -40,14 +40,11 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
       if (cachedEvents.length > 0) return cachedEvents;
   }
 
-  // 1. Check Hardcoded Key (Easiest for quick deployment without env vars)
-  // 2. Check Environment Variables (Best practice: VITE_API_KEY, etc.)
-  // 3. Check process.env (Node.js/Server environments)
-  const apiKey = HARDCODED_API_KEY || getEnvVar('API_KEY') || (typeof process !== 'undefined' ? process.env.API_KEY : undefined);
+  // Force use of the hardcoded key to prevent "Missing API Key" errors in preview
+  const apiKey = HARDCODED_API_KEY;
   
   if (!apiKey) {
       console.error("KAIKU: Missing API_KEY.");
-      // More user-friendly error for the UI
       throw new Error("System configuration error: Server Uplink Offline (Missing Credentials).");
   }
 
@@ -135,7 +132,6 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
     return formattedMessages;
   } catch (error: any) {
     console.error("KAIKU: Radar Scan Exception:", error);
-    // Hide technical API key details from the user alert
     if (error.message?.includes("API key")) {
          throw new Error("Uplink Configuration Error (Invalid Key).");
     }

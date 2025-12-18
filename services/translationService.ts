@@ -1,9 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 
 const TRANSLATION_MODEL = 'gemini-3-flash-preview';
+// User provided key
+const HARDCODED_API_KEY = "AIzaSyBu9BLySGeO_lkJv9m3DcWsxt1JfLGE7Hc"; 
 
 export const translateText = async (text: string, targetLang: string): Promise<string> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Use the hardcoded key here too
+    const ai = new GoogleGenAI({ apiKey: HARDCODED_API_KEY });
     
     const prompt = `Translate the following news headline and content into ${targetLang}. 
     Maintain the original tone and keep any hashtags. 
