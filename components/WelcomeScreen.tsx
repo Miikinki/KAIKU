@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Radio, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { getIpLocation } from '../services/moderationService';
 import { getPreciseLocation } from '../services/locationService';
 import { useTranslation } from 'react-i18next';
@@ -12,12 +12,7 @@ interface WelcomeScreenProps {
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
-  const [statusText, setStatusText] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setStatusText(t('welcome.status_standby'));
-  }, [t]);
 
   // Intro animation sequence
   const [showContent, setShowContent] = useState(false);
@@ -29,58 +24,52 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const handleConnect = async () => {
     setIsLoading(true);
     setError(null);
-    setStatusText(t('welcome.status_init_gps'));
     
-    // --- STRATEGY 1 & 2: AGGRESSIVE HARDWARE GPS + FALLBACK ---
-    // Uses the new robust service in services/locationService.ts
     try {
+        // Attempt high precision first
         const result = await getPreciseLocation();
+        
+        // Brief pause for "establishing connection" feeling
+        await new Promise(r => setTimeout(r, 1200));
+
         onStart({ lat: result.lat, lng: result.lng }, result.isFallback);
         return;
     } catch (err: any) {
         console.warn("Location Service Failed:", err.message);
         
-        // If permission explicitly denied, show error and stop.
         if (err.message.includes("permission denied")) {
              setIsLoading(false);
-             setStatusText(t('welcome.status_failed'));
              setError(t('welcome.error_permission'));
              return;
         }
-        // Otherwise, continue to Last Resort strategies...
     }
 
-    // --- STRATEGY 3: LOCAL STORAGE (LAST KNOWN) ---
+    // --- STRATEGY 2: LOCAL STORAGE (LAST KNOWN) ---
     const savedLoc = localStorage.getItem('kaiku_last_loc');
     if (savedLoc) {
         try {
             const parsed = JSON.parse(savedLoc);
             if (parsed.lat && parsed.lng) {
-                setStatusText(t('welcome.status_using_last'));
                 setTimeout(() => {
-                    onStart(parsed, true); // Mark as fallback
-                }, 500);
+                    onStart(parsed, true);
+                }, 1000);
                 return;
             }
         } catch (e) {}
     }
 
-    // --- STRATEGY 4: IP GEOLOCATION (LAST RESORT) ---
+    // --- STRATEGY 3: IP GEOLOCATION (LAST RESORT) ---
     try {
-        setStatusText(t('welcome.status_triangulating'));
         const ipLoc = await getIpLocation();
-        
         if (ipLoc) {
-            onStart(ipLoc, true); // Mark as fallback
+            setTimeout(() => onStart(ipLoc, true), 1000);
             return;
         }
     } catch (e) {
         console.warn("IP Fallback failed", e);
     }
 
-    // --- FAILURE ---
     setIsLoading(false);
-    setStatusText(t('welcome.status_failed'));
     setError(t('welcome.error_signal_lost'));
   };
 
@@ -171,24 +160,24 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                 >
                     <div className="absolute inset-0 flex items-center justify-center gap-3 z-10">
                         {isLoading ? (
-                            <>
-                                <Loader2 className="animate-spin" size={20} />
-                                <span className="font-mono font-bold tracking-widest text-sm">{statusText}</span>
-                            </>
+                            <div className="flex items-center gap-3 font-mono text-xs font-bold tracking-widest uppercase">
+                                <Loader2 size={20} className="animate-spin text-cyan-500" />
+                                <span>INITIALIZING UPLINK...</span>
+                            </div>
                         ) : (
-                            <>
-                                <span className="font-bold tracking-[0.2em] text-sm">{t('welcome.btn_initialize')}</span>
+                            <div className="flex items-center gap-3 font-mono text-xs font-bold tracking-widest uppercase">
+                                <span>{t('welcome.btn_initialize')}</span>
                                 <ChevronRight size={20} className="group-hover/btn:translate-x-1 transition-transform" />
-                            </>
+                            </div>
                         )}
                     </div>
                     
                     {isLoading && (
                         <motion.div 
-                            className="absolute inset-0 bg-cyan-300/20 origin-left"
+                            className="absolute inset-0 bg-cyan-300/10 origin-left"
                             initial={{ scaleX: 0 }}
                             animate={{ scaleX: 1 }}
-                            transition={{ duration: 6 }} 
+                            transition={{ duration: 1.2, ease: "linear" }} 
                         />
                     )}
                 </button>

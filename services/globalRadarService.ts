@@ -1,10 +1,10 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { ChatMessage } from '../types';
 import { generateUUID } from './storageService';
 import { supabase } from './supabaseClient';
 
 const CACHE_DURATION_MS = 3 * 60 * 60 * 1000;
+const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000; // 15 minutes for scan results
 const RADAR_MODEL = 'gemini-3-flash-preview';
 
 /**
@@ -14,9 +14,15 @@ const cleanJsonString = (text: string): string => {
   return text.replace(/```json\n?|```/g, '').trim();
 };
 
-export const scanGlobalNetwork = async (specificQuery?: string): Promise<ChatMessage[]> => {
-  // Check cache only for general global scan
-  if (!specificQuery) {
+/**
+ * Voimakkaampi jitter (hajautus) uutisille.
+ */
+const applyStrongJitter = (coord: number) => {
+    return coord + (Math.random() - 0.5) * 0.015;
+};
+
+export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolean = false): Promise<ChatMessage[]> => {
+  if (!specificQuery && !skipSave) {
       const cachedEvents = await getCachedEvents();
       if (cachedEvents.length > 0) return cachedEvents;
   }
@@ -27,16 +33,17 @@ export const scanGlobalNetwork = async (specificQuery?: string): Promise<ChatMes
       return [];
   }
   
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Broader prompt to ensure we get results even if there's no "breaking" news
   const prompt = specificQuery 
-    ? `Search for 3-5 major current news stories, interesting events, or noteworthy developments happening in ${specificQuery} right now. Use Google Search to find the latest information from the last 48 hours.`
-    : "Search for 3-5 major current global news stories or noteworthy events happening across the world right now. Use Google Search for the most recent updates.";
+    ? `Search for 5 DIFFERENT major current news stories, events, or local developments in ${specificQuery} from the last 24 hours. Use Google Search. Do not repeat the same story. Return 5 unique items.`
+    : "Search for 5 major different global news stories happening right now. Use Google Search.";
 
   const SYSTEM_PROMPT = `
-  You are KAIKU_SYSTEM. Your task is to provide real-world situational awareness data.
-  Return ONLY a raw JSON array of objects. Do not include markdown blocks, explanations, or preambles.
+  You are KAIKU_SCANNER. Your task is to provide real-world situational awareness data.
+  Return ONLY a raw JSON array of 5 objects. Each object MUST represent a DIFFERENT news story.
+  Do not include markdown blocks or explanations.
+  
   Each object MUST follow this schema: 
   { 
     "headline": string, 
@@ -44,10 +51,10 @@ export const scanGlobalNetwork = async (specificQuery?: string): Promise<ChatMes
     "lat": number, 
     "lng": number, 
     "city_name": string, 
-    "country_code": "ISO 3166-1 alpha-2 code (e.g., 'FI', 'US', 'JP')", 
-    "source_url": string 
+    "country_code": string, 
+    "source_url": string,
+    "language": string (ISO 639-1 code of the source text, e.g. "en", "fi", "es")
   }
-  If no significant events are found for a specific location, return an empty array [].
   `;
 
   try {
@@ -62,27 +69,15 @@ export const scanGlobalNetwork = async (specificQuery?: string): Promise<ChatMes
     });
 
     const rawText = response.text;
-    if (!rawText) {
-        console.warn("KAIKU: Empty response from Radar model.");
-        return [];
-    }
+    if (!rawText) return [];
     
-    // Robust parsing: strip markdown if the model ignored responseMimeType
     const jsonText = cleanJsonString(rawText);
     const events = JSON.parse(jsonText);
     
-    if (!Array.isArray(events)) {
-        console.warn("KAIKU: Radar response is not an array:", events);
-        return [];
-    }
-
-    if (events.length === 0) {
-        console.log(`KAIKU: No signals found for query: ${specificQuery || 'Global'}`);
-        return [];
-    }
+    if (!Array.isArray(events)) return [];
 
     const now = Date.now();
-    const expiry = now + CACHE_DURATION_MS; 
+    const expiry = skipSave ? (now + SCAN_RESULT_DURATION_MS) : (now + CACHE_DURATION_MS); 
 
     const formattedMessages: ChatMessage[] = events.map((evt: any) => ({
         id: generateUUID(), 
@@ -90,24 +85,24 @@ export const scanGlobalNetwork = async (specificQuery?: string): Promise<ChatMes
         timestamp: now,
         expiresAt: expiry,
         location: { 
-            lat: Number(evt.lat) || 0, 
-            lng: Number(evt.lng) || 0 
+            lat: applyStrongJitter(Number(evt.lat) || 0), 
+            lng: applyStrongJitter(Number(evt.lng) || 0) 
         },
         city: evt.city_name || "Unknown Sector",
         country: (evt.country_code || "XX").toUpperCase().slice(0, 2), 
         sessionId: "SYSTEM_BROADCAST",
-        score: 999,
+        score: skipSave ? 100 : 999, 
         replyCount: 0,
         isRemote: true,
         originCountry: "SYSTEM", 
-        tags: ["#GLOBAL_ALERT", "#SYSTEM", `#${(evt.country_code || 'XX').toUpperCase()}`],
-        postType: 'GLOBAL_EVENT',
+        tags: skipSave ? ["#SCAN_RESULT"] : ["#GLOBAL_ALERT", "#SYSTEM", `#${(evt.country_code || 'XX').toUpperCase()}`],
+        postType: skipSave ? 'SCAN_RESULT' : 'GLOBAL_EVENT',
         eventMetadata: { source_url: evt.source_url || "" },
-        isMasked: false
+        isMasked: false,
+        language: evt.language || 'en'
     }));
 
-    // Save to DB for future users to see
-    if (formattedMessages.length > 0) {
+    if (!skipSave && formattedMessages.length > 0) {
         await saveToDatabase(formattedMessages);
     }
     
@@ -146,7 +141,8 @@ const getCachedEvents = async (): Promise<ChatMessage[]> => {
         tags: d.tags, 
         postType: 'GLOBAL_EVENT', 
         eventMetadata: d.event_metadata, 
-        isMasked: false
+        isMasked: false,
+        language: d.tags?.find((t: string) => t.startsWith('lang:'))?.split(':')[1] || 'en' // Fallback check if stored in tags
     }));
 };
 
@@ -163,7 +159,7 @@ const saveToDatabase = async (messages: ChatMessage[]) => {
         expires_at: new Date(msg.expiresAt).toISOString(),
         origin_country: msg.originCountry, 
         is_remote: msg.isRemote, 
-        tags: msg.tags,
+        tags: [...(msg.tags || []), `lang:${msg.language}`], // Persist lang in tags as fallback
         post_type: 'GLOBAL_EVENT', 
         event_metadata: msg.eventMetadata
     }));

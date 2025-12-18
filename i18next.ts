@@ -1,4 +1,5 @@
-import i18n from 'i18next';
+// Fix: Renamed import alias to 'i18nextInstance' to resolve circular definition issues with the filename i18next.ts.
+import i18nextInstance from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
@@ -20,7 +21,10 @@ const resources = {
         "visitor_remote": "Remote signal from {{country}}",
         "visitor_global": "Global signal from {{country}}",
         "scanning": "SCANNING SECTOR...",
-        "signal_locked": "SIGNAL LOCKED"
+        "signal_locked": "SIGNAL LOCKED",
+        "translate": "Translate",
+        "show_original": "Show Original",
+        "translated_by_ai": "Translated by AI"
       },
       "input": {
         "broadcast_signal": "Broadcast Signal",
@@ -55,7 +59,8 @@ const resources = {
         "content_hidden": "** CONTENT HIDDEN **",
         "open_channel": "OPEN CHANNEL",
         "search_placeholder": "Search coordinates...",
-        "search_not_found": "TARGET NOT FOUND"
+        "search_not_found": "TARGET NOT FOUND",
+        "search_this_area": "SEARCH THIS AREA"
       },
       "welcome": {
         "subtitle": "Hyperlocal Signal Grid",
@@ -103,7 +108,10 @@ const resources = {
         "visitor_remote": "Etäsignaali maasta: {{country}}",
         "visitor_global": "Globaali signaali maasta: {{country}}",
         "scanning": "SKANNATAAN SEKTORIA...",
-        "signal_locked": "SIGNAALI LUKITTU"
+        "signal_locked": "SIGNAALI LUKITTU",
+        "translate": "Käännä",
+        "show_original": "Näytä alkuperäinen",
+        "translated_by_ai": "Tekoälyn kääntämä"
       },
       "input": {
         "broadcast_signal": "Lähetä Signaali",
@@ -120,7 +128,7 @@ const resources = {
         "status_precise": "> KOHDISTUS: TARKKA [TARKKA SIJAINTI NÄKYY]"
       },
       "thread": {
-        "title": "KETJU",
+        "title": "THREAD",
         "replies_label": "Vastaukset",
         "loading": "Ladataan...",
         "no_replies": "Ei vastauksia. Ole ensimmäinen.",
@@ -138,7 +146,8 @@ const resources = {
         "content_hidden": "** SISÄLTÖ PIILOTETTU **",
         "open_channel": "AVAA KANAVA",
         "search_placeholder": "Etsi koordinaatteja...",
-        "search_not_found": "KOHDETTA EI LÖYDY"
+        "search_not_found": "KOHDETTA EI LÖYDY",
+        "search_this_area": "HAE TÄLTÄ ALUEELTA"
       },
       "welcome": {
         "subtitle": "Hyperlokaali Signaaliverkko",
@@ -177,7 +186,10 @@ const resources = {
         "regional_intercept": "INTERCEPCIÓN REGIONAL",
         "local_signals": "SEÑALES LOCALES",
         "scanning": "ESCANEANDO SECTOR...",
-        "signal_locked": "SEÑAL BLOQUEADA"
+        "signal_locked": "SEÑAL BLOQUEADA",
+        "translate": "Traducir",
+        "show_original": "Mostrar Original",
+        "translated_by_ai": "Traducido por IA"
       },
       "input": {
         "broadcast_signal": "Transmitir Señal",
@@ -185,6 +197,9 @@ const resources = {
         "locating": "Localizando...",
         "broadcast_btn": "TRANSMITIR",
         "mask_coordinates": "ENMASCARAR COORDENADAS"
+      },
+      "map": {
+        "search_this_area": "BUSCAR EN ESTA ÁREA"
       },
       "welcome": {
         "subtitle": "Red de Señal Hiperlocal",
@@ -205,12 +220,18 @@ const resources = {
         "regional_intercept": "INTERCEPTION RÉGIONALE",
         "local_signals": "SIGNAUX LOCAUX",
         "scanning": "BALAYAGE DU SECTEUR...",
-        "signal_locked": "SIGNAL VERROUILLÉ"
+        "signal_locked": "SIGNAL VERROUILLÉ",
+        "translate": "Traduire",
+        "show_original": "Voir l'Original",
+        "translated_by_ai": "Traduit par l'IA"
       },
       "input": {
         "broadcast_signal": "Diffuser le Signal",
         "broadcast_btn": "DIFFUSER",
         "mask_coordinates": "MASQUER LES COORDONNÉES"
+      },
+      "map": {
+        "search_this_area": "CHERCHER DANS CETTE ZONE"
       },
       "welcome": {
         "subtitle": "Grille de Signal Hyperlocale",
@@ -231,12 +252,18 @@ const resources = {
         "regional_intercept": "REGIONALE ABFANGUNG",
         "local_signals": "LOKALE SIGNALE",
         "scanning": "SCANNE SEKTOR...",
-        "signal_locked": "SIGNAL FIXIERT"
+        "signal_locked": "SIGNAL FIXIERT",
+        "translate": "Übersetzen",
+        "show_original": "Original zeigen",
+        "translated_by_ai": "KI-übersetzt"
       },
       "input": {
         "broadcast_signal": "Signal Senden",
         "broadcast_btn": "SENDEN",
         "mask_coordinates": "KOORDINATEN MASKIERT"
+      },
+      "map": {
+        "search_this_area": "DIESEN BEREICH DURCHSUCHEN"
       },
       "welcome": {
         "subtitle": "Hyperlokales Signalnetz",
@@ -257,12 +284,18 @@ const resources = {
         "regional_intercept": "INTERCEPTAÇÃO REGIONAL",
         "local_signals": "SINAIS LOCAIS",
         "scanning": "ESCANEANDO SETOR...",
-        "signal_locked": "SINAL BLOQUEADO"
+        "signal_locked": "SINAL BLOQUEADO",
+        "translate": "Traduzir",
+        "show_original": "Mostrar Original",
+        "translated_by_ai": "Traduzido por IA"
       },
       "input": {
         "broadcast_signal": "Transmitir Sinal",
         "broadcast_btn": "TRANSMITIR",
         "mask_coordinates": "MASCARAR COORDENADAS"
+      },
+      "map": {
+        "search_this_area": "PESQUISAR NESTA ÁREA"
       },
       "welcome": {
         "subtitle": "Grade de Sinal Hiperlocal",
@@ -283,12 +316,18 @@ const resources = {
         "regional_intercept": "INTERCETTAZIONE REGIONALE",
         "local_signals": "SEGNALI LOCALI",
         "scanning": "SCANSIONE SETTORE...",
-        "signal_locked": "SEGNALE BLOCCATO"
+        "signal_locked": "SEGNALE BLOCCATO",
+        "translate": "Traduci",
+        "show_original": "Mostra Originale",
+        "translated_by_ai": "Tradotto da IA"
       },
       "input": {
         "broadcast_signal": "Trasmetti Segnale",
         "broadcast_btn": "TRASMETTI",
         "mask_coordinates": "MASCHERA COORDINATE"
+      },
+      "map": {
+        "search_this_area": "CERCA IN QUESTA ZONA"
       },
       "welcome": {
         "subtitle": "Griglia di Segnale Iperlocale",
@@ -309,12 +348,18 @@ const resources = {
         "regional_intercept": "РЕГИОНАЛЬНЫЙ ПЕРЕХВАТ",
         "local_signals": "ЛОКАЛЬНЫЕ СИГНАЛЫ",
         "scanning": "СКАНИРОВАНИЕ СЕКТОРА...",
-        "signal_locked": "СИГНАЛ ЗАБЛОКИРОВАН"
+        "signal_locked": "СИГНАЛ ЗАБЛОКИРОВАН",
+        "translate": "Перевести",
+        "show_original": "Оригинал",
+        "translated_by_ai": "Переведено ИИ"
       },
       "input": {
         "broadcast_signal": "Транслировать Сигнал",
         "broadcast_btn": "ТРАНСЛЯЦИЯ",
         "mask_coordinates": "МАСКИРОВКА КООРДИНАТ"
+      },
+      "map": {
+        "search_this_area": "ИСKATЬ В ЭТОЙ ОБЛАСТИ"
       },
       "welcome": {
         "subtitle": "Гиперлокальная Сеть Сигналов",
@@ -335,12 +380,18 @@ const resources = {
         "regional_intercept": "区域拦截",
         "local_signals": "本地信号",
         "scanning": "正在扫描扇区...",
-        "signal_locked": "信号已锁定"
+        "signal_locked": "信号已锁定",
+        "translate": "翻译",
+        "show_original": "显示原文",
+        "translated_by_ai": "AI 翻译"
       },
       "input": {
         "broadcast_signal": "广播信号",
         "broadcast_btn": "广播",
         "mask_coordinates": "掩盖坐标"
+      },
+      "map": {
+        "search_this_area": "搜索此区域"
       },
       "welcome": {
         "subtitle": "超本地信号网",
@@ -361,12 +412,18 @@ const resources = {
         "regional_intercept": "地域傍受",
         "local_signals": "ローカル信号",
         "scanning": "セクタースキャン中...",
-        "signal_locked": "信号ロック"
+        "signal_locked": "信号ロック",
+        "translate": "翻訳",
+        "show_original": "原文を表示",
+        "translated_by_ai": "AIによる翻訳"
       },
       "input": {
         "broadcast_signal": "信号を送信",
         "broadcast_btn": "送信",
         "mask_coordinates": "座標をマスク"
+      },
+      "map": {
+        "search_this_area": "このエリアを検索"
       },
       "welcome": {
         "subtitle": "超地域限定信号グリッド",
@@ -387,12 +444,18 @@ const resources = {
         "regional_intercept": "지역 차단",
         "local_signals": "로컬 신호",
         "scanning": "섹터 스캔 중...",
-        "signal_locked": "신호 고정"
+        "signal_locked": "신호 고정",
+        "translate": "번역",
+        "show_original": "원문 보기",
+        "translated_by_ai": "AI 번역됨"
       },
       "input": {
         "broadcast_signal": "신호 브로드캐스트",
         "broadcast_btn": "방송",
         "mask_coordinates": "좌표 마스킹"
+      },
+      "map": {
+        "search_this_area": "이 지역 검색"
       },
       "welcome": {
         "subtitle": "초현지 신호 그리드",
@@ -413,12 +476,18 @@ const resources = {
         "regional_intercept": "اعتراض إقليمي",
         "local_signals": "إشارات محلية",
         "scanning": "جاري مسح القطاع...",
-        "signal_locked": "تم قفل الإشارة"
+        "signal_locked": "تم قفل الإشارة",
+        "translate": "ترجم",
+        "show_original": "عرض الأصل",
+        "translated_by_ai": "مترجم بواسطة الذكاء الاصطناعي"
       },
       "input": {
         "broadcast_signal": "بث إشارة",
         "broadcast_btn": "بث",
         "mask_coordinates": "قناع الإحداثيات"
+      },
+      "map": {
+        "search_this_area": "ابحث في هذه المنطقة"
       },
       "welcome": {
         "subtitle": "شبكة إشارات محلية للغاية",
@@ -439,12 +508,18 @@ const resources = {
         "regional_intercept": "क्षेत्रीय अवरोधन",
         "local_signals": "स्थानीय सिग्नल",
         "scanning": "सेक्टर स्कैन किया जा रहा है...",
-        "signal_locked": "सिग्नल लॉक"
+        "signal_locked": "सिग्नल लॉक",
+        "translate": "अनुवाद करें",
+        "show_original": "मूल दिखाएं",
+        "translated_by_ai": "AI द्वारा अनुवादित"
       },
       "input": {
         "broadcast_signal": "सिग्नल प्रसारित करें",
         "broadcast_btn": "प्रसारण",
         "mask_coordinates": "निर्देशांक छुपाएं"
+      },
+      "map": {
+        "search_this_area": "इस क्षेत्र में खोजें"
       },
       "welcome": {
         "subtitle": "हाइपरलोकल सिग्नल ग्रिड",
@@ -465,12 +540,18 @@ const resources = {
         "regional_intercept": "BÖLGESEL MÜDAHALE",
         "local_signals": "YEREL SİNYALLER",
         "scanning": "SEKTÖR TARANIYOR...",
-        "signal_locked": "SİNYAL KİLİTLENDİ"
+        "signal_locked": "SİNYAL KİLİTLENDİ",
+        "translate": "Çevir",
+        "show_original": "Orijinali Göster",
+        "translated_by_ai": "Yapay Zeka ile Çevrildi"
       },
       "input": {
         "broadcast_signal": "Sinyal Yayınla",
         "broadcast_btn": "YAYINLA",
         "mask_coordinates": "KOORDİNATLARI MASKELE"
+      },
+      "map": {
+        "search_this_area": "BU BÖLGEDE ARA"
       },
       "welcome": {
         "subtitle": "Hiper-yerel Sinyal Ağı",
@@ -486,7 +567,8 @@ const resources = {
   }
 };
 
-i18n
+// Use 'i18nextInstance' to initialize the library, exported as default.
+i18nextInstance
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
@@ -500,6 +582,6 @@ i18n
       order: ['navigator', 'htmlTag', 'path', 'subdomain'],
       caches: ['localStorage'],
     }
-  });
+});
 
-export default i18n;
+export default i18nextInstance;

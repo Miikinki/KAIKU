@@ -1,14 +1,13 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert, X, Image as ImageIcon, AlertTriangle, User } from 'lucide-react';
+import { Crosshair, Lock, ShieldAlert } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
-import HeatmapLayer, { HeatmapLayerRef } from './HeatmapLayer';
+import HeatmapLayer from './HeatmapLayer';
 import { useTranslation } from 'react-i18next';
 import L from 'leaflet';
-import { getFlagEmoji } from '../services/storageService';
+import { motion, AnimatePresence } from 'framer-motion';
 // @ts-ignore
 import useSupercluster from 'use-supercluster';
 
@@ -20,75 +19,43 @@ interface ChatMapProps {
   lastNewMessage: ChatMessage | null;
   hasSignal: boolean;
   initialCenter?: { lat: number; lng: number };
-  flyToLocation: { lat: number; lng: number; timestamp: number } | null; 
+  flyToLocation: { lat: number; lng: number; timestamp: number, bounds?: [number, number, number, number] } | null; 
   focusedMessage: ChatMessage | null;
   onOpenThread: (msg: ChatMessage) => void;
   onClosePopup: () => void;
   hiddenIds: Set<string>;
   getUserLocation: () => Promise<{lat: number, lng: number}>;
   userLocation: { lat: number, lng: number } | null;
+  scannerStatus?: string | null;
+  scannerCity?: string | null;
 }
 
-// --- DYNAMIC MARKER ICON GENERATOR (Single Message) ---
+// Määritellään maailman rajat estämään Leafletin "3x" maailman toisto ja tyhjät alueet
+const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
+
 const getMarkerIcon = (msg: ChatMessage) => {
-    const ageMins = (Date.now() - msg.timestamp) / 60000;
-    const shouldPulse = ageMins < 15;
     const isMasked = msg.isMasked || false;
     const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
+    const isScanResult = msg.postType === 'SCAN_RESULT';
+    const containerSize = isGlobalEvent || isScanResult ? 50 : 40; 
 
-    const iconSize = isMasked ? 18 : 22;
-    const containerSize = isGlobalEvent ? 50 : 40; 
-
-    let svgContent = '';
-    let visualClasses = '';
-    let pulseHtml = '';
-
-    if (isGlobalEvent) {
-        // FIXED: Using a standard, centered AlertTriangle path to ensure it's not crooked.
-        svgContent = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-                <line x1="12" y1="9" x2="12" y2="13"/>
-                <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-        `;
-        visualClasses = 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,1)] transform-none';
-        pulseHtml = `
-            <div class="absolute inset-0 rounded-full bg-red-500/20 animate-ping"></div>
-            <div class="absolute inset-2 rounded-full border border-red-500/80 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
-        `;
-    } else {
-        svgContent = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" 
-                fill="${isMasked ? 'none' : 'currentColor'}" 
-                stroke="currentColor" 
-                stroke-width="2" 
-                stroke-linecap="round" 
-                stroke-linejoin="round"
-            >
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
-        `;
-        visualClasses = isMasked 
-            ? 'text-cyan-400 opacity-60' 
-            : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.9)]';
-        pulseHtml = shouldPulse 
-            ? `<div class="absolute inset-0 rounded-full border border-cyan-400/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>` 
-            : '';
-    }
+    const color = isGlobalEvent ? '#ef4444' : '#22d3ee';
+    const glow = isGlobalEvent ? 'rgba(239,68,68,0.8)' : 'rgba(34,211,238,0.9)';
 
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
-            ${pulseHtml}
-            <div class="relative z-10 ${visualClasses} transition-all duration-300 flex items-center justify-center">
-                ${svgContent}
+            <div class="absolute inset-0 rounded-full animate-ping opacity-20" style="background-color: ${color}"></div>
+            <div class="relative z-10 transition-all duration-300 flex items-center justify-center" style="color: ${color}; filter: drop-shadow(0 0 8px ${glow})">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${isMasked ? 'none' : 'currentColor'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
             </div>
         </div>
     `;
 
     return L.divIcon({
         className: 'bg-transparent border-none',
-        html: html,
+        html,
         iconSize: [containerSize, containerSize],
         iconAnchor: [containerSize / 2, containerSize / 2],
         popupAnchor: [0, -10]
@@ -96,247 +63,219 @@ const getMarkerIcon = (msg: ChatMessage) => {
 };
 
 const getClusterIcon = (count: number) => {
-    const size = 30 + (count / 100) * 30;
-    const finalSize = Math.min(size, 60);
-    const isLarge = count > 10;
+    const size = 35 + Math.min(count / 10, 25);
     return L.divIcon({
-        html: `<div class="kaiku-cluster ${isLarge ? 'kaiku-cluster-large' : ''}" style="width: ${finalSize}px; height: ${finalSize}px;">${count}</div>`,
-        className: 'bg-transparent border-none', 
-        iconSize: [finalSize, finalSize],
-        iconAnchor: [finalSize / 2, finalSize / 2]
+        html: `<div class="kaiku-cluster" style="width: ${size}px; height: ${size}px; line-height: ${size}px;">${count}</div>`,
+        className: '', 
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
     });
 };
 
-const UserLocationMarker = ({ position }: { position: { lat: number, lng: number } }) => {
-    const icon = L.divIcon({
-        className: 'bg-transparent border-none',
-        html: `
-            <div class="relative flex flex-col items-center">
-                <div class="relative w-8 h-8 flex items-center justify-center">
-                    <div class="absolute w-8 h-8 bg-cyan-500/20 rounded-full animate-ping"></div>
-                    <div class="absolute inset-0 border border-cyan-400/40 rounded-full animate-[spin_4s_linear_infinite]"></div>
-                    <div class="relative w-4 h-4 bg-cyan-500 border-2 border-[#0a0a12] rounded-full shadow-[0_0_15px_rgba(6,182,212,0.8)]"></div>
+const MessageMarker = ({ msg, position, isHidden, onOpenThread, mapInstance }: {
+    msg: ChatMessage, position: [number, number], isHidden: boolean,
+    onOpenThread: (msg: ChatMessage) => void, mapInstance: L.Map | null
+}) => {
+    const { t } = useTranslation();
+    const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
+    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType]);
+
+    return (
+        <Marker position={position} icon={icon} zIndexOffset={isGlobalEvent ? 2000 : 0}>
+            <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}>
+                <div className="p-3">
+                    <div className="flex justify-between items-center mb-2">
+                         <span className={`text-[10px] font-mono font-bold ${isGlobalEvent ? 'text-red-500' : 'text-cyan-400'}`}>
+                            {isGlobalEvent ? 'SYSTEM ALERT' : t('map.signal_locked')}
+                         </span>
+                    </div>
+                    <p className="text-xs text-gray-200 mb-3 line-clamp-3 leading-relaxed">
+                        {isHidden ? t('map.content_hidden') : msg.text.split('\n\n')[0]}
+                    </p>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onOpenThread(msg); mapInstance?.closePopup(); }}
+                        className={`w-full py-2 rounded text-[10px] font-black tracking-widest ${isGlobalEvent ? 'bg-red-600 text-white' : 'bg-cyan-500 text-black'}`}
+                    >
+                        {t('map.open_channel')}
+                    </button>
                 </div>
-                <div class="mt-1 px-1.5 py-0.5 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/30 rounded text-[8px] font-mono font-black text-cyan-400 tracking-widest uppercase shadow-lg select-none">
-                    YOU
-                </div>
-            </div>
-        `,
-        iconSize: [40, 50],
-        iconAnchor: [20, 25]
-    });
-    return <Marker position={[position.lat, position.lng]} icon={icon} zIndexOffset={5000} />;
-};
-
-const MessageFlyTo: React.FC<{ target: ChatMessage | null }> = ({ target }) => {
-    const map = useMap();
-    useEffect(() => {
-        if (target) {
-            // FIX: Fly directly to the coordinates. Leaflet Popup autoPan handles the padding.
-            map.flyTo([target.location.lat, target.location.lng], 18, {
-                animate: true,
-                duration: 1.5
-            });
-        }
-    }, [target, map]);
-    return null;
-};
-
-const CoordinateFlyTo: React.FC<{ target: { lat: number, lng: number, timestamp: number } | null }> = ({ target }) => {
-    const map = useMap();
-    useEffect(() => {
-        if (target) {
-            map.flyTo([target.lat, target.lng], 16.5, {
-                animate: true,
-                duration: 2.0
-            });
-        }
-    }, [target?.timestamp, map]);
-    return null;
-};
-
-const MapEventsHandler: React.FC<{ onMapClick: () => void }> = ({ onMapClick }) => {
-    useMapEvents({ click: () => onMapClick() });
-    return null;
+            </Popup>
+        </Marker>
+    );
 };
 
 const MapController: React.FC<{ 
     onViewportChange: (b: ViewportBounds) => void, 
     setZoom: (z: number) => void,
-    setBounds: (b: [number, number, number, number] | null) => void 
-}> = ({ onViewportChange, setZoom, setBounds }) => {
+    setBounds: (b: [number, number, number, number] | null) => void,
+    onMapClick: () => void,
+    flyToLocation: any,
+    focusedMessage: any
+}> = ({ onViewportChange, setZoom, setBounds, onMapClick, flyToLocation, focusedMessage }) => {
   const map = useMap();
-  const lastUpdateRef = useRef(0);
-  const handleViewportUpdate = useCallback(() => {
-      const bounds = map.getBounds();
-      const center = map.getCenter();
-      const z = map.getSize().x > 0 ? map.getZoom() : 0;
-      const size = map.getSize();
-      const visualOffsetY = 96; 
-      const sectorPoint = [size.x / 2, (size.y / 2) - visualOffsetY];
-      let sectorLatLng = center;
-      try {
-          // @ts-ignore
-          sectorLatLng = map.containerPointToLatLng(sectorPoint);
-      } catch (e) {}
-      onViewportChange({
-          north: bounds.getNorth(), south: bounds.getSouth(), east: bounds.getEast(), west: bounds.getWest(),
-          zoom: z, center: { lat: center.lat, lng: center.lng }, sectorCenter: { lat: sectorLatLng.lat, lng: sectorLatLng.lng }
-      });
-  }, [map, onViewportChange]);
-
-  const handleClusterUpdate = useCallback(() => {
-      const b = map.getBounds();
-      setBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
-      setZoom(map.getZoom());
-  }, [map, setBounds, setZoom]);
-
+  
+  // CRITICAL: Ensure map fills container on mount and state changes
   useEffect(() => {
-      handleViewportUpdate(); handleClusterUpdate();
-      const invalidate = () => map.invalidateSize({ animate: false });
-      window.addEventListener('resize', invalidate);
-      return () => window.removeEventListener('resize', invalidate);
+    const fix = () => map.invalidateSize();
+    fix();
+    const t1 = setTimeout(fix, 100);
+    const t2 = setTimeout(fix, 500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [map]);
 
+  const handleUpdate = useCallback(() => {
+      const b = map.getBounds();
+      const center = map.getCenter();
+      onViewportChange({
+          north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest(),
+          zoom: map.getZoom(), center: { lat: center.lat, lng: center.lng }, sectorCenter: { lat: center.lat, lng: center.lng }
+      });
+      setBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+      setZoom(map.getZoom());
+  }, [map, onViewportChange, setZoom, setBounds]);
+
   useMapEvents({
-    move: () => {
-        const now = Date.now();
-        if (now - lastUpdateRef.current > 100) { 
-            handleViewportUpdate(); lastUpdateRef.current = now;
-        }
-    },
-    moveend: () => { handleViewportUpdate(); handleClusterUpdate(); lastUpdateRef.current = Date.now(); },
-    zoomend: () => { handleViewportUpdate(); handleClusterUpdate(); }
+    moveend: handleUpdate,
+    zoomend: handleUpdate,
+    click: onMapClick
   });
+
+  useEffect(() => {
+    if (flyToLocation) {
+        if (flyToLocation.bounds) {
+             const [s, n, w, e] = flyToLocation.bounds;
+             map.fitBounds([[s, w], [n, e]], { padding: [50, 50], animate: true });
+        } else {
+             map.flyTo([flyToLocation.lat, flyToLocation.lng], 13, { animate: true });
+        }
+    }
+  }, [flyToLocation?.timestamp, map]);
+
+  useEffect(() => {
+    if (focusedMessage) {
+        map.flyTo([focusedMessage.location.lat, focusedMessage.location.lng], 16, { animate: true });
+    }
+  }, [focusedMessage?.id, map]);
+
   return null;
 };
 
-const MessageMarker = React.memo(({ msg, position, isFocused, isHidden, onOpenThread, onClosePopup, mapInstance }: {
-    msg: ChatMessage, position: [number, number], isFocused: boolean, isHidden: boolean,
-    onOpenThread: (msg: ChatMessage) => void, onClosePopup: () => void, mapInstance: L.Map | null
-}) => {
-    const { t } = useTranslation();
-    const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
-    const markerRef = useRef<L.Marker>(null);
-    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType, msg.timestamp]);
-    const hasText = msg.text && msg.text.trim().length > 0;
-
-    useEffect(() => {
-        if (isFocused && markerRef.current && mapInstance) {
-            const openPopupSafe = () => { if (markerRef.current) markerRef.current.openPopup(); };
-            // @ts-ignore
-            const isAnimating = mapInstance._animatingZoom || mapInstance._panAnim;
-            if (isAnimating) {
-                mapInstance.once('moveend', () => setTimeout(openPopupSafe, 150));
-            } else {
-                setTimeout(openPopupSafe, 200);
-            }
-        }
-    }, [isFocused, mapInstance]);
-
-    const handleOpenClick = (e: React.MouseEvent) => {
-        e.stopPropagation(); e.preventDefault();
-        if (!isHidden) { onOpenThread(msg); mapInstance?.closePopup(); }
-    };
-
-    return (
-        <Marker position={position} icon={icon} ref={markerRef} zIndexOffset={isFocused ? 3000 : (isGlobalEvent ? 2000 : 0)}>
-            <Popup 
-                className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}
-                autoPan={true}
-                autoPanPaddingTopLeft={[50, 100]} // Keep clear of search bar (approx 60-80px)
-                autoPanPaddingBottomRight={[50, 150]} // Increased from 50 to 150 to stay clear of the bottom feed panel
-            >
-                <div className="p-3 pb-5 relative">
-                    <button onClick={(e) => { e.stopPropagation(); onClosePopup(); mapInstance?.closePopup(); }}
-                        className="absolute top-2 right-2 p-1 text-gray-500 hover:text-white bg-black/40 hover:bg-black/60 rounded-full transition-colors z-50">
-                        <X size={14} />
-                    </button>
-                    <div className="group mt-1">
-                        <div className="flex items-center justify-between mb-2 pr-6">
-                            <span className={`text-[10px] font-mono font-bold tracking-wider flex items-center gap-1 ${isGlobalEvent ? 'text-red-500' : 'text-cyan-400'}`}>
-                                {isGlobalEvent ? (
-                                    <><span className="animate-pulse bg-red-500/10 px-1 rounded border border-red-500/30">SYS</span> <span className="ml-1">SYSTEM ALERT</span> {msg.country && <span className="ml-1 text-sm">{getFlagEmoji(msg.country)}</span>}</>
-                                ) : (msg.isMasked ? <><Crosshair size={10} /> {t('map.masked')}</> : <><Crosshair size={10} /> {t('map.exact')}</>)}
-                            </span>
-                            <span className="text-[10px] text-gray-500 font-mono">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        </div>
-                        {isHidden ? (
-                            <p className="text-sm text-gray-500 italic leading-relaxed mb-3 font-light border-l-2 border-gray-500/30 pl-2">{t('map.content_hidden')}</p>
-                        ) : (
-                            <div onClick={handleOpenClick} className={`mb-3 border-l-2 pl-2 transition-colors cursor-pointer ${isGlobalEvent ? 'border-red-500/50 group-hover:border-red-500' : 'border-cyan-500/30 group-hover:border-cyan-400'}`}>
-                                {msg.imageUrl && <div className="mb-2 rounded overflow-hidden border border-white/10"><img src={msg.imageUrl} alt="attached" className="w-full h-16 object-cover opacity-80" /></div>}
-                                <p className="text-sm text-gray-200 leading-relaxed line-clamp-4 font-light whitespace-pre-line">{hasText ? msg.text : (msg.imageUrl && <span className="flex items-center gap-2 text-cyan-400 italic font-mono text-xs"><ImageIcon size={14} /> {t('thread.image_attached')}</span>)}</p>
-                            </div>
-                        )}
-                        {!isHidden && <button onClick={handleOpenClick} className={`w-full text-center py-2 rounded text-[10px] font-bold tracking-widest transition-all ${isGlobalEvent ? 'bg-red-900/30 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-white/5 text-cyan-400 hover:bg-cyan-500 hover:text-black'}`}>{isGlobalEvent ? 'READ PROTOCOL' : t('map.open_channel')}</button>}
-                    </div>
-                </div>
-            </Popup>
-        </Marker>
-    );
-});
-
-const ChatMap: React.FC<ChatMapProps> = React.memo(({ messages, signals, onViewportChange, onMapClick, lastNewMessage, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, onClosePopup, hiddenIds, getUserLocation, userLocation }) => {
-  const [zoom, setZoom] = useState(3.5);
+const ChatMap: React.FC<ChatMapProps> = (props) => {
+  const { messages, signals, onViewportChange, onMapClick, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, hiddenIds, userLocation, scannerStatus, scannerCity } = props;
+  
+  // ALUSTUS: Zoom tasolle 3 (vastaa MapContainerin oletusta), jotta tutka ei hyppää koon puolesta käynnistyksessä
+  const [zoom, setZoom] = useState(3);
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null);
-  const { t } = useTranslation();
   const mapRef = useRef<L.Map | null>(null);
-  const startPosition: [number, number] = [52.0, 10.0]; 
-  const isMaxZoom = zoom >= 17.5; 
-  const baseScale = isMaxZoom ? 1.0 : (zoom <= 7 ? 0.4 : 0.4 + ((zoom - 7) / (13 - 7)) * 0.6);
-  const totalScale = baseScale * (isMaxZoom ? 1.1 : (hasSignal ? 1.05 : 1.0));
-
+  
   const points = useMemo(() => messages.map(msg => ({
-      type: 'Feature', properties: { cluster: false, messageId: msg.id, ...msg },
-      geometry: { type: 'Point', coordinates: [msg.location.lng, msg.location.lat] }
+      type: 'Feature' as const, properties: { cluster: false, messageId: msg.id, message: msg },
+      geometry: { type: 'Point' as const, coordinates: [msg.location.lng, msg.location.lat] }
   })), [messages]);
 
   const { clusters, supercluster } = useSupercluster({
-    points, bounds: bounds || [-180, -90, 180, 90], zoom: zoom, options: { radius: 60, maxZoom: 16 } 
+    points, bounds: bounds || [-180, -90, 180, 90], zoom, options: { radius: 60, maxZoom: 20 } 
   });
 
-  const handleClusterClick = useCallback((id: number, lat: number, lng: number) => {
-      const expansionZoom = Math.min(supercluster.getClusterExpansionZoom(id), 18);
-      mapRef.current?.flyTo([lat, lng], expansionZoom, { animate: true, duration: 1 });
-  }, [supercluster]);
+  const isMaxZoom = zoom >= 17;
+  // Lasketaan skaala: Tasolla 3 se on pieni (0.4), tasolla 17+ se on suuri (1.0)
+  const radarScale = isMaxZoom ? 1.0 : (zoom <= 7 ? 0.4 : 0.4 + ((zoom - 7) / (13 - 7)) * 0.6);
 
   return (
-    <div className="absolute inset-0 w-full h-full z-0 bg-[#0a0a12] overflow-hidden">
+    <div className="fixed inset-0 w-full h-full bg-[#0a0a12] overflow-hidden">
       <MapContainer
-        // @ts-ignore
-        center={startPosition} zoom={3.5} scrollWheelZoom={true} doubleClickZoom={false} zoomControl={false} attributionControl={false}
-        className="w-full h-full outline-none" style={{ width: '100%', height: '100%', background: '#0a0a12' }} 
-        minZoom={3} maxZoom={18} zoomSnap={0.5} maxBounds={[[-90, -220], [90, 220]]} preferCanvas={true} ref={mapRef}
+        center={initialCenter ? [initialCenter.lat, initialCenter.lng] : [20.0, 0.0]} 
+        zoom={3}
+        minZoom={2}
+        maxBounds={WORLD_BOUNDS}
+        maxBoundsViscosity={1.0} // Estää harmaan tyhjän alueen paljastumisen reunoilla
+        worldCopyJump={false} // Estää koordinaattisekoilun globaalissa näkymässä
+        scrollWheelZoom={true} 
+        zoomControl={false} 
+        attributionControl={false}
+        className="w-full h-full absolute inset-0"
+        style={{ background: '#0a0a12' }} 
+        ref={mapRef}
       >
-        <TileLayer attribution={MAP_ATTRIBUTION} url={MAP_TILE_URL} noWrap={true} opacity={0.8} keepBuffer={4} />
-        <MapController onViewportChange={onViewportChange} setZoom={setZoom} setBounds={setBounds} />
-        <MessageFlyTo target={focusedMessage} />
-        <CoordinateFlyTo target={flyToLocation} />
-        <MapEventsHandler onMapClick={onMapClick} />
-        {userLocation && <UserLocationMarker position={userLocation} />}
-        {clusters.map((cluster) => {
+        {/* noWrap: true estää maailman monistumisen (se 3x ilmiö) */}
+        <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} noWrap={true} bounds={WORLD_BOUNDS} />
+        
+        <MapController 
+            onViewportChange={onViewportChange} 
+            setZoom={setZoom} 
+            setBounds={setBounds} 
+            onMapClick={onMapClick} 
+            flyToLocation={flyToLocation}
+            focusedMessage={focusedMessage}
+        />
+        
+        {clusters.map((cluster: any) => {
             const [longitude, latitude] = cluster.geometry.coordinates;
             const { cluster: isCluster, point_count: pointCount } = cluster.properties;
-            if (isCluster) return <Marker key={`cluster-${cluster.id}`} position={[latitude, longitude]} icon={getClusterIcon(pointCount)} eventHandlers={{ click: (e) => { e.originalEvent.stopPropagation(); handleClusterClick(cluster.id, latitude, longitude); } }} />;
-            const msg = cluster.properties as ChatMessage;
-            return <MessageMarker key={msg.id} msg={msg} position={[msg.location.lat, msg.location.lng]} isFocused={focusedMessage?.id === msg.id} isHidden={hiddenIds.has(msg.id)} onOpenThread={onOpenThread} onClosePopup={onClosePopup} mapInstance={mapRef.current} />;
+            if (isCluster) return (
+                <Marker 
+                    key={`cluster-${cluster.id}`} 
+                    position={[latitude, longitude]} 
+                    icon={getClusterIcon(pointCount)} 
+                    eventHandlers={{ click: () => { 
+                        const expansionZoom = supercluster.getClusterExpansionZoom(cluster.id);
+                        mapRef.current?.setView([latitude, longitude], expansionZoom);
+                    }}} 
+                />
+            );
+            const msg = cluster.properties.message;
+            return <MessageMarker key={msg.id} msg={msg} position={[latitude, longitude]} isHidden={hiddenIds.has(msg.id)} onOpenThread={onOpenThread} mapInstance={mapRef.current} />;
         })}
+
+        {userLocation && (
+            <Marker position={[userLocation.lat, userLocation.lng]} zIndexOffset={5000} icon={L.divIcon({
+                className: 'bg-transparent border-none',
+                html: `<div class="w-4 h-4 bg-white rounded-full border-2 border-[#0a0a12] shadow-[0_0_10px_white] animate-pulse"></div>`,
+                iconSize: [16, 16], iconAnchor: [8, 8]
+            })} />
+        )}
         <ArcLayer messages={signals} />
         <HeatmapLayer messages={messages} />
       </MapContainer>
-      <div className="pointer-events-none absolute inset-0 z-[400] flex flex-col items-center justify-center pb-48">
-          <div className="relative flex items-center justify-center transition-all duration-200" style={{ transform: 'translate3d(0,0,0)', willChange: 'transform' }}>
-              <div className="absolute w-64 h-64" style={{ transform: `scale(${totalScale})`, opacity: isMaxZoom || hasSignal ? 1 : 0.6, transition: 'transform 0.2s ease-out, opacity 0.5s ease-out' }}>
-                  <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full animate-[spin_4s_linear_infinite]"><defs><linearGradient id="sweepGradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0" /><stop offset="50%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0.1" /><stop offset="100%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0.4" /></linearGradient></defs><path d="M50 50 L50 0 A50 50 0 0 1 100 50 Z" fill="url(#sweepGradient)"/></svg>
-                  <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full"><circle cx="50" cy="50" r="48" fill="none" stroke={isMaxZoom ? "#ef4444" : "#22d3ee"} strokeWidth="0.5" strokeOpacity="0.3" strokeDasharray="4 2"/><circle cx="50" cy="50" r="35" fill="none" stroke={isMaxZoom ? "#ef4444" : "#22d3ee"} strokeWidth="0.2" strokeOpacity="0.2"/></svg>
-                  <div className={`absolute inset-[25%] rounded-full border border-dashed opacity-30 animate-[spin_10s_linear_infinite_reverse] ${isMaxZoom ? 'border-red-500' : 'border-cyan-400'}`}/>
+
+      {/* SWEEP RADAR HUD - Pysyy aina kerroksessa 9999 kartan päällä */}
+      <div className="pointer-events-none absolute inset-0 z-[9999] flex items-center justify-center">
+          <div className="relative w-72 h-72 flex items-center justify-center">
+              {/* Tutkaefekti skaalautuu zoomin mukaan */}
+              <div className="absolute inset-0 transition-transform duration-500 ease-out" style={{ transform: `scale(${radarScale})` }}>
+                  <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full animate-[spin_4s_linear_infinite]">
+                      <defs>
+                          <linearGradient id="sweep" x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0" />
+                              <stop offset="100%" stopColor={isMaxZoom ? "#ef4444" : "#22d3ee"} stopOpacity="0.4" />
+                          </linearGradient>
+                      </defs>
+                      <path d="M50 50 L50 0 A50 50 0 0 1 100 50 Z" fill="url(#sweep)"/>
+                  </svg>
+                  <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full opacity-20">
+                      <circle cx="50" cy="50" r="49" fill="none" stroke={isMaxZoom ? "#ef4444" : "#22d3ee"} strokeWidth="0.5" strokeDasharray="4 4"/>
+                  </svg>
               </div>
-              <div className={`transition-all duration-300 z-10 ${isMaxZoom ? 'text-red-500 drop-shadow-[0_0_12px_rgba(239,68,68,1)] scale-125' : (hasSignal ? 'text-white drop-shadow-[0_0_12px_rgba(255,255,255,0.9)] scale-110' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]')}`}>{isMaxZoom ? <ShieldAlert size={32} strokeWidth={2} /> : (hasSignal ? <Lock size={32} strokeWidth={2} /> : <Crosshair size={32} strokeWidth={1.5} />)}</div>
+
+              {/* Keskikohdan ristikko/ikoni */}
+              <div className={`transition-all duration-300 z-10 ${isMaxZoom ? 'text-red-500 scale-125' : (hasSignal ? 'text-white' : 'text-cyan-400')}`}>
+                  {isMaxZoom ? <ShieldAlert size={36} /> : (hasSignal ? <Lock size={32} /> : <Crosshair size={32} />)}
+              </div>
+              
+              {/* Skannerin tilatekstit */}
+              <AnimatePresence>
+                {scannerStatus && (
+                    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="absolute -bottom-16 flex flex-col items-center whitespace-nowrap">
+                        <span className="font-mono text-[10px] font-bold tracking-[0.3em] uppercase text-white drop-shadow-lg bg-[#0a0a12]/80 px-4 py-1 rounded-full border border-white/10">
+                            {scannerStatus} {scannerCity && <span className="text-cyan-400 ml-2">[{scannerCity}]</span>}
+                        </span>
+                    </motion.div>
+                )}
+              </AnimatePresence>
           </div>
       </div>
     </div>
   );
-});
+};
 
 export default ChatMap;

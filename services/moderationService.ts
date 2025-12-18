@@ -12,8 +12,6 @@ export const moderateContent = (text: string): boolean => {
 // 2. Reverse Geocoding (BigDataCloud Free API - CORS Friendly)
 export const getCityName = async (lat: number, lng: number): Promise<{ city: string; countryCode: string }> => {
   try {
-    // Using BigDataCloud's free client-side API which handles CORS much better than Nominatim
-    // and doesn't require a strict User-Agent header (which browsers block).
     const response = await fetch(
       `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
     );
@@ -22,8 +20,6 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
     
     const data = await response.json();
     
-    // Extract the most relevant location name
-    // API returns fields like: city, locality, principalSubdivision, countryName
     const city = data.city || 
            data.locality || 
            data.principalSubdivision || 
@@ -40,9 +36,15 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
   }
 };
 
+export interface SearchResult {
+  lat: number;
+  lng: number;
+  name: string;
+  bounds?: [number, number, number, number]; // [south, north, west, east]
+}
+
 // 3. Forward Geocoding (Search)
-// Using Nominatim (OpenStreetMap)
-export const searchLocations = async (query: string): Promise<{ lat: number, lng: number, name: string } | null> => {
+export const searchLocations = async (query: string): Promise<SearchResult | null> => {
     try {
         const response = await fetch(
             `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
@@ -51,10 +53,24 @@ export const searchLocations = async (query: string): Promise<{ lat: number, lng
         
         const data = await response.json();
         if (data && data.length > 0) {
+            const result = data[0];
+            let bounds: [number, number, number, number] | undefined = undefined;
+            
+            if (result.boundingbox) {
+                // Nominatim returns [lat_min, lat_max, lon_min, lon_max]
+                bounds = [
+                    parseFloat(result.boundingbox[0]), 
+                    parseFloat(result.boundingbox[1]), 
+                    parseFloat(result.boundingbox[2]), 
+                    parseFloat(result.boundingbox[3])
+                ];
+            }
+
             return {
-                lat: parseFloat(data[0].lat),
-                lng: parseFloat(data[0].lon),
-                name: data[0].display_name.split(',')[0] // Take first part of name
+                lat: parseFloat(result.lat),
+                lng: parseFloat(result.lon),
+                name: result.display_name.split(',')[0],
+                bounds
             };
         }
         return null;
@@ -64,12 +80,7 @@ export const searchLocations = async (query: string): Promise<{ lat: number, lng
     }
 };
 
-// 4. IP-Based Location Fallback
-// Used when GPS is unavailable or timed out.
 export const getIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
-    // Strategy: Try Primary API -> If fail, try Secondary API
-    
-    // PRIMARY: BigDataCloud
     try {
         const response = await fetch(
             `https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en`
@@ -84,7 +95,6 @@ export const getIpLocation = async (): Promise<{ lat: number; lng: number } | nu
         console.warn("Primary IP Location (BigDataCloud) failed", e);
     }
 
-    // SECONDARY: ipapi.co (Fallback)
     try {
         const response = await fetch('https://ipapi.co/json/');
         if (response.ok) {

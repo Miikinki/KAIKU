@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
+// Added Shield icon to imports
+import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff, Image as ImageIcon, Newspaper, ExternalLink, Sparkles, Languages, Shield } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
+import { translateText } from '../services/translationService';
 import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
@@ -18,7 +20,17 @@ interface ThreadViewProps {
   onToggleHidden: (msgId: string) => void;
 }
 
-// Helper: Relative Creation Time (e.g. "5m ago")
+const getSourceName = (url?: string) => {
+    if (!url) return 'SOURCE';
+    try {
+        const domain = new URL(url).hostname.replace('www.', '');
+        const parts = domain.split('.');
+        return (parts[0] === 'google' ? parts[1] : parts[0]).toUpperCase();
+    } catch (e) {
+        return 'NEWS';
+    }
+};
+
 const formatRelativeTime = (timestamp: number) => {
     const now = Date.now();
     const diff = Math.max(0, now - timestamp);
@@ -31,7 +43,6 @@ const formatRelativeTime = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString(); 
 };
 
-// Helper: Calculate if signal is dying
 const getSignalHealth = (msg: ChatMessage) => {
     const expiry = msg.expiresAt || (msg.timestamp + 24 * 60 * 60 * 1000);
     const diff = expiry - Date.now();
@@ -44,13 +55,22 @@ const getSignalHealth = (msg: ChatMessage) => {
 };
 
 const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick, hiddenIds, onToggleHidden }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [replies, setReplies] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [replyText, setReplyText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
+  const [localReactions, setLocalReactions] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('kaiku_reactions');
+    return saved ? JSON.parse(saved) : {};
+  });
+  
+  // Translation state
+  const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({});
+  const [isTranslating, setIsTranslating] = useState<Record<string, boolean>>({});
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const currentSessionId = getAnonymousID();
 
@@ -98,7 +118,15 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
   };
 
-  // REPLACED REPORT WITH HIDE
+  const handleReaction = (msgId: string, emoji: string) => {
+    triggerHaptic('light');
+    setLocalReactions(prev => {
+        const updated = { ...prev, [msgId]: emoji === prev[msgId] ? '' : emoji };
+        localStorage.setItem('kaiku_reactions', JSON.stringify(updated));
+        return updated;
+    });
+  };
+
   const handleToggleHiddenClick = (e: React.MouseEvent, msgId: string) => {
     e.stopPropagation();
     onToggleHidden(msgId);
@@ -118,7 +146,29 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     }
   };
 
-  // --- TEXT PARSER (Clickable Hashtags) ---
+  const handleTranslate = async (e: React.MouseEvent, msg: ChatMessage) => {
+    e.stopPropagation();
+    if (translatedMessages[msg.id]) {
+        const updated = { ...translatedMessages };
+        delete updated[msg.id];
+        setTranslatedMessages(updated);
+        triggerHaptic('light');
+        return;
+    }
+
+    setIsTranslating(prev => ({ ...prev, [msg.id]: true }));
+    triggerHaptic('light');
+    
+    try {
+        const translated = await translateText(msg.text, i18n.language);
+        setTranslatedMessages(prev => ({ ...prev, [msg.id]: translated }));
+    } catch (error) {
+        console.error("Translation failed", error);
+    } finally {
+        setIsTranslating(prev => ({ ...prev, [msg.id]: false }));
+    }
+  };
+
   const renderMessageText = (text: string) => {
       const parts = text.split(/(#[\p{L}\p{N}_]+)/gu);
       
@@ -142,7 +192,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   };
 
   const renderVisitorBadge = (msg: ChatMessage) => {
-    if (!msg.isRemote) return null;
+    if (!msg.isRemote && msg.postType !== 'GLOBAL_EVENT') return null;
 
     const isDomestic = msg.country && msg.originCountry === msg.country;
     const title = isDomestic 
@@ -152,9 +202,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     return (
         <div className="text-amber-400 flex items-center gap-1.5" title={title}>
             <Satellite size={12} />
-            {!isDomestic && msg.originCountry && (
+            {!isDomestic && msg.originCountry && msg.originCountry !== 'SYSTEM' && (
                 <span className="text-sm leading-none" role="img" aria-label={msg.originCountry}>
                     {getFlagEmoji(msg.originCountry)}
+                </span>
+            )}
+            {msg.postType === 'GLOBAL_EVENT' && msg.country && msg.originCountry === 'SYSTEM' && (
+                 <span className="text-sm leading-none" role="img" aria-label={msg.country}>
+                    {getFlagEmoji(msg.country)}
                 </span>
             )}
         </div>
@@ -165,19 +220,26 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       const isBoosted = userVotes[msg.id] === 'up';
       const { isCritical, isWeak } = getSignalHealth(msg);
       const isHidden = hiddenIds.has(msg.id);
-      const isGlobal = msg.postType === 'GLOBAL_EVENT';
-      
-      // Check if this message is from the Original Poster
+      const isNews = msg.postType === 'GLOBAL_EVENT' || msg.postType === 'SCAN_RESULT';
       const isOp = !isParent && msg.sessionId === parentMessage.sessionId;
+
+      const isTranslated = !!translatedMessages[msg.id];
+      const activeText = translatedMessages[msg.id] || msg.text;
+
+      const textParts = isNews ? activeText.split('\n\n') : [activeText];
+      const headline = isNews ? textParts[0] : null;
+      const body = isNews ? textParts.slice(1).join('\n\n') : activeText;
+      const sourceName = isNews ? getSourceName(msg.eventMetadata?.source_url) : null;
+      const sourceUrl = isNews ? msg.eventMetadata?.source_url : null;
+
+      const needsTranslation = isNews && msg.language && msg.language !== i18n.language;
 
       let borderClass = isParent ? 'border-b border-white/10' : 'border-l-2 border-white/10 ml-4 pl-4';
       
-      // OP Visuals: Thin cyan border + faint cyan tint
       if (isOp) {
           borderClass = 'border-l-2 border-cyan-500/40 ml-4 pl-4 bg-cyan-500/5';
       }
 
-      // Apply health colors if it's the parent message (replies usually don't have separate health logic visually in thread view, but we can add it lightly)
       if (isParent) {
          if (isCritical) borderClass += ' border-red-500/50';
          else if (isWeak) borderClass += ' border-orange-500/30';
@@ -196,10 +258,8 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                     <Zap size={18} className={isBoosted ? "fill-cyan-400" : ""} />
                 </button>
                 {!isHidden && (
-                    isGlobal ? (
-                        <span className="text-[10px] text-red-500 font-mono font-bold animate-pulse tracking-widest bg-red-500/10 px-1 rounded border border-red-500/30">
-                            SYS
-                        </span>
+                    isNews ? (
+                        <Newspaper size={12} className="text-gray-600" />
                     ) : (
                         <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
                             {msg.score}
@@ -211,17 +271,20 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
             {/* Content */}
             <div className="flex-1">
                 <div className="flex justify-between items-start mb-1">
-                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                        {isGlobal ? (
-                           <div className="flex items-center gap-1.5">
-                              {/* Removed large SYSTEM ALERT badge */}
-                              {msg.originCountry === "SYSTEM" && <Satellite size={12} className="text-amber-500" />}
-                           </div>
+                    <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500">
+                        {isNews ? (
+                           <>
+                             {sourceName && (
+                                <div className="bg-white/5 text-gray-300 px-2 py-0.5 rounded-full border border-white/10 text-[9px] font-bold tracking-widest flex items-center gap-1 uppercase">
+                                    <span className="w-1 h-1 bg-cyan-400 rounded-full animate-pulse"></span>
+                                    {sourceName}
+                                </div>
+                             )}
+                           </>
                         ) : (
-                           <span className="font-mono text-cyan-400">ID: {msg.sessionId.slice(0, 6)}</span>
+                           <span className="font-mono text-cyan-400 font-bold">ID: {msg.sessionId.slice(0, 6)}</span>
                         )}
                         
-                        {/* OP BADGE */}
                         {isOp && (
                             <span className="flex items-center gap-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-1 py-px rounded-[3px] font-bold tracking-wider text-[9px]" title="Original Poster">
                                 <Crown size={10} strokeWidth={2.5} />
@@ -229,18 +292,29 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                             </span>
                         )}
 
-                        {(isGlobal || !isOp) && <span>•</span>}
+                        <span>•</span>
                         <div className="flex items-center gap-1 font-mono font-bold">
                             <Clock size={10} />
                             {formatRelativeTime(msg.timestamp)}
-                            {isParent && isCritical && !isHidden && (
-                                <span className="text-red-500 ml-1 animate-pulse">FAILING</span>
-                            )}
                         </div>
+
+                        {needsTranslation && !isHidden && (
+                            <button 
+                                onClick={(e) => handleTranslate(e, msg)}
+                                className="flex items-center gap-1 text-cyan-400 hover:text-white font-bold ml-1 transition-colors group/trans"
+                                disabled={isTranslating[msg.id]}
+                            >
+                                {isTranslating[msg.id] ? (
+                                    <Loader2 size={10} className="animate-spin" />
+                                ) : (
+                                    <Languages size={10} className="group-hover/trans:rotate-12 transition-transform" />
+                                )}
+                                <span>{isTranslated ? t('feed.show_original') : t('feed.translate')}</span>
+                            </button>
+                        )}
                     </div>
                     <div className="flex items-center gap-2">
-                        
-                        {!isHidden && !isGlobal && renderVisitorBadge(msg)}
+                        {!isHidden && renderVisitorBadge(msg)}
 
                         {msg.sessionId === currentSessionId ? (
                             <button 
@@ -260,30 +334,75 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                             </button>
                         )}
                         {isParent && (
-                            <div className="flex items-center gap-1 text-[10px] text-gray-500 uppercase">
-                                <MapPin size={10} /> 
+                            <div className="flex items-center gap-1 text-[12px] text-gray-400 font-medium">
+                                <MapPin size={10} className="text-cyan-500" /> 
                                 <span>{msg.city}</span>
-                                {isGlobal && msg.country && (
-                                    <span className="text-sm leading-none ml-1" role="img" aria-label={msg.country}>
-                                        {getFlagEmoji(msg.country)}
-                                    </span>
-                                )}
                             </div>
                         )}
                     </div>
                 </div>
-                {/* RENDER TEXT WITH HASHTAGS OR IMAGE PLACEHOLDER */}
-                <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isHidden ? 'text-gray-500 italic' : 'text-gray-200'} ${isParent && !isHidden ? 'font-medium text-base' : 'font-light'}`}>
-                    {isHidden 
-                        ? "** CONTENT HIDDEN **" 
-                        : (msg.text && msg.text.trim().length > 0 
-                            ? renderMessageText(msg.text) 
-                            : (msg.imageUrl && <span className="flex items-center gap-2 text-gray-500 italic"><ImageIcon size={14} /> {t('thread.image_attached')}</span>)
-                          )
-                    }
-                </p>
 
-                {/* Render Image Attachment */}
+                {isHidden ? (
+                    <p className="text-sm text-gray-500 italic leading-relaxed font-light break-words">
+                        ** CONTENT HIDDEN **
+                    </p>
+                ) : isNews && headline ? (
+                    <div className="space-y-3 mt-1">
+                        <h3 className={`font-bold text-white leading-snug flex items-start gap-2 ${isParent ? 'text-xl' : 'text-base'}`}>
+                            {isTranslated && <Sparkles size={isParent ? 18 : 14} className="text-cyan-400 shrink-0 mt-1" />}
+                            {headline}
+                        </h3>
+                        <p className={`text-[#D1D5DB] font-normal leading-relaxed break-words ${isParent ? 'text-base' : 'text-sm'}`}>
+                            {renderMessageText(body)}
+                        </p>
+                        
+                        <div className="flex items-center justify-between">
+                            {isParent && sourceUrl && (
+                                <a 
+                                    href={sourceUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
+                                >
+                                    {t('news.read_original', { source: sourceName })}
+                                    <ExternalLink size={10} />
+                                </a>
+                            )}
+
+                            {isTranslated && (
+                                <span className="text-[9px] font-mono text-cyan-500/50 flex items-center gap-1 uppercase tracking-tighter">
+                                    <Shield size={10} />
+                                    {t('feed.translated_by_ai')}
+                                </span>
+                            )}
+                        </div>
+
+                        {isParent && (
+                            <div className="flex items-center gap-3 pt-2">
+                                {['🔥', '😢', '🌍', '⚡'].map((emoji) => (
+                                    <motion.button
+                                        key={emoji}
+                                        whileTap={{ scale: 0.9 }}
+                                        whileHover={{ scale: 1.1 }}
+                                        onClick={() => handleReaction(msg.id, emoji)}
+                                        className={`w-10 h-10 flex items-center justify-center rounded-full border transition-all duration-300 ${
+                                            localReactions[msg.id] === emoji
+                                            ? 'bg-cyan-500 border-cyan-400 text-white shadow-[0_0_12px_rgba(6,182,212,0.5)]'
+                                            : 'bg-transparent border-white/10 text-white/60 hover:border-white/20'
+                                        }`}
+                                    >
+                                        <span className="text-lg">{emoji}</span>
+                                    </motion.button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <p className={`leading-relaxed break-words ${isHidden ? 'text-gray-500 italic' : 'text-gray-200'} ${isParent && !isHidden ? 'font-medium text-base' : 'font-normal text-sm'} ${isNews ? 'text-[#D1D5DB]' : ''}`}>
+                         {renderMessageText(body)}
+                    </p>
+                )}
+
                 {!isHidden && msg.imageUrl && (
                     <ImageAttachment src={msg.imageUrl} />
                 )}

@@ -14,10 +14,10 @@ interface ChatInputModalProps {
   cooldownUntil: number | null;
   targetLocationName?: string;
   onTypingStateChange?: (isTyping: boolean) => void;
-  gpsAccuracy: number | null; // NEW: Receive GPS accuracy
+  gpsAccuracy: number | null; 
 }
 
-const REQUIRED_ACCURACY_METERS = 50; // Threshold for "Exact" mode
+const REQUIRED_ACCURACY_METERS = 50; 
 
 const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName, onTypingStateChange, gpsAccuracy }) => {
   const { t } = useTranslation();
@@ -26,28 +26,22 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
   const [timeLeft, setTimeLeft] = useState('');
   const [error, setError] = useState<string | null>(null);
   
-  // Image Upload State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Signal Masking State
   const [isMasked, setIsMasked] = useState(false);
-
-  // Typing Debounce
   const typingTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
     if (isOpen) {
         setError(null);
     } else {
-        // Reset image and mask state on close
         setSelectedFile(null);
         setPreviewUrl(null);
         setText('');
-        setIsMasked(false); // Reset to unmasked by default
-        // Ensure typing stops when closed
+        setIsMasked(false); 
         if (onTypingStateChange) onTypingStateChange(false);
     }
   }, [isOpen]);
@@ -62,21 +56,16 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
         const m = Math.floor((diff % 3600000) / 60000);
         const s = Math.floor((diff % 60000) / 1000);
         
-        if (h > 0) {
-            setTimeLeft(`${h}h ${m}m`);
-        } else {
-            setTimeLeft(`${m}m ${s}s`);
-        }
+        if (h > 0) setTimeLeft(`${h}h ${m}m`);
+        else setTimeLeft(`${m}m ${s}s`);
       }
     }, 1000);
     return () => clearInterval(interval);
   }, [cooldownUntil, isOpen]);
 
-  // Handle Image Selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
           const file = e.target.files[0];
-          
           if (!file.type.startsWith('image/')) {
               setError("Invalid file type. Please select an image.");
               return;
@@ -85,7 +74,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
               setError("Image is too large (Max 5MB).");
               return;
           }
-
+          triggerHaptic('light');
           setSelectedFile(file);
           setPreviewUrl(URL.createObjectURL(file));
           setError(null);
@@ -93,6 +82,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
   };
 
   const clearImage = () => {
+      triggerHaptic('light');
       setSelectedFile(null);
       setPreviewUrl(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -100,13 +90,9 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       setText(e.target.value);
-      
-      // Trigger Typing Indicator
       if (onTypingStateChange) {
           onTypingStateChange(true);
-          
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-          
           typingTimeoutRef.current = setTimeout(() => {
               onTypingStateChange(false);
           }, 1000);
@@ -123,9 +109,8 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
     
     setIsSubmitting(true);
     setError(null);
-    SoundService.playClick();
+    triggerHaptic('light');
     
-    // Stop typing immediately on submit
     if (onTypingStateChange) {
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         onTypingStateChange(false);
@@ -133,19 +118,17 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
     
     try {
       let uploadedImageUrl: string | undefined = undefined;
-
-      // 1. Upload Image if selected
       if (selectedFile) {
           setIsUploading(true);
           uploadedImageUrl = await uploadImage(selectedFile);
           setIsUploading(false);
       }
-
-      // 2. Save Message with Image URL and Masking Flag
       await onSave(text, uploadedImageUrl, isMasked);
       
+      // Success feedback: Subtle chime + rhythmic pulse
       SoundService.playSuccess();
       triggerHaptic('success');
+      
       setText('');
       clearImage();
       onClose();
@@ -159,10 +142,8 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
     }
   };
 
-  // --- GPS GATING LOGIC ---
   const isSignalWeak = gpsAccuracy === null || gpsAccuracy > REQUIRED_ACCURACY_METERS;
   const isExactModeBlocked = !isMasked && isSignalWeak;
-  
   const isLocked = !!cooldownUntil && timeLeft !== '';
   const canAttachImages = canSendImages();
   const isSendDisabled = isSubmitting || (!text.trim() && !selectedFile) || !targetLocationName || isExactModeBlocked;
@@ -175,7 +156,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={() => { triggerHaptic('light'); onClose(); }}
             className="absolute inset-0 bg-black/80 backdrop-blur-sm"
           />
           
@@ -185,7 +166,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
             className="relative w-full max-w-lg bg-[#0f0f18] border border-white/10 rounded-2xl shadow-2xl p-6 text-white"
           >
-            <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white">
+            <button onClick={() => { triggerHaptic('light'); onClose(); }} className="absolute top-4 right-4 text-gray-500 hover:text-white">
               <X size={20} />
             </button>
 
@@ -216,7 +197,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
               </div>
             ) : (
               <>
-                {/* Image Preview Area */}
                 {previewUrl && (
                     <div className="relative mb-4 w-full h-32 bg-black/40 rounded-xl overflow-hidden border border-cyan-500/30 group">
                         <img src={previewUrl} alt="Preview" className="w-full h-full object-cover opacity-80" />
@@ -236,8 +216,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                     placeholder={t('input.placeholder')}
                     className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-gray-200 focus:outline-none focus:border-cyan-500/50 resize-none mb-3 pb-12"
                     />
-                    
-                    {/* Toolbar inside Textarea area */}
                     <div className="absolute bottom-6 left-4 flex gap-2">
                         {canAttachImages && (
                             <>
@@ -249,7 +227,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                                     onChange={handleFileSelect}
                                 />
                                 <button 
-                                    onClick={() => fileInputRef.current?.click()}
+                                    onClick={() => { triggerHaptic('light'); fileInputRef.current?.click(); }}
                                     className="p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
                                     title="Attach Image"
                                 >
@@ -260,7 +238,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                     </div>
                 </div>
 
-                {/* SIGNAL MASKING TOGGLE */}
                 <div 
                     onClick={handleToggleMask}
                     className={`mb-4 flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all duration-300 group
@@ -284,7 +261,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                         </div>
                     </div>
                     
-                    {/* Visual Toggle Switch */}
                     <div className="flex items-center gap-3">
                         {isExactModeBlocked && (
                              <div title="Signal too weak for exact mode">
@@ -333,7 +309,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
               </>
             )}
             
-            {/* DYNAMIC SYSTEM STATUS FOOTER */}
             <div className={`mt-4 flex items-center gap-2 text-[10px] font-mono tracking-widest uppercase transition-colors duration-300 ${isMasked ? 'text-cyan-400' : 'text-amber-500'}`}>
                {isMasked ? (
                    <Shield size={12} className="mt-0.5" />

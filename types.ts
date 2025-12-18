@@ -2,7 +2,7 @@ export interface ChatMessage {
   id: string;
   text: string;
   timestamp: number;
-  expiresAt: number; // NEW: Absolute timestamp when message dies
+  expiresAt: number; // Absolute timestamp when message dies
   location: {
     lat: number;
     lng: number;
@@ -20,9 +20,10 @@ export interface ChatMessage {
   preciseOrigin?: { lat: number, lng: number }; // PERSISTENT: Extracted from metadata for accurate remote arcs
   imageUrl?: string; // NEW: URL for attached image
   isMasked?: boolean; // NEW: Indicates if the location is fuzzy/masked
+  language?: string; // NEW: Detected source language (ISO code)
   
   // GLOBAL RADAR FIELDS
-  postType?: 'USER' | 'GLOBAL_EVENT';
+  postType?: 'USER' | 'GLOBAL_EVENT' | 'SCAN_RESULT';
   eventMetadata?: {
     source_url?: string;
   };
