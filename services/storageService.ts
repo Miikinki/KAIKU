@@ -145,7 +145,6 @@ export const getFlagUrl = (countryCode?: string) => {
   return `https://flagcdn.com/w20/${countryCode.toLowerCase()}.png`;
 };
 
-// NEW: Convert ISO code to Unicode Flag Emoji
 export const getFlagEmoji = (countryCode?: string) => {
   if (!countryCode || countryCode.length !== 2) return '';
   const codePoints = countryCode
@@ -216,14 +215,12 @@ export const toggleHiddenMessage = (id: string): Set<string> => {
 // --- IMAGE UPLOAD SERVICE ---
 
 export const canSendImages = (): boolean => {
-    // Placeholder for future monetization/premium checks
     return true;
 };
 
 export const uploadImage = async (file: File): Promise<string> => {
     if (!canSendImages()) throw new Error("Image upload is currently restricted.");
     
-    // Simple validation
     if (!file.type.startsWith('image/')) throw new Error("Only image files are allowed.");
     if (file.size > 5 * 1024 * 1024) throw new Error("Image size must be under 5MB.");
 
@@ -240,7 +237,6 @@ export const uploadImage = async (file: File): Promise<string> => {
 
     if (uploadError) {
         console.error("Supabase Upload Error:", uploadError);
-        // Pass the specific error message to the UI
         throw new Error(uploadError.message || "Failed to upload image. Please try again.");
     }
 
@@ -337,7 +333,6 @@ export const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
   return onlyRoot ? valid.filter((m: ChatMessage) => !m.parentId) : valid;
 };
 
-// Helper for mapping DB row to ChatMessage
 const mapRowToMessage = (d: any): ChatMessage => {
     const { tags, preciseOrigin, isMasked } = processTags(d.tags);
     return {
@@ -358,10 +353,9 @@ const mapRowToMessage = (d: any): ChatMessage => {
         preciseOrigin: preciseOrigin,
         imageUrl: d.image_url,
         isMasked: isMasked,
-        postType: d.post_type || 'USER', // Map new column
-        eventMetadata: d.event_metadata || {}, // Map new column
+        postType: d.post_type || 'USER', 
+        eventMetadata: d.event_metadata || {}, 
         
-        // Map Identity
         userDisplayName: d.user_display_name,
         userAvatar: d.user_avatar,
         userColor: d.user_color
@@ -400,23 +394,18 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
       console.warn("Network error during fetch (using local only)");
   }
   
-  // MERGE LOGIC: Combine Remote + Local. 
-  // Prefer Remote version if ID exists (because it has updated scores/replies).
-  // Keep Local if it doesn't exist in Remote (e.g. pending sync, or backend offline).
   const remoteIdSet = new Set(remoteMessages.map(m => m.id));
   const uniqueLocals = localMessages.filter(m => !remoteIdSet.has(m.id));
   
-  // Combine and Sort
   const combined = [...remoteMessages, ...uniqueLocals].sort((a, b) => b.timestamp - a.timestamp);
   
   return combined;
 };
 
 export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => {
-    // Also merge local replies for consistency
     const nowISO = new Date().toISOString();
     const deleted = getDeletedIds();
-    const allLocal = getLocalMessages(false); // Get all, including replies
+    const allLocal = getLocalMessages(false);
     const localReplies = allLocal.filter(m => m.parentId === parentId);
 
     let remoteReplies: ChatMessage[] = [];
@@ -512,7 +501,7 @@ export const saveMessage = async (
     id: generateUUID(), 
     text,
     timestamp: now,
-    expiresAt: now + BASE_LIFESPAN_MS, // Optimistic local update
+    expiresAt: now + BASE_LIFESPAN_MS, 
     location: { lat: finalLat, lng: finalLng },
     city: targetLocationData.city,
     country: (targetLocationData.countryCode || "").toUpperCase(), 
@@ -526,8 +515,7 @@ export const saveMessage = async (
     preciseOrigin: { lat: finalSenderLat, lng: finalSenderLng },
     imageUrl: imageUrl,
     isMasked: useSignalMasking,
-    postType: 'USER', // Defaults to User
-    // Identity Snapshot
+    postType: 'USER', 
     userDisplayName: profile.displayName || undefined,
     userAvatar: profile.avatar,
     userColor: profile.color
@@ -538,7 +526,6 @@ export const saveMessage = async (
       const stored = localStorage.getItem(STORAGE_KEY);
       const messages = stored ? JSON.parse(stored) : [];
       messages.unshift(newMessage);
-      // Keep local storage from exploding size (keep last 100)
       if (messages.length > 100) messages.length = 100; 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
       localStorage.setItem(LAST_POST_TIMESTAMP_KEY, Date.now().toString());
@@ -546,7 +533,7 @@ export const saveMessage = async (
       console.error("Local save failed", localError);
   }
 
-  // 2. ATTEMPT REMOTE SYNC (Fire and Forget)
+  // 2. ATTEMPT REMOTE SYNC
   supabase
       .from('kaiku_posts')
       .insert([{
@@ -562,14 +549,20 @@ export const saveMessage = async (
           is_remote: newMessage.isRemote,
           tags: newMessage.tags,
           image_url: newMessage.imageUrl,
-          post_type: 'USER', // Explicitly set
-          user_display_name: newMessage.userDisplayName, // Map to DB
+          post_type: 'USER', 
+          user_display_name: newMessage.userDisplayName, 
           user_avatar: newMessage.userAvatar,
-          user_color: newMessage.userColor
+          user_color: newMessage.userColor,
+          event_metadata: {},
       }])
       .then(({ error }) => {
           if (error) {
-              console.warn("Sync to cloud failed, but message is saved locally.", error);
+              // DETAILED LOGGING FOR DEBUGGING
+              console.error("CRITICAL: Cloud sync failed. Likely missing columns in Supabase.");
+              console.error("Error Code:", error.code);
+              console.error("Error Message:", error.message);
+              console.error("Details:", error.details);
+              console.error("Hint:", error.hint);
           }
       });
   
@@ -588,7 +581,6 @@ export const deleteMessage = async (msgId: string) => {
     } catch (e) {}
 };
 
-// MODIFIED: BOOST (RPC CALL)
 export const castVote = async (msgId: string, direction: 'up' | 'down') => {
     if (direction === 'down') return; 
 

@@ -17,7 +17,7 @@ interface ChatInputModalProps {
   gpsAccuracy: number | null; 
 }
 
-const REQUIRED_ACCURACY_METERS = 100; // Increased tolerance, but purely visual now
+const REQUIRED_ACCURACY_METERS = 100; 
 
 const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName, onTypingStateChange, gpsAccuracy }) => {
   const { t } = useTranslation();
@@ -100,6 +100,15 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
   const handleSubmit = async () => {
     if (!text.trim() && !selectedFile) return;
     
+    // SAFETY TIMEOUT: Force unlock UI if something hangs (common on Mobile Chrome GPS)
+    const safetyTimer = setTimeout(() => {
+        if (isSubmitting) {
+            console.warn("Safety Timeout Triggered: Forcing UI unlock");
+            setIsSubmitting(false);
+            onClose(); // Just close it, assume local echo worked
+        }
+    }, 8000);
+
     setIsSubmitting(true);
     setError(null);
     triggerHaptic('light');
@@ -120,30 +129,27 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
       // Enforce masking by default (Privacy by Design)
       await onSave(text, uploadedImageUrl, true);
       
-      // Success feedback: Subtle chime + rhythmic pulse
       SoundService.playSuccess();
       triggerHaptic('success');
       
       setText('');
       clearImage();
+      clearTimeout(safetyTimer);
       onClose();
     } catch (err: any) {
       console.error(err);
       setError(err.message || t('input.error_transmission'));
       triggerHaptic('error');
       setIsUploading(false);
+      clearTimeout(safetyTimer);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // REMOVED BLOCKING LOGIC: We now only use this for visual warning, not disabling the button.
   const isSignalWeak = gpsAccuracy === null || gpsAccuracy > REQUIRED_ACCURACY_METERS;
-  
   const isLocked = !!cooldownUntil && timeLeft !== '';
   const canAttachImages = canSendImages();
-  
-  // CRITICAL FIX: targetLocationName is optional now to allow "Blind Send" if location is purely coordinate based
   const isSendDisabled = isSubmitting || (!text.trim() && !selectedFile); 
 
   return (
@@ -176,11 +182,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                         <span className="text-cyan-400 font-bold flex items-center gap-1">
                             <MapPin size={10} /> {targetLocationName}
                         </span>
-                        {gpsAccuracy && (
-                            <span className={`ml-2 font-mono text-[10px] ${gpsAccuracy > REQUIRED_ACCURACY_METERS ? 'text-amber-400' : 'text-green-400'}`}>
-                                [GPS: ±{Math.round(gpsAccuracy)}m]
-                            </span>
-                        )}
                     </>
                  ) : (
                     <span className="animate-pulse text-amber-400 flex items-center gap-1">
