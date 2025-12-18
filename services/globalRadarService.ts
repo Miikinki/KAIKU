@@ -28,7 +28,7 @@ const generateMockEvents = (): ChatMessage[] => {
     return [
         {
             id: `mock-${now}-1`,
-            text: "SYSTEM ALERT: Demo Mode Active.\n\nGlobal radar operating in offline simulation. Configure VITE_GOOGLE_API_KEY to enable live neural intercept.",
+            text: "SYSTEM ALERT: Simulation Mode Active.\n\nGlobal radar operating in offline simulation. Check Debug Console for API status.",
             timestamp: now,
             expiresAt: now + 3600000,
             location: { lat: 60.1699, lng: 24.9384 },
@@ -39,7 +39,7 @@ const generateMockEvents = (): ChatMessage[] => {
             replyCount: 0,
             isRemote: true,
             originCountry: "FI",
-            tags: ["#SYSTEM", "#DEMO"],
+            tags: ["#SYSTEM", "#SIMULATION"],
             postType: 'GLOBAL_EVENT',
             isMasked: false,
             eventMetadata: {}
@@ -96,7 +96,6 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   // CRITICAL: Fallback to Demo Mode if key is missing
   if (!apiKey || apiKey.length < 5 || apiKey.includes("REPLACE_WITH")) {
       console.warn("KAIKU: Google API Key missing or invalid. Switching to DEMO MODE.");
-      // Return mock data so the app feels alive immediately
       return generateMockEvents();
   }
 
@@ -124,7 +123,6 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   }
   `;
 
-  // --- ATTEMPT 1: WITH GOOGLE SEARCH (GROUNDING) ---
   try {
     const response = await ai.models.generateContent({
       model: RADAR_MODEL,
@@ -143,8 +141,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   } catch (error: any) {
     console.warn("KAIKU: Grounded Scan failed. Retrying with Fallback.", error);
     
-    // --- ATTEMPT 2: FALLBACK (PURE LLM KNOWLEDGE) ---
-    // This catches "Invalid Key", "Tool not supported", or "Upstream Error"
+    // Fallback: Try without tools if grounded fails
     try {
         const fallbackPrompt = specificQuery 
             ? `List 5 major likely recent news topics or general knowledge facts about ${specificQuery}.`

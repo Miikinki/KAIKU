@@ -9,6 +9,7 @@ import BootSequence from './components/BootSequence';
 import DesktopLanding from './components/DesktopLanding';
 import TerminalScanner from './components/TerminalScanner';
 import AgentDossier from './components/AgentDossier';
+import DebugOverlay from './components/DebugOverlay';
 import { ChatMessage, ViewportBounds } from './types';
 import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, getHiddenIds, toggleHiddenMessage } from './services/storageService';
 import { scanGlobalNetwork } from './services/globalRadarService';
@@ -75,6 +76,7 @@ function App() {
   
   // Debug / Status State
   const [isDemoMode, setIsDemoMode] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenIds());
 
@@ -130,9 +132,13 @@ function App() {
   const isRunning = appState !== 'welcome';
 
   const loadData = async () => {
-      const data = await fetchMessages(true);
-      setMessages(data);
-      setRateLimit(await getRateLimitStatus());
+      try {
+          const data = await fetchMessages(true);
+          setMessages(data);
+          setRateLimit(await getRateLimitStatus());
+      } catch (e: any) {
+          setLastError(`Data Load: ${e.message}`);
+      }
   };
 
   useEffect(() => {
@@ -218,6 +224,7 @@ function App() {
           }
       } catch (e: any) {
           console.error("Global scan failed", e);
+          setLastError(`Scan: ${e.message}`);
           // Only show alert for manual targeted searches. 
           // Suppress errors for auto-scans to prevent startup annoyance.
           if (isTargeted) {
@@ -256,7 +263,10 @@ function App() {
                     }
                 }
             },
-            (err) => console.warn("GPS Watch Error:", err.code, err.message),
+            (err) => {
+                console.warn("GPS Watch Error:", err.code, err.message);
+                setLastError(`GPS: ${err.message}`);
+            },
             { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
         );
     }
@@ -405,8 +415,9 @@ function App() {
           locationCache.current = loc;
           setCurrentUserLocation(loc);
           setFlyToLocation({ lat: loc.lat, lng: loc.lng, timestamp: Date.now() }); 
-      } catch (e) {
+      } catch (e: any) {
           console.warn("Locate failed", e);
+          setLastError(`Locate: ${e.message}`);
       } finally {
           setIsLocating(false);
       }
@@ -453,8 +464,9 @@ function App() {
                 setTargetLocation({ lat: res.lat, lng: res.lng, name: nameData.city });
                 locationCache.current = { lat: res.lat, lng: res.lng };
                 
-            } catch (e) {
+            } catch (e: any) {
                 console.warn("Input GPS failed, using fallback/cache logic...", e);
+                setLastError(`Input GPS: ${e.message}`);
                 
                 // If we didn't have a cache hit earlier, we MUST set something now or modal hangs
                 if (!locationCache.current) {
@@ -487,6 +499,7 @@ function App() {
         console.warn("Forcing blind send (0,0)");
         finalLat = 0;
         finalLng = 0;
+        setLastError("Sent with 0,0 coords (GPS Lock Missing)");
     }
 
     // We pass finalLat/Lng as BOTH target and user location for simplicity in this fallback scenario
@@ -539,6 +552,8 @@ function App() {
 
   return (
     <>
+        <DebugOverlay gpsAccuracy={gpsAccuracy} userLocation={currentUserLocation} lastError={lastError} />
+
         <AnimatePresence mode="wait">
             {appState === 'boot' && (
                 <motion.div key="boot" className="fixed inset-0 z-[10000] bg-[#0a0a12] flex items-center justify-center" exit={{ opacity: 0 }} transition={{ duration: 1.5, ease: "easeInOut" }}>
