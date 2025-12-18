@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Radio, Plus, Locate, Zap, Terminal, RefreshCw, Map as MapIcon, List as ListIcon, User } from 'lucide-react';
+import { Radio, Plus, Locate, Zap, Terminal, RefreshCw, Map as MapIcon, List as ListIcon, User, AlertTriangle } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -72,6 +72,9 @@ function App() {
   const [isScanningGlobal, setIsScanningGlobal] = useState(false); 
   const [scannerStatus, setScannerStatus] = useState<string | null>(null);
   const [scannerCity, setScannerCity] = useState<string | null>(null);
+  
+  // Debug / Status State
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenIds());
 
@@ -192,6 +195,11 @@ function App() {
           await new Promise(r => setTimeout(r, 600));
           
           if (events.length > 0) {
+              // Check for Demo Mode Flag
+              if (events[0].tags?.includes('#DEMO')) {
+                  setIsDemoMode(true);
+              }
+
               if (isTargeted) {
                   setScanResults(prev => [...prev, ...events]);
               } else {
@@ -210,8 +218,11 @@ function App() {
           }
       } catch (e: any) {
           console.error("Global scan failed", e);
-          // Show alert so user knows why it "flashed"
-          alert(`Scanner Error: ${e.message || "Connection Failed"}`);
+          // Only show alert for manual targeted searches. 
+          // Suppress errors for auto-scans to prevent startup annoyance.
+          if (isTargeted) {
+             alert(`Scanner Error: ${e.message || "Connection Failed"}`);
+          }
       } finally {
           setIsScanningGlobal(false);
           setScannerStatus(null);
@@ -574,6 +585,23 @@ function App() {
 
             {/* HEADER BAR */}
             <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex flex-col items-center">
+                
+                {/* DEMO MODE WARNING BANNER */}
+                <AnimatePresence>
+                    {isDemoMode && (
+                        <motion.div 
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="pointer-events-auto mb-2 bg-amber-500/10 border border-amber-500/50 backdrop-blur-md px-3 py-1 rounded-full flex items-center gap-2"
+                        >
+                            <AlertTriangle size={12} className="text-amber-500 animate-pulse" />
+                            <span className="text-[9px] font-bold text-amber-400 font-mono tracking-widest uppercase">
+                                SIMULATION MODE ACTIVE (NO API KEY)
+                            </span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 <div className="w-full flex justify-between items-start">
                     <div className="flex items-center gap-2 pointer-events-auto">
                         {!isSearchOpen && (

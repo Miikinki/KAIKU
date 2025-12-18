@@ -22,6 +22,67 @@ const applyStrongJitter = (coord: number) => {
     return coord + (Math.random() - 0.5) * 0.015;
 };
 
+// --- MOCK DATA FOR DEMO MODE ---
+const generateMockEvents = (): ChatMessage[] => {
+    const now = Date.now();
+    return [
+        {
+            id: `mock-${now}-1`,
+            text: "SYSTEM ALERT: Demo Mode Active.\n\nGlobal radar operating in offline simulation. Configure VITE_GOOGLE_API_KEY to enable live neural intercept.",
+            timestamp: now,
+            expiresAt: now + 3600000,
+            location: { lat: 60.1699, lng: 24.9384 },
+            city: "Helsinki",
+            country: "FI",
+            sessionId: "SYSTEM",
+            score: 999,
+            replyCount: 0,
+            isRemote: true,
+            originCountry: "FI",
+            tags: ["#SYSTEM", "#DEMO"],
+            postType: 'GLOBAL_EVENT',
+            isMasked: false,
+            eventMetadata: {}
+        },
+        {
+            id: `mock-${now}-2`,
+            text: "SIGNAL DETECTED: Anomalous energy readings in Sector 7G.\n\nAtmospheric interference detected.",
+            timestamp: now - 180000,
+            expiresAt: now + 3600000,
+            location: { lat: 40.7128, lng: -74.0060 },
+            city: "New York",
+            country: "US",
+            sessionId: "SYSTEM",
+            score: 50,
+            replyCount: 0,
+            isRemote: true,
+            originCountry: "US",
+            tags: ["#SIGNAL", "#DEMO"],
+            postType: 'GLOBAL_EVENT',
+            isMasked: false,
+            eventMetadata: {}
+        },
+        {
+            id: `mock-${now}-3`,
+            text: "WEATHER WARNING: Solar flare activity increasing. Communications may be disrupted.",
+            timestamp: now - 360000,
+            expiresAt: now + 3600000,
+            location: { lat: 35.6762, lng: 139.6503 },
+            city: "Tokyo",
+            country: "JP",
+            sessionId: "SYSTEM",
+            score: 25,
+            replyCount: 0,
+            isRemote: true,
+            originCountry: "JP",
+            tags: ["#WEATHER", "#DEMO"],
+            postType: 'GLOBAL_EVENT',
+            isMasked: false,
+            eventMetadata: {}
+        }
+    ];
+};
+
 export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolean = false): Promise<ChatMessage[]> => {
   // Check cache first if not a specific search
   if (!specificQuery && !skipSave) {
@@ -32,9 +93,11 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   // Retrieve key from Environment Variables
   const apiKey = getEnvVar('GOOGLE_API_KEY');
   
-  if (!apiKey || apiKey.length < 5) {
-      console.error("KAIKU: Google API Key is missing. Please set VITE_GOOGLE_API_KEY in your environment variables.");
-      throw new Error("API Key Missing");
+  // CRITICAL: Fallback to Demo Mode if key is missing
+  if (!apiKey || apiKey.length < 5 || apiKey.includes("REPLACE_WITH")) {
+      console.warn("KAIKU: Google API Key missing or invalid. Switching to DEMO MODE.");
+      // Return mock data so the app feels alive immediately
+      return generateMockEvents();
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -101,8 +164,8 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
 
     } catch (fallbackError: any) {
         console.error("KAIKU: Both Scan methods failed.", fallbackError);
-        // Do not throw generic error, return empty array so app doesn't crash
-        return [];
+        // Fallback to mock data on total failure
+        return generateMockEvents();
     }
   }
 };

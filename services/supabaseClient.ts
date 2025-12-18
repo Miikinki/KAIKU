@@ -12,7 +12,12 @@ if (!envUrl || !envKey) {
   console.warn("KAIKU: Supabase credentials missing. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
 }
 
-export const supabase = createClient(envUrl || '', envKey || '');
+// CRITICAL FIX: We must provide a valid-looking URL string even if env vars are missing,
+// otherwise createClient throws an error immediately and crashes the entire React app (Dark Blue Screen).
+const validUrl = envUrl || 'https://placeholder.supabase.co';
+const validKey = envKey || 'placeholder-key';
+
+export const supabase = createClient(validUrl, validKey);
 
 export const isSupabaseConfigured = () => {
     return !!envUrl && !!envKey;

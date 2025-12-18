@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Radio, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff } from 'lucide-react';
+import { Radio, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getIpLocation } from '../services/moderationService';
 import { getPreciseLocation } from '../services/locationService';
@@ -42,6 +42,10 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
              setError(t('welcome.error_permission'));
              return;
         }
+        // Show actual error for debugging
+        if (err.message && err.message.length < 50) {
+             setError(err.message.toUpperCase());
+        }
     }
 
     // --- STRATEGY 2: LOCAL STORAGE (LAST KNOWN) ---
@@ -70,7 +74,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
     }
 
     setIsLoading(false);
-    setError(t('welcome.error_signal_lost'));
+    // Generic error fallback
+    if (!error) setError(t('welcome.error_signal_lost'));
   };
 
   return (
@@ -148,8 +153,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                         animate={{ opacity: 1, y: 0 }}
                         className="mb-6 px-4 py-3 w-full bg-red-950/30 border border-red-500/30 rounded-lg text-red-400 text-xs font-mono flex items-center justify-center gap-2"
                     >
-                        <Shield size={14} />
-                        {error}
+                        <AlertTriangle size={14} className="shrink-0" />
+                        <span>{error}</span>
                     </motion.div>
                 )}
 
