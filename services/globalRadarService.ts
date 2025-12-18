@@ -9,12 +9,8 @@ const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000;
 const RADAR_MODEL = 'gemini-3-flash-preview';
 
 // --- DIRECT API KEY CONFIGURATION ---
-// User provided key.
 const FINAL_API_KEY = "AIzaSyBu9BLySGeO_lkJv9m3DcWsxt1JfLGE7Hc";
 
-/**
- * Utility to clean JSON string from potential Markdown code blocks
- */
 const cleanJsonString = (text: string): string => {
   let cleaned = text.replace(/```json\n?|```/g, '').trim();
   const firstBracket = cleaned.indexOf('[');
@@ -41,7 +37,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   
   if (!apiKey || apiKey.length < 5) {
       console.error("KAIKU: API Key is empty or invalid.");
-      throw new Error("CRITICAL ERROR: API Key Missing in globalRadarService.ts");
+      throw new Error("API Key Missing");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -68,6 +64,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   }
   `;
 
+  // --- ATTEMPT 1: WITH GOOGLE SEARCH (GROUNDING) ---
   try {
     const response = await ai.models.generateContent({
       model: RADAR_MODEL,
@@ -79,8 +76,42 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
       }
     });
 
-    const rawText = response.text;
-    if (!rawText) throw new Error("Empty response from radar.");
+    const events = processResponse(response.text, skipSave);
+    if (!skipSave && events.length > 0) await saveToDatabase(events);
+    return events;
+
+  } catch (error: any) {
+    console.warn("KAIKU: Grounded Scan failed. Retrying with Fallback.", error);
+    
+    // --- ATTEMPT 2: FALLBACK (PURE LLM KNOWLEDGE) ---
+    // This catches "Invalid Key", "Tool not supported", or "Upstream Error"
+    try {
+        const fallbackPrompt = specificQuery 
+            ? `List 5 major likely recent news topics or general knowledge facts about ${specificQuery}.`
+            : "List 5 major global news headlines.";
+            
+        const response = await ai.models.generateContent({
+            model: RADAR_MODEL,
+            contents: fallbackPrompt,
+            config: {
+                systemInstruction: SYSTEM_PROMPT + "\nIMPORTANT: Do not use tools. Generate based on internal knowledge.",
+                responseMimeType: "application/json"
+            }
+        });
+
+        const events = processResponse(response.text, skipSave);
+        return events;
+
+    } catch (fallbackError: any) {
+        console.error("KAIKU: Both Scan methods failed.", fallbackError);
+        // Do not throw generic error, return empty array so app doesn't crash
+        return [];
+    }
+  }
+};
+
+const processResponse = (rawText: string | undefined, skipSave: boolean): ChatMessage[] => {
+    if (!rawText) return [];
     
     const jsonText = cleanJsonString(rawText);
     let events = [];
@@ -89,8 +120,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
         events = JSON.parse(jsonText);
     } catch (parseError) {
         console.error("KAIKU: JSON Parse failed", parseError);
-        console.log("Raw Text:", rawText);
-        throw new Error("Signal decryption failed (JSON Error).");
+        return [];
     }
     
     if (!Array.isArray(events)) return [];
@@ -98,7 +128,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
     const now = Date.now();
     const expiry = skipSave ? (now + SCAN_RESULT_DURATION_MS) : (now + CACHE_DURATION_MS); 
 
-    const formattedMessages: ChatMessage[] = events.map((evt: any) => ({
+    return events.map((evt: any) => ({
         id: generateUUID(), 
         text: `${evt.headline}\n\n${evt.content}`,
         timestamp: now,
@@ -120,20 +150,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
         isMasked: false,
         language: evt.language || 'en'
     }));
-
-    if (!skipSave && formattedMessages.length > 0) {
-        await saveToDatabase(formattedMessages);
-    }
-    
-    return formattedMessages;
-  } catch (error: any) {
-    console.error("KAIKU: Radar Scan Exception:", error);
-    if (error.message?.includes("API key")) {
-         throw new Error("Uplink Configuration Error (Invalid Key Check).");
-    }
-    throw error; 
-  }
-};
+}
 
 const getCachedEvents = async (): Promise<ChatMessage[]> => {
     const nowISO = new Date().toISOString();
@@ -159,12 +176,12 @@ const getCachedEvents = async (): Promise<ChatMessage[]> => {
         score: d.score, 
         replyCount: 0, 
         isRemote: d.is_remote, 
-        originCountry: d.origin_country,
+        originCountry: d.origin_country, 
         tags: d.tags, 
         postType: 'GLOBAL_EVENT', 
         eventMetadata: d.event_metadata, 
         isMasked: false,
-        language: d.tags?.find((t: string) => t.startsWith('lang:'))?.split(':')[1] || 'en' // Fallback check if stored in tags
+        language: d.tags?.find((t: string) => t.startsWith('lang:'))?.split(':')[1] || 'en'
     }));
 };
 
@@ -181,7 +198,7 @@ const saveToDatabase = async (messages: ChatMessage[]) => {
         expires_at: new Date(msg.expiresAt).toISOString(),
         origin_country: msg.originCountry, 
         is_remote: msg.isRemote, 
-        tags: [...(msg.tags || []), `lang:${msg.language}`], // Persist lang in tags as fallback
+        tags: [...(msg.tags || []), `lang:${msg.language}`], 
         post_type: 'GLOBAL_EVENT', 
         event_metadata: msg.eventMetadata
     }));

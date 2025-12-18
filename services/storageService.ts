@@ -1,6 +1,3 @@
-
-
-
 import { ChatMessage, RateLimitStatus, UserProfile } from '../types';
 import { supabase } from './supabaseClient';
 import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS, THEME_COLOR } from '../constants';
@@ -270,8 +267,6 @@ export const subscribeToPresence = (
     const myId = getAnonymousID();
 
     if (presenceChannel) {
-        // If channel exists, just ensure we are untracked before re-subscribing or leaving
-        // For simplicity, we'll unsubscribe and resubscribe to ensure clean state
         presenceChannel.unsubscribe();
     }
 
@@ -290,7 +285,6 @@ export const subscribeToPresence = (
             
             Object.keys(state).forEach(key => {
                 if (key !== myId) {
-                    // Supabase returns an array for each key, usually length 1
                     const userState = state[key][0];
                     if (userState && userState.isTyping) {
                         others.push(userState);
@@ -301,15 +295,13 @@ export const subscribeToPresence = (
         })
         .subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
-                // Initial track (optional, usually we only track when typing)
+                // Initial track
             }
         });
 
     return {
         setTyping: async (isTyping: boolean, loc?: { lat: number, lng: number }) => {
             if (!presenceChannel) return;
-            
-            // RAW DATA POLICY: No jitter/noise added to user coordinates.
             await presenceChannel.track({
                 user: myId,
                 isTyping,
@@ -378,57 +370,78 @@ const mapRowToMessage = (d: any): ChatMessage => {
 
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
   const nowISO = new Date().toISOString();
+  const deleted = getDeletedIds();
+  const localMessages = getLocalMessages(onlyRoot);
 
-  // SUPABASE QUERY: 
-  // 1. Order by creation
-  // 2. FILTER: expires_at > NOW (Server-side filtering!)
-  let query = supabase
-    .from('kaiku_posts')
-    .select('*, replies:kaiku_posts!parent_post_id(count)')
-    .gt('expires_at', nowISO) // <--- CRITICAL: Do not download dead messages
-    .order('created_at', { ascending: false })
-    .limit(500); 
+  let remoteMessages: ChatMessage[] = [];
 
-  if (onlyRoot) {
-      query = query.is('parent_post_id', null);
+  try {
+      let query = supabase
+        .from('kaiku_posts')
+        .select('*, replies:kaiku_posts!parent_post_id(count)')
+        .gt('expires_at', nowISO)
+        .order('created_at', { ascending: false })
+        .limit(500); 
+
+      if (onlyRoot) {
+          query = query.is('parent_post_id', null);
+      }
+
+      const { data, error } = await query;
+      
+      if (!error && data) {
+          remoteMessages = data
+              .filter((d: any) => !deleted.has(d.id))
+              .map(mapRowToMessage);
+      } else if (error) {
+          console.warn("Supabase fetch failed (using local only)", error);
+      }
+  } catch (e) {
+      console.warn("Network error during fetch (using local only)");
   }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.warn('KAIKU: Supabase fetch error (offline?), using local.', error);
-    return getLocalMessages(onlyRoot);
-  } else {
-    const deleted = getDeletedIds();
-    
-    return data
-        .filter((d: any) => !deleted.has(d.id))
-        .map(mapRowToMessage);
-  }
+  
+  // MERGE LOGIC: Combine Remote + Local. 
+  // Prefer Remote version if ID exists (because it has updated scores/replies).
+  // Keep Local if it doesn't exist in Remote (e.g. pending sync, or backend offline).
+  const remoteIdSet = new Set(remoteMessages.map(m => m.id));
+  const uniqueLocals = localMessages.filter(m => !remoteIdSet.has(m.id));
+  
+  // Combine and Sort
+  const combined = [...remoteMessages, ...uniqueLocals].sort((a, b) => b.timestamp - a.timestamp);
+  
+  return combined;
 };
 
 export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => {
-    // Note: Replies might also expire, but usually we want to see them if the parent is alive.
-    // For consistency, we filter replies by expiry too.
+    // Also merge local replies for consistency
     const nowISO = new Date().toISOString();
+    const deleted = getDeletedIds();
+    const allLocal = getLocalMessages(false); // Get all, including replies
+    const localReplies = allLocal.filter(m => m.parentId === parentId);
 
-    const { data, error } = await supabase
-        .from('kaiku_posts')
-        .select('*')
-        .eq('parent_post_id', parentId)
-        .gt('expires_at', nowISO) // Only fetch alive replies
-        .order('created_at', { ascending: true });
+    let remoteReplies: ChatMessage[] = [];
 
-    if (error) {
-        console.error("Fetch replies error:", error);
-        return [];
+    try {
+        const { data, error } = await supabase
+            .from('kaiku_posts')
+            .select('*')
+            .eq('parent_post_id', parentId)
+            .gt('expires_at', nowISO) 
+            .order('created_at', { ascending: true });
+
+        if (!error && data) {
+            remoteReplies = data
+                .filter((d: any) => !deleted.has(d.id))
+                .map(mapRowToMessage);
+        }
+    } catch (e) {
+        console.warn("Error fetching replies");
     }
 
-    const deleted = getDeletedIds();
+    const remoteIdSet = new Set(remoteReplies.map(m => m.id));
+    const uniqueLocals = localReplies.filter(m => !remoteIdSet.has(m.id));
 
-    return data
-        .filter((d: any) => !deleted.has(d.id))
-        .map(mapRowToMessage);
+    return [...remoteReplies, ...uniqueLocals].sort((a, b) => a.timestamp - b.timestamp);
 };
 
 export const saveMessage = async (
@@ -469,15 +482,11 @@ export const saveMessage = async (
       originCountry = (userLocationData.countryCode || "").toUpperCase();
   }
   
-  // SIGNAL MASKING LOGIC (Location Fuzzing)
-  // ONLY APPLIED if useSignalMasking is true.
   const applyMask = (coord: number) => {
-      // 0.01 degrees is approx 1.1km latitude
       const offset = (Math.random() - 0.5) * 0.01;
       return coord + offset;
   };
 
-  // Determine final coordinates based on masking preference
   let finalLat = targetLat;
   let finalLng = targetLng;
   let finalSenderLat = userLat;
@@ -491,10 +500,8 @@ export const saveMessage = async (
   }
 
   const tags = extractTags(text);
-  // Store the sender's location (possibly masked) in the hidden tag for arcs
   tags.push(`__loc:${finalSenderLat.toFixed(5)},${finalSenderLng.toFixed(5)}`);
   
-  // NEW: Add masking tag if enabled
   if (useSignalMasking) {
       tags.push('__masked');
   }
@@ -526,8 +533,21 @@ export const saveMessage = async (
     userColor: profile.color
   };
 
-  // We don't send expires_at explicitly here; we let the DB Default (now() + 24h) handle it.
-  const { error } = await supabase
+  // 1. SAVE LOCALLY FIRST (Optimistic UI)
+  try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const messages = stored ? JSON.parse(stored) : [];
+      messages.unshift(newMessage);
+      // Keep local storage from exploding size (keep last 100)
+      if (messages.length > 100) messages.length = 100; 
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      localStorage.setItem(LAST_POST_TIMESTAMP_KEY, Date.now().toString());
+  } catch (localError) {
+      console.error("Local save failed", localError);
+  }
+
+  // 2. ATTEMPT REMOTE SYNC (Fire and Forget)
+  supabase
       .from('kaiku_posts')
       .insert([{
           id: newMessage.id,
@@ -546,17 +566,12 @@ export const saveMessage = async (
           user_display_name: newMessage.userDisplayName, // Map to DB
           user_avatar: newMessage.userAvatar,
           user_color: newMessage.userColor
-      }]);
-
-  if (error) {
-      console.warn("Supabase insert failed, saving locally", error);
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const messages = stored ? JSON.parse(stored) : [];
-      messages.unshift(newMessage);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-  }
-  
-  localStorage.setItem(LAST_POST_TIMESTAMP_KEY, Date.now().toString());
+      }])
+      .then(({ error }) => {
+          if (error) {
+              console.warn("Sync to cloud failed, but message is saved locally.", error);
+          }
+      });
   
   return newMessage;
 };
@@ -581,30 +596,22 @@ export const castVote = async (msgId: string, direction: 'up' | 'down') => {
     votes[msgId] = 'up'; 
     localStorage.setItem(USER_VOTES_KEY, JSON.stringify(votes));
     
-    // CALL THE SERVER-SIDE FUNCTION
-    // This atomically increments score AND extends expires_at by 4 hours
+    // Optimistically update local storage
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+        const localData = JSON.parse(stored);
+        const msg = localData.find((m: ChatMessage) => m.id === msgId);
+        if (msg) {
+            msg.score = (msg.score || 0) + 1;
+            msg.expiresAt = (msg.expiresAt || Date.now()) + BOOST_EXTENSION_MS;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
+        }
+    }
+
+    // Attempt RPC
     const { error } = await supabase.rpc('boost_message', { message_id: msgId });
-    
     if (error) {
-        console.error("Boost RPC failed:", error);
-        // Fallback for local testing if RPC missing:
-        // Note: This won't actually extend expiry on server without the RPC, just score
-        const { data } = await supabase.from('kaiku_posts').select('score').eq('id', msgId).single();
-        if (data) {
-            await supabase.from('kaiku_posts').update({ score: (data.score || 0) + 1 }).eq('id', msgId);
-        }
-    } else {
-        // Optimistically update local storage if needed (optional)
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            const localData = JSON.parse(stored);
-            const msg = localData.find((m: ChatMessage) => m.id === msgId);
-            if (msg) {
-                msg.score = (msg.score || 0) + 1;
-                msg.expiresAt = (msg.expiresAt || Date.now()) + BOOST_EXTENSION_MS;
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
-            }
-        }
+        console.warn("Boost RPC failed, local update only.");
     }
 };
 
@@ -628,8 +635,6 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                 const d = payload.new;
                 const msg = mapRowToMessage(d); // Use helper
-                
-                // If update, we might just re-insert to refresh state in UI
                 callback({ type: 'INSERT', message: msg });
             } else if (payload.eventType === 'DELETE') {
                 callback({ type: 'DELETE', id: payload.old.id });

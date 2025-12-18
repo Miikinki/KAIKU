@@ -9,11 +9,26 @@ export const moderateContent = (text: string): boolean => {
   return true; // Approved
 };
 
+// Helper: Timeout wrapper for fetch
+const fetchWithTimeout = async (resource: string, options: RequestInit = {}, timeout = 2000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    const response = await fetch(resource, {
+        ...options,
+        signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+};
+
 // 2. Reverse Geocoding (BigDataCloud Free API - CORS Friendly)
 export const getCityName = async (lat: number, lng: number): Promise<{ city: string; countryCode: string; countryName: string }> => {
   try {
-    const response = await fetch(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
+    // Timeout set to 2000ms (2 seconds) to prevent hanging the UI
+    const response = await fetchWithTimeout(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`,
+      {},
+      2000
     );
     
     if (!response.ok) throw new Error('Geocoding failed');
@@ -33,7 +48,8 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
     return { city, countryCode, countryName };
            
   } catch (error) {
-    console.warn("Geocoding failed, falling back to coordinates", error);
+    // Fail silently and quickly to coordinates
+    // console.warn("Geocoding failed/timeout, falling back to coordinates");
     return { city: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`, countryCode: "", countryName: "Unknown" };
   }
 };
@@ -48,8 +64,10 @@ export interface SearchResult {
 // 3. Forward Geocoding (Search)
 export const searchLocations = async (query: string): Promise<SearchResult | null> => {
     try {
-        const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
+        const response = await fetchWithTimeout(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+            { headers: { 'User-Agent': 'KaikuApp/2.0' } },
+            3000
         );
         if (!response.ok) throw new Error("Search failed");
         
@@ -84,8 +102,9 @@ export const searchLocations = async (query: string): Promise<SearchResult | nul
 
 export const getIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
     try {
-        const response = await fetch(
-            `https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en`
+        const response = await fetchWithTimeout(
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en`,
+            {}, 2000
         );
         if (response.ok) {
             const data = await response.json();
@@ -94,11 +113,11 @@ export const getIpLocation = async (): Promise<{ lat: number; lng: number } | nu
             }
         }
     } catch (e) {
-        console.warn("Primary IP Location (BigDataCloud) failed", e);
+        // console.warn("Primary IP Location (BigDataCloud) failed");
     }
 
     try {
-        const response = await fetch('https://ipapi.co/json/');
+        const response = await fetchWithTimeout('https://ipapi.co/json/', {}, 2000);
         if (response.ok) {
             const data = await response.json();
             if (data.latitude && data.longitude) {
@@ -106,7 +125,7 @@ export const getIpLocation = async (): Promise<{ lat: number; lng: number } | nu
             }
         }
     } catch (e) {
-        console.warn("Secondary IP Location (ipapi) failed", e);
+        // console.warn("Secondary IP Location (ipapi) failed");
     }
 
     return null;
