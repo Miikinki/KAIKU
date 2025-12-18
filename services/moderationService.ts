@@ -10,7 +10,7 @@ export const moderateContent = (text: string): boolean => {
 };
 
 // 2. Reverse Geocoding (BigDataCloud Free API - CORS Friendly)
-export const getCityName = async (lat: number, lng: number): Promise<{ city: string; countryCode: string }> => {
+export const getCityName = async (lat: number, lng: number): Promise<{ city: string; countryCode: string; countryName: string }> => {
   try {
     const response = await fetch(
       `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
@@ -20,6 +20,7 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
     
     const data = await response.json();
     
+    // Fallback logic for City Name
     const city = data.city || 
            data.locality || 
            data.principalSubdivision || 
@@ -27,12 +28,13 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
            "Unknown Sector";
     
     const countryCode = data.countryCode || "";
+    const countryName = data.countryName || data.countryCode || "Unknown Territory";
 
-    return { city, countryCode };
+    return { city, countryCode, countryName };
            
   } catch (error) {
     console.warn("Geocoding failed, falling back to coordinates", error);
-    return { city: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`, countryCode: "" };
+    return { city: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`, countryCode: "", countryName: "Unknown" };
   }
 };
 

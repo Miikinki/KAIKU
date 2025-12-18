@@ -7,6 +7,7 @@ import { translateText } from '../services/translationService';
 import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
+import { getHumanizedDistance } from '../services/locationService';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -26,6 +27,7 @@ interface FeedPanelProps {
   onCompose: () => void;
   viewMode: 'map' | 'list';
   currentLocationName?: string | null;
+  userLocation?: { lat: number, lng: number } | null;
 }
 
 const getSourceName = (url?: string) => {
@@ -66,7 +68,7 @@ const formatRelativeTime = (timestamp: number) => {
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
     visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel,
     activeTag, onTagClick, onClearTag, nearbyTypingCount = 0, hiddenIds, onToggleHidden, onCompose,
-    viewMode, currentLocationName
+    viewMode, currentLocationName, userLocation
 }) => {
   const { t, i18n } = useTranslation();
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
@@ -500,6 +502,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
                 const needsTranslation = isNews && msg.language && msg.language !== i18n.language;
 
+                // Humanized Distance
+                let distanceLabel = { text: msg.city || 'UNKNOWN', style: 'text-gray-500' };
+                if (userLocation) {
+                    distanceLabel = getHumanizedDistance(
+                        userLocation.lat, userLocation.lng,
+                        msg.location.lat, msg.location.lng,
+                        msg.city,
+                        t
+                    );
+                }
+
                 let borderClass = 'border-white/5 hover:border-cyan-500/30'; 
                 let bgClass = 'bg-white/5 hover:bg-white/10';
 
@@ -549,11 +562,11 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500 font-medium">
                             <div className="flex items-center gap-1">
-                                <MapPin size={10} className="text-cyan-500" />
-                                <span className="truncate max-w-[120px] flex items-center gap-1">
-                                    {msg.city || 'UNKNOWN SECTOR'}
+                                <MapPin size={10} className={userLocation ? 'text-cyan-500' : 'text-gray-600'} />
+                                <span className={`truncate max-w-[120px] flex items-center gap-1 ${distanceLabel.style}`}>
+                                    {distanceLabel.text}
                                     {isNews && msg.country && (
-                                        <span className="text-sm leading-none ml-1" role="img" aria-label={msg.country}>
+                                        <span className="text-sm leading-none ml-1 grayscale-0" role="img" aria-label={msg.country}>
                                             {getFlagEmoji(msg.country)}
                                         </span>
                                     )}

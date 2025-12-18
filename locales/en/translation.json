@@ -12,13 +12,20 @@
     "delete_confirm": "Are you sure you want to delete this signal?",
     "visitor_remote": "Remote signal from {{country}}",
     "visitor_global": "Global signal from {{country}}",
-    "scanning": "SCANNING...",
+    "scanning": "SCANNING SECTOR...",
     "signal_locked": "SIGNAL LOCKED",
     "translate": "Translate",
     "show_original": "Show Original",
     "translated_by_ai": "Translated by AI",
     "view_map": "MAP",
     "view_list": "FEED"
+  },
+  "distance": {
+    "here": "📍 Here",
+    "very_close": "Very close",
+    "close": "Close",
+    "area": "In the area",
+    "far": "Further away"
   },
   "input": {
     "broadcast_signal": "Broadcast Signal",
@@ -51,7 +58,11 @@
     "masked": "MASKED",
     "exact": "EXACT",
     "content_hidden": "** CONTENT HIDDEN **",
-    "open_channel": "OPEN CHANNEL"
+    "open_channel": "OPEN CHANNEL",
+    "search_placeholder": "Search coordinates...",
+    "search_not_found": "TARGET NOT FOUND",
+    "search_this_area": "SEARCH THIS AREA",
+    "search_context": "Search news: {{location}}"
   },
   "welcome": {
     "subtitle": "Hyperlocal Signal Grid",
@@ -62,10 +73,10 @@
     "feature_decay_title": "SIGNAL DECAY",
     "feature_decay_desc": "Messages fade and vanish automatically.",
     "status_standby": "SYSTEM STANDBY",
-    "status_init_gps": "INITIALIZING GPS (PRECISION)...",
-    "status_retry": "RETRYING (STANDARD SIGNAL)...",
-    "status_using_last": "USING LAST KNOWN VECTOR...",
-    "status_triangulating": "TRIANGULATING VIA NETWORK NODE...",
+    "status_acquiring": "Acquiring signal...",
+    "status_target": "Target: {{city}}",
+    "status_scanning_freq": "Scanning local frequencies...",
+    "status_downloading": "Downloading feed...",
     "status_failed": "CONNECTION FAILED",
     "error_signal_lost": "SIGNAL LOST. CHECK GPS/NETWORK.",
     "error_permission": "LOCATION PERMISSION REQUIRED",
@@ -73,9 +84,22 @@
     "footer_version": "v2.0 • ENCRYPTED CONNECTION"
   },
   "boot": {
-    "step1": "> SEARCHING LOCAL FREQUENCIES...",
+    "step1": "> SCANNING LOCAL FREQUENCIES...",
     "step2": "> TRIANGULATING SIGNAL SOURCE... [LOCKED]",
     "step3": "> HANDSHAKE PROTOCOL... [SECURE]",
     "step4": "> UPLINK ESTABLISHED."
+  },
+  "news": {
+    "read_original": "Read original ({{source}}) →"
+  },
+  "dossier": {
+    "title": "AGENT DOSSIER",
+    "clearance": "CLEARANCE LEVEL",
+    "transmissions": "TRANSMISSIONS",
+    "impact": "SIGNAL IMPACT",
+    "replies": "REPLIES RECD",
+    "sectors": "ACTIVE SECTORS",
+    "scans": "NEWS SCANNED",
+    "footer": "DATA ENCRYPTED • EYES ONLY"
   }
 }

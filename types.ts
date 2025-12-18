@@ -1,3 +1,4 @@
+
 export interface ChatMessage {
   id: string;
   text: string;
@@ -42,4 +43,16 @@ export interface ViewportBounds {
 export interface RateLimitStatus {
   isLimited: boolean;
   cooldownUntil: number | null;
+}
+
+export interface AgentStats {
+  id: string;
+  rankTitle: string;
+  rankLevel: number;
+  progress: number; // 0.0 to 1.0
+  totalTransmissions: number;
+  signalImpact: number; // Total Score
+  repliesReceived: number;
+  sectorsActive: number; // Unique cities
+  newsScanned: number;
 }

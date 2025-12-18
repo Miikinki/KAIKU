@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Radio, Plus, Locate, Zap, Terminal, RefreshCw, Map as MapIcon, List as ListIcon } from 'lucide-react';
+import { Radio, Plus, Locate, Zap, Terminal, RefreshCw, Map as MapIcon, List as ListIcon, User } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -8,12 +8,14 @@ import WelcomeScreen from './components/WelcomeScreen';
 import BootSequence from './components/BootSequence';
 import DesktopLanding from './components/DesktopLanding';
 import TerminalScanner from './components/TerminalScanner';
+import AgentDossier from './components/AgentDossier';
 import { ChatMessage, ViewportBounds } from './types';
 import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, getHiddenIds, toggleHiddenMessage } from './services/storageService';
 import { scanGlobalNetwork } from './services/globalRadarService';
 import { getCityName, searchLocations } from './services/moderationService';
 import { getPreciseLocation } from './services/locationService';
 import { SoundService } from './services/soundService';
+import { incrementScanCount } from './services/statsService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
 import { triggerHaptic } from './services/hapticService';
@@ -48,6 +50,10 @@ function App() {
   const [currentBounds, setCurrentBounds] = useState<ViewportBounds | null>(null);
   const [lastScannedCenter, setLastScannedCenter] = useState<{lat: number, lng: number} | null>(null);
   const [isMapDirty, setIsMapDirty] = useState(false);
+  
+  // NEW: State for contextual scanner button
+  const [scanLocationName, setScanLocationName] = useState<string | null>(null);
+  const [isDossierOpen, setIsDossierOpen] = useState(false);
   
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number, name: string} | null>(null);
@@ -147,6 +153,9 @@ function App() {
       setScannerStatus(t('welcome.status_acquiring'));
       setScannerCity(null);
       setIsMapDirty(false); // Piilotetaan nappi heti skannauksen alussa
+      
+      // Increment stats locally
+      incrementScanCount();
       
       const isTargeted = !!specificQuery;
       if (isTargeted) {
@@ -325,6 +334,23 @@ function App() {
     }
   }, [mapMessages, currentBounds, lastScannedCenter, isScanningGlobal, viewMode, currentUserLocation]); 
 
+  // EFFECT: Fetch Contextual Name for Scanner Button when map moves
+  useEffect(() => {
+      if (viewMode !== 'map' || !currentBounds) return;
+      
+      const { lat, lng } = currentBounds.center;
+      
+      // Fetch new name based on center
+      getCityName(lat, lng).then(data => {
+          // If Zoom <= 6, use Country Name. Else use City Name.
+          if (currentBounds.zoom <= 6) {
+              setScanLocationName(data.countryName || data.countryCode);
+          } else {
+              setScanLocationName(data.city);
+          }
+      });
+  }, [currentBounds, viewMode]);
+
   const handleViewportChange = useCallback((bounds: ViewportBounds) => setCurrentBounds(bounds), []);
   const handleMapClick = useCallback(() => {
     setFocusedMessage(null);
@@ -489,6 +515,8 @@ function App() {
               onScan={performGlobalScan} 
               isScanning={isScanningGlobal} 
             />
+            
+            <AgentDossier isOpen={isDossierOpen} onClose={() => setIsDossierOpen(false)} />
 
             {/* HEADER BAR */}
             <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex flex-col items-center">
@@ -526,9 +554,17 @@ function App() {
                         )}
                     </div>
 
-                    <button onClick={handleLocateMe} className={`pointer-events-auto flex items-center justify-center w-10 h-10 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/30 rounded-full shadow-lg text-cyan-400 hover:bg-cyan-950/80 hover:text-white transition-all active:scale-95 group ${isLocating ? 'animate-pulse' : ''}`}>
-                        <Locate size={18} className="group-hover:rotate-45 transition-transform duration-500" />
-                    </button>
+                    <div className="flex items-center gap-2 pointer-events-auto">
+                         <button 
+                             onClick={() => setIsDossierOpen(true)}
+                             className="flex items-center justify-center w-10 h-10 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/30 rounded-full shadow-lg text-cyan-400 hover:bg-cyan-950/80 hover:text-white transition-all active:scale-95"
+                         >
+                            <User size={18} />
+                         </button>
+                         <button onClick={handleLocateMe} className={`flex items-center justify-center w-10 h-10 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/30 rounded-full shadow-lg text-cyan-400 hover:bg-cyan-950/80 hover:text-white transition-all active:scale-95 group ${isLocating ? 'animate-pulse' : ''}`}>
+                            <Locate size={18} className="group-hover:rotate-45 transition-transform duration-500" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* SEARCH THIS AREA BUTTON (Only relevant for Map Mode) */}
@@ -545,7 +581,20 @@ function App() {
                                 className="px-5 py-2.5 bg-cyan-950/80 backdrop-blur-md border border-cyan-500/50 rounded-full text-cyan-100 text-[10px] font-black tracking-[0.2em] uppercase flex items-center gap-2 shadow-[0_10px_30px_rgba(0,0,0,0.5),0_0_15px_rgba(6,182,212,0.3)] hover:bg-cyan-900 transition-all active:scale-95 border-t-cyan-400"
                             >
                                 <RefreshCw size={12} className="animate-[spin_4s_linear_infinite]" />
-                                {t('map.search_this_area')}
+                                {/* Dynamic Text with Animation Key */}
+                                <AnimatePresence mode="wait">
+                                    <motion.span
+                                        key={scanLocationName || "default"}
+                                        initial={{ opacity: 0, y: 5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -5 }}
+                                        className="whitespace-nowrap"
+                                    >
+                                        {scanLocationName 
+                                            ? t('map.search_context', { location: scanLocationName }) 
+                                            : t('map.search_this_area')}
+                                    </motion.span>
+                                </AnimatePresence>
                             </button>
                         </motion.div>
                     )}
@@ -570,6 +619,7 @@ function App() {
                 onCompose={handleOpenInput}
                 viewMode={viewMode}
                 currentLocationName={currentCityName}
+                userLocation={currentUserLocation}
             />
 
             <div className={`fixed bottom-24 right-5 z-[500] transition-all duration-300 ${shouldHideFAB ? 'opacity-0 translate-y-10 pointer-events-none' : 'opacity-100 translate-y-0 pointer-events-auto'}`}>
@@ -599,6 +649,7 @@ function App() {
                     hiddenIds={hiddenIds}
                     onToggleHidden={handleToggleHidden}
                     currentUserCountry={currentCountry}
+                    userLocation={currentUserLocation}
                 />
             )}
             </div>

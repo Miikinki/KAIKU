@@ -21,7 +21,19 @@ const resources = {
         "visitor_remote": "Remote signal from {{country}}",
         "visitor_global": "Global signal from {{country}}",
         "scanning": "SCANNING SECTOR...",
-        "signal_locked": "SIGNAL LOCKED"
+        "signal_locked": "SIGNAL LOCKED",
+        "translate": "Translate",
+        "show_original": "Show Original",
+        "translated_by_ai": "Translated by AI",
+        "view_map": "MAP",
+        "view_list": "FEED"
+      },
+      "distance": {
+        "here": "📍 Here",
+        "very_close": "Very close",
+        "close": "Close",
+        "area": "In the area",
+        "far": "Further away"
       },
       "input": {
         "broadcast_signal": "Broadcast Signal",
@@ -56,7 +68,9 @@ const resources = {
         "content_hidden": "** CONTENT HIDDEN **",
         "open_channel": "OPEN CHANNEL",
         "search_placeholder": "Search coordinates...",
-        "search_not_found": "TARGET NOT FOUND"
+        "search_not_found": "TARGET NOT FOUND",
+        "search_this_area": "SEARCH THIS AREA",
+        "search_context": "Search news: {{location}}"
       },
       "welcome": {
         "subtitle": "Hyperlocal Signal Grid",
@@ -104,7 +118,19 @@ const resources = {
         "visitor_remote": "Etäsignaali maasta: {{country}}",
         "visitor_global": "Globaali signaali maasta: {{country}}",
         "scanning": "SKANNATAAN SEKTORIA...",
-        "signal_locked": "SIGNAALI LUKITTU"
+        "signal_locked": "SIGNAALI LUKITTU",
+        "translate": "Käännä",
+        "show_original": "Näytä alkuperäinen",
+        "translated_by_ai": "Tekoälyn kääntämä",
+        "view_map": "KARTTA",
+        "view_list": "SYÖTE"
+      },
+      "distance": {
+        "here": "📍 Täällä",
+        "very_close": "Erittäin lähellä",
+        "close": "Lähellä",
+        "area": "Alueella",
+        "far": "Kauempana"
       },
       "input": {
         "broadcast_signal": "Lähetä Signaali",
@@ -139,7 +165,9 @@ const resources = {
         "content_hidden": "** SISÄLTÖ PIILOTETTU **",
         "open_channel": "AVAA KANAVA",
         "search_placeholder": "Etsi koordinaatteja...",
-        "search_not_found": "KOHDETTA EI LÖYDY"
+        "search_not_found": "KOHDETTA EI LÖYDY",
+        "search_this_area": "HAE TÄLTÄ ALUEELTA",
+        "search_context": "Hae uutisia: {{location}}"
       },
       "welcome": {
         "subtitle": "Hyperlokaali Signaaliverkko",

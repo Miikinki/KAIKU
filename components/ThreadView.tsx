@@ -8,6 +8,7 @@ import { translateText } from '../services/translationService';
 import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
+import { getHumanizedDistance } from '../services/locationService';
 
 interface ThreadViewProps {
   parentMessage: ChatMessage;
@@ -19,6 +20,7 @@ interface ThreadViewProps {
   hiddenIds: Set<string>;
   onToggleHidden: (msgId: string) => void;
   currentUserCountry?: string | null;
+  userLocation?: { lat: number, lng: number } | null;
 }
 
 const getSourceName = (url?: string) => {
@@ -55,7 +57,7 @@ const getSignalHealth = (msg: ChatMessage) => {
     };
 };
 
-const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick, hiddenIds, onToggleHidden, currentUserCountry }) => {
+const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick, hiddenIds, onToggleHidden, currentUserCountry, userLocation }) => {
   const { t, i18n } = useTranslation();
   const [replies, setReplies] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -193,8 +195,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   };
 
   const renderVisitorBadge = (msg: ChatMessage) => {
-    // Priority Rule: "Check the reply author's countryCode against the current user's countryCode."
-    
     // 1. GLOBAL EVENTS ALWAYS SHOW BADGE
     if (msg.postType === 'GLOBAL_EVENT') {
         return (
@@ -209,10 +209,27 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
         );
     }
 
-    // 2. USER REPLIES (FOREIGN INDICATOR)
-    // If we know the Viewer's Country AND the Reply's Origin Country
+    // 2. LOGIC FIX: Compare message origin against PARENT MESSAGE Country OR Current User Country
+    // If you (Finn) reply to a thread in Japan, you are a visitor TO THAT THREAD.
+    // So we check if msg.originCountry != parentMessage.country (Thread Context)
+    
+    const threadCountry = parentMessage.country || parentMessage.originCountry;
+    
+    if (msg.originCountry && threadCountry) {
+        if (msg.originCountry.toUpperCase() !== threadCountry.toUpperCase()) {
+             return (
+                <div className="text-amber-400 flex items-center gap-1.5" title={`Signal from ${msg.originCountry}`}>
+                    <Satellite size={12} />
+                    <span className="text-sm leading-none" role="img" aria-label={msg.originCountry}>
+                        {getFlagEmoji(msg.originCountry)}
+                    </span>
+                </div>
+            );
+        }
+    }
+
+    // Fallback: If thread country undefined, check against current user (Viewer Context)
     if (currentUserCountry && msg.originCountry) {
-        // Show badge if different
         if (currentUserCountry.toUpperCase() !== msg.originCountry.toUpperCase()) {
             return (
                 <div className="text-amber-400 flex items-center gap-1.5" title={`Signal from ${msg.originCountry}`}>
@@ -223,21 +240,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                 </div>
             );
         }
-        // If same, return null (Local)
-        return null;
-    }
-
-    // 3. FALLBACK: Old logic (Comparison against message location)
-    // Used if we don't know the viewer's location (e.g. no GPS)
-    if (msg.isRemote && msg.originCountry && msg.originCountry !== 'SYSTEM') {
-         return (
-            <div className="text-amber-400 flex items-center gap-1.5" title={`Remote signal from ${msg.originCountry}`}>
-                <Satellite size={12} />
-                <span className="text-sm leading-none" role="img" aria-label={msg.originCountry}>
-                    {getFlagEmoji(msg.originCountry)}
-                </span>
-            </div>
-        );
     }
 
     return null;
@@ -260,6 +262,17 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       const sourceUrl = isNews ? msg.eventMetadata?.source_url : null;
 
       const needsTranslation = isNews && msg.language && msg.language !== i18n.language;
+
+      // Humanized Distance
+      let distanceLabel = { text: msg.city || 'UNKNOWN', style: 'text-gray-500' };
+      if (userLocation) {
+          distanceLabel = getHumanizedDistance(
+              userLocation.lat, userLocation.lng,
+              msg.location.lat, msg.location.lng,
+              msg.city,
+              t
+          );
+      }
 
       let borderClass = isParent ? 'border-b border-white/10' : 'border-l-2 border-white/10 ml-4 pl-4';
       
@@ -362,8 +375,15 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                         )}
                         {isParent && (
                             <div className="flex items-center gap-1 text-[12px] text-gray-400 font-medium">
-                                <MapPin size={10} className="text-cyan-500" /> 
-                                <span>{msg.city}</span>
+                                <MapPin size={10} className={userLocation ? 'text-cyan-500' : 'text-gray-600'} /> 
+                                <span className={distanceLabel.style}>
+                                    {distanceLabel.text}
+                                    {isNews && msg.country && (
+                                        <span className="text-sm leading-none ml-1 grayscale-0" role="img" aria-label={msg.country}>
+                                            {getFlagEmoji(msg.country)}
+                                        </span>
+                                    )}
+                                </span>
                             </div>
                         )}
                     </div>

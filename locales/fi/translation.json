@@ -5,20 +5,27 @@
     "local_signals": "PAIKALLISET SIGNAALIT",
     "filtering": "Suodatus",
     "trending_header": "JUURI NYT (24H)",
-    "no_signals": "Etsitään signaalia...",
+    "no_signals": "Skannataan sektoria...",
     "clear_tag_hint": "Siirrä sektoria löytääksesi lähetyksiä.",
     "move_radar_hint": "Siirrä tutkaa uudelle alueelle.",
     "replies": "Vastausta",
     "delete_confirm": "Haluatko varmasti poistaa tämän signaalin?",
     "visitor_remote": "Etäsignaali maasta: {{country}}",
     "visitor_global": "Globaali signaali maasta: {{country}}",
-    "scanning": "SKANNATAAN...",
+    "scanning": "SKANNATAAN SEKTORIA...",
     "signal_locked": "SIGNAALI LUKITTU",
     "translate": "Käännä",
     "show_original": "Näytä alkuperäinen",
     "translated_by_ai": "Tekoälyn kääntämä",
     "view_map": "KARTTA",
     "view_list": "SYÖTE"
+  },
+  "distance": {
+    "here": "📍 Täällä",
+    "very_close": "Erittäin lähellä",
+    "close": "Lähellä",
+    "area": "Alueella",
+    "far": "Kauempana"
   },
   "input": {
     "broadcast_signal": "Lähetä Signaali",
@@ -51,7 +58,11 @@
     "masked": "MASKATTU",
     "exact": "TARKKA",
     "content_hidden": "** SISÄLTÖ PIILOTETTU **",
-    "open_channel": "AVAA KANAVA"
+    "open_channel": "AVAA KANAVA",
+    "search_placeholder": "Etsi koordinaatteja...",
+    "search_not_found": "KOHDETTA EI LÖYDY",
+    "search_this_area": "HAE TÄLTÄ ALUEELTA",
+    "search_context": "Hae uutisia: {{location}}"
   },
   "welcome": {
     "subtitle": "Hyperlokaali Signaaliverkko",
@@ -62,10 +73,10 @@
     "feature_decay_title": "SIGNAALIN HÄIPYMINEN",
     "feature_decay_desc": "Viestit katoavat automaattisesti.",
     "status_standby": "JÄRJESTELMÄ VALMIUSTILASSA",
-    "status_init_gps": "ALUSTETAAN GPS (TARKKUUS)...",
-    "status_retry": "Y RITETÄÄN UUDELLEEN (NORMAALI SIGNAALI)...",
-    "status_using_last": "KÄYTETÄÄN VIIMEISINTÄ VEKTORIA...",
-    "status_triangulating": "KOLMIOIDAAN VERKKOSOLMUN KAUTTA...",
+    "status_acquiring": "Haetaan signaalia...",
+    "status_target": "Kohde: {{city}}",
+    "status_scanning_freq": "Skannataan paikallisia taajuuksia...",
+    "status_downloading": "Ladataan syötettä...",
     "status_failed": "YHTEYS EPÄONNISTUI",
     "error_signal_lost": "SIGNAALI KATKESI. TARKISTA GPS/VERKKO.",
     "error_permission": "SIJAINTILUPA VAADITAAN",
@@ -77,5 +88,18 @@
     "step2": "> KOLMIOIDAAN SIGNAALILÄHDETTÄ... [LUKITTU]",
     "step3": "> KÄTTELYPROTOKOLLA... [TURVATTU]",
     "step4": "> YHTEYS MUODOSTETTU."
+  },
+  "news": {
+    "read_original": "Lue alkuperäinen ({{source}}) →"
+  },
+  "dossier": {
+    "title": "AGENTTI TIEDOSTO",
+    "clearance": "TURVALUOKITUS",
+    "transmissions": "LÄHETYKSET",
+    "impact": "SIGNAALIVAIKUTUS",
+    "replies": "VASTAUKSET",
+    "sectors": "AKTIIVISET SEKTORIT",
+    "scans": "UUTISIA SKANNATTU",
+    "footer": "TIEDOT SALATTU • VAIN SINULLE"
   }
 }
