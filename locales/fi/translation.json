@@ -36,8 +36,7 @@
     "placeholder": "Mitä lähistöllä tapahtuu?",
     "broadcast_btn": "LÄHETÄ",
     "error_transmission": "Lähetys epäonnistui.",
-    "mask_coordinates": "NAAMIOI SIJAINTI",
-    "mask_description": "Satunnaistaa sijainnin n. 1km yksityisyyden vuoksi.",
+    "privacy_active": "SIJAINTI HAJAUTETTU",
     "status_masked": "> SALAUS: AKTIIVINEN [SIJAINTI HÄIRITTY]",
     "status_precise": "> KOHDISTUS: TARKKA [TARKKA SIJAINTI NÄKYY]"
   },

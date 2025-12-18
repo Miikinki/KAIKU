@@ -36,8 +36,7 @@
     "placeholder": "What's happening nearby?",
     "broadcast_btn": "BROADCAST",
     "error_transmission": "Transmission failed.",
-    "mask_coordinates": "MASK COORDINATES",
-    "mask_description": "Randomizes location by ~1km for privacy.",
+    "privacy_active": "SIGNAL ENCRYPTION ACTIVE",
     "status_masked": "> ENCRYPTION: ACTIVE [LOCATION SCRAMBLED]",
     "status_precise": "> TARGETING: PRECISE [EXACT LOCATION VISIBLE]"
   },

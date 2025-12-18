@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, MapPin, AlertCircle, Loader2, Clock, Image as ImageIcon, Trash2, Shield, Crosshair, AlertTriangle } from 'lucide-react';
+import { X, Send, MapPin, AlertCircle, Loader2, Clock, Image as ImageIcon, Trash2, Shield, Lock } from 'lucide-react';
 import { THEME_COLOR } from '../constants';
 import { SoundService } from '../services/soundService';
 import { triggerHaptic } from '../services/hapticService';
@@ -31,7 +31,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const [isMasked, setIsMasked] = useState(false);
   const typingTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
@@ -41,7 +40,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
         setSelectedFile(null);
         setPreviewUrl(null);
         setText('');
-        setIsMasked(false); 
         if (onTypingStateChange) onTypingStateChange(false);
     }
   }, [isOpen]);
@@ -99,11 +97,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
       }
   };
 
-  const handleToggleMask = () => {
-      triggerHaptic('light');
-      setIsMasked(!isMasked);
-  };
-
   const handleSubmit = async () => {
     if (!text.trim() && !selectedFile) return;
     
@@ -123,7 +116,9 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
           uploadedImageUrl = await uploadImage(selectedFile);
           setIsUploading(false);
       }
-      await onSave(text, uploadedImageUrl, isMasked);
+      
+      // Enforce masking by default (Privacy by Design)
+      await onSave(text, uploadedImageUrl, true);
       
       // Success feedback: Subtle chime + rhythmic pulse
       SoundService.playSuccess();
@@ -243,41 +238,6 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                     </div>
                 </div>
 
-                <div 
-                    onClick={handleToggleMask}
-                    className={`mb-4 flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all duration-300 group
-                        ${isMasked 
-                            ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.1)]' 
-                            : 'bg-white/5 border-white/10 hover:bg-white/10'
-                        }
-                    `}
-                >
-                    <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg transition-colors ${isMasked ? 'bg-cyan-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
-                            <Shield size={18} className={isMasked ? 'animate-pulse' : ''} />
-                        </div>
-                        <div className="flex flex-col">
-                            <span className={`text-xs font-bold tracking-wider ${isMasked ? 'text-cyan-400' : 'text-gray-400'}`}>
-                                {t('input.mask_coordinates')}
-                            </span>
-                            <span className="text-[10px] text-gray-500 font-mono">
-                                {t('input.mask_description')}
-                            </span>
-                        </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                        {!isMasked && isSignalWeak && (
-                             <div title="Signal weak, location might drift">
-                                <AlertTriangle size={16} className="text-amber-500/50" />
-                             </div>
-                        )}
-                        <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${isMasked ? 'bg-cyan-500' : 'bg-gray-700'}`}>
-                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 shadow-md ${isMasked ? 'left-6' : 'left-1'}`} />
-                        </div>
-                    </div>
-                </div>
-
                 {error && (
                   <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2 text-red-200 text-xs">
                     <AlertCircle size={16} className="shrink-0" />
@@ -305,15 +265,9 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
               </>
             )}
             
-            <div className={`mt-4 flex items-center gap-2 text-[10px] font-mono tracking-widest uppercase transition-colors duration-300 ${isMasked ? 'text-cyan-400' : 'text-gray-500'}`}>
-               {isMasked ? (
-                   <Shield size={12} className="mt-0.5" />
-               ) : (
-                   <Crosshair size={12} className="mt-0.5" />
-               )}
-               <p className="animate-pulse">
-                   {isMasked ? t('input.status_masked') : t('input.status_precise')}
-               </p>
+            <div className="mt-4 flex items-center justify-center gap-2 text-[10px] font-mono tracking-widest uppercase text-cyan-500/50">
+               <Shield size={10} />
+               <span>{t('input.privacy_active', 'SIGNAL ENCRYPTION ACTIVE')}</span>
             </div>
           </motion.div>
         </div>

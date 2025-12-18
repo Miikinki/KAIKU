@@ -111,7 +111,6 @@ const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, 
     const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType, msg.userAvatar, msg.userColor]);
 
     const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : 'ANONYMOUS');
-    const headerColor = isNews ? 'text-red-500' : (msg.userColor ? `text-[${msg.userColor}]` : 'text-cyan-400');
 
     return (
         <Marker position={position} icon={icon} zIndexOffset={isNews ? 2000 : 0}>
@@ -151,7 +150,6 @@ const MapController: React.FC<{
 }> = ({ onViewportChange, setZoom, setBounds, onMapClick, flyToLocation, focusedMessage }) => {
   const map = useMap();
   
-  // CRITICAL: Ensure map fills container on mount and state changes
   useEffect(() => {
     const fix = () => map.invalidateSize();
     fix();
@@ -200,22 +198,50 @@ const MapController: React.FC<{
 const ChatMap: React.FC<ChatMapProps> = (props) => {
   const { messages, signals, onViewportChange, onMapClick, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, hiddenIds, userLocation, scannerStatus, scannerCity } = props;
   
-  // ALUSTUS: Zoom tasolle 3 (vastaa MapContainerin oletusta), jotta tutka ei hyppää koon puolesta käynnistyksessä
   const [zoom, setZoom] = useState(3);
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   
-  const points = useMemo(() => messages.map(msg => ({
-      type: 'Feature' as const, properties: { cluster: false, messageId: msg.id, message: msg },
-      geometry: { type: 'Point' as const, coordinates: [msg.location.lng, msg.location.lat] }
-  })), [messages]);
+  // SPLIT LOGIC: News (Pins) vs Chats (Heatmap/Clusters)
+  const newsMessages = useMemo(() => messages.filter(m => isNewsPost(m)), [messages]);
+  const chatMessages = useMemo(() => messages.filter(m => !isNewsPost(m)), [messages]);
+
+  // Points for Supercluster
+  const points = useMemo(() => {
+      const p: any[] = [];
+      
+      // 1. News always included in cluster logic (so they form clusters at low zoom)
+      newsMessages.forEach(msg => {
+          p.push({
+              type: 'Feature', 
+              properties: { cluster: false, messageId: msg.id, message: msg, isNews: true },
+              geometry: { type: 'Point', coordinates: [msg.location.lng, msg.location.lat] }
+          });
+      });
+
+      // 2. Chats only included if Zoom < 13 (Cluster View)
+      // At Zoom 13+, they become "Fog" via HeatmapLayer
+      if (zoom < 13) {
+          chatMessages.forEach(msg => {
+              p.push({
+                  type: 'Feature', 
+                  properties: { cluster: false, messageId: msg.id, message: msg, isNews: false },
+                  geometry: { type: 'Point', coordinates: [msg.location.lng, msg.location.lat] }
+              });
+          });
+      }
+
+      return p;
+  }, [newsMessages, chatMessages, zoom]);
 
   const { clusters, supercluster } = useSupercluster({
     points, bounds: bounds || [-180, -90, 180, 90], zoom, options: { radius: 60, maxZoom: 20 } 
   });
 
+  // Heatmap Data: Chats only, and only when zoomed in (Zoom >= 13)
+  const heatmapMessages = zoom >= 13 ? chatMessages : [];
+
   const isMaxZoom = zoom >= 17;
-  // Lasketaan skaala: Tasolla 3 se on pieni (0.4), tasolla 17+ se on suuri (1.0)
   const radarScale = isMaxZoom ? 1.0 : (zoom <= 7 ? 0.4 : 0.4 + ((zoom - 7) / (13 - 7)) * 0.6);
 
   return (
@@ -225,8 +251,8 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
         zoom={3}
         minZoom={2}
         maxBounds={WORLD_BOUNDS}
-        maxBoundsViscosity={1.0} // Estää harmaan tyhjän alueen paljastumisen reunoilla
-        worldCopyJump={false} // Estää koordinaattisekoilun globaalissa näkymässä
+        maxBoundsViscosity={1.0}
+        worldCopyJump={false}
         scrollWheelZoom={true} 
         zoomControl={false} 
         attributionControl={false}
@@ -234,7 +260,6 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
         style={{ background: '#0a0a12' }} 
         ref={mapRef}
       >
-        {/* noWrap: true estää maailman monistumisen (se 3x ilmiö) */}
         <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} noWrap={true} bounds={WORLD_BOUNDS} />
         
         <MapController 
@@ -246,21 +271,28 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
             focusedMessage={focusedMessage}
         />
         
+        {/* Render Clusters & Markers */}
         {clusters.map((cluster: any) => {
             const [longitude, latitude] = cluster.geometry.coordinates;
             const { cluster: isCluster, point_count: pointCount } = cluster.properties;
-            if (isCluster) return (
-                <Marker 
-                    key={`cluster-${cluster.id}`} 
-                    position={[latitude, longitude]} 
-                    icon={getClusterIcon(pointCount)} 
-                    eventHandlers={{ click: () => { 
-                        const expansionZoom = supercluster.getClusterExpansionZoom(cluster.id);
-                        mapRef.current?.setView([latitude, longitude], expansionZoom);
-                    }}} 
-                />
-            );
+            
+            if (isCluster) {
+                return (
+                    <Marker 
+                        key={`cluster-${cluster.id}`} 
+                        position={[latitude, longitude]} 
+                        icon={getClusterIcon(pointCount)} 
+                        eventHandlers={{ click: () => { 
+                            const expansionZoom = supercluster.getClusterExpansionZoom(cluster.id);
+                            mapRef.current?.setView([latitude, longitude], expansionZoom);
+                        }}} 
+                    />
+                );
+            }
+
+            // Single Marker (Leaf)
             const msg = cluster.properties.message;
+            // Check visibility again just in case, though point array logic handles it mostly
             return <MessageMarker key={msg.id} msg={msg} position={[latitude, longitude]} isHidden={hiddenIds.has(msg.id)} onOpenThread={onOpenThread} mapInstance={mapRef.current} />;
         })}
 
@@ -271,14 +303,17 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
                 iconSize: [16, 16], iconAnchor: [8, 8]
             })} />
         )}
+        
         <ArcLayer messages={signals} />
-        <HeatmapLayer messages={messages} />
+        
+        {/* HEATMAP LAYER (Signal Fog) - Only visible when Zoom >= 13 */}
+        <HeatmapLayer messages={heatmapMessages} />
+
       </MapContainer>
 
-      {/* SWEEP RADAR HUD - Pysyy aina kerroksessa 9999 kartan päällä */}
+      {/* SWEEP RADAR HUD */}
       <div className="pointer-events-none absolute inset-0 z-[9999] flex items-center justify-center">
           <div className="relative w-72 h-72 flex items-center justify-center">
-              {/* Tutkaefekti skaalautuu zoomin mukaan */}
               <div className="absolute inset-0 transition-transform duration-500 ease-out" style={{ transform: `scale(${radarScale})` }}>
                   <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full animate-[spin_4s_linear_infinite]">
                       <defs>
@@ -294,12 +329,10 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
                   </svg>
               </div>
 
-              {/* Keskikohdan ristikko/ikoni */}
               <div className={`transition-all duration-300 z-10 ${isMaxZoom ? 'text-red-500 scale-125' : (hasSignal ? 'text-white' : 'text-cyan-400')}`}>
                   {isMaxZoom ? <ShieldAlert size={36} /> : (hasSignal ? <Lock size={32} /> : <Crosshair size={32} />)}
               </div>
               
-              {/* Skannerin tilatekstit */}
               <AnimatePresence>
                 {scannerStatus && (
                     <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="absolute -bottom-16 flex flex-col items-center whitespace-nowrap">

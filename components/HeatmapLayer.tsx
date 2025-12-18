@@ -2,7 +2,6 @@ import React, { useEffect, useRef, forwardRef } from 'react';
 import { useMap } from 'react-leaflet';
 import { ChatMessage } from '../types';
 import L from 'leaflet';
-import { MESSAGE_LIFESPAN_MS } from '../constants';
 
 interface HeatmapLayerProps {
   messages: ChatMessage[];
@@ -34,7 +33,6 @@ const GlowLayer = L.Layer.extend({
 
         map.on('moveend', this._reset, this);
         map.on('zoomanim', this._animateZoom, this);
-        // CRITICAL PERFORMANCE FIX: Hide layer immediately on start of interaction
         map.on('movestart', this._hide, this);
         map.on('zoomstart', this._hide, this);
         
@@ -61,8 +59,8 @@ const GlowLayer = L.Layer.extend({
         canvas.style.position = 'absolute';
         canvas.style.transformOrigin = '0 0'; 
         canvas.style.pointerEvents = 'none';
-        canvas.style.zIndex = '400';
-        canvas.style.transition = 'opacity 0.1s linear';
+        canvas.style.zIndex = '350'; // Below clusters/markers (400+)
+        canvas.style.transition = 'opacity 0.2s linear';
         canvas.style.opacity = '1';
     },
 
@@ -96,7 +94,6 @@ const GlowLayer = L.Layer.extend({
 
         this._redraw();
         
-        // Show again after redraw
         if (this._canvas) {
             this._canvas.style.opacity = '1';
             this._hidden = false;
@@ -118,20 +115,25 @@ const GlowLayer = L.Layer.extend({
 
         const zoom = this._map.getZoom();
         const bounds = this._map.getBounds();
-        const now = Date.now();
 
-        // 1. Base Scale Logic
-        let baseRadius = 20 * dpr; 
-        let baseIntensity = 0.15; 
+        // SIGNAL FOG STYLE CONFIGURATION
+        // Monochromatic Cyan/Teal
+        
+        let baseRadius = 40 * dpr; // Increased radius for "Fog" effect
+        let baseIntensity = 0.1;   // Lower intensity per point for smoother blend
 
-        if (zoom < 5) { baseRadius = 10 * dpr; baseIntensity = 0.3; } 
-        else if (zoom < 8) { baseRadius = 25 * dpr; baseIntensity = 0.15; }
-        else if (zoom < 10) { baseRadius = 50 * dpr; baseIntensity = 0.12; }
-        else { baseRadius = 100 * dpr; baseIntensity = 0.08; }
+        // Adjust based on zoom to keep density consistent
+        if (zoom < 13) {
+            // Should be handled by clusters, but fallback just in case
+            baseRadius = 20 * dpr; 
+            baseIntensity = 0.05;
+        } 
+        else if (zoom < 15) { baseRadius = 60 * dpr; baseIntensity = 0.15; }
+        else if (zoom < 17) { baseRadius = 100 * dpr; baseIntensity = 0.12; }
+        else { baseRadius = 150 * dpr; baseIntensity = 0.1; }
 
         ctx.globalCompositeOperation = 'screen'; 
 
-        // 2. Draw Loop
         this._data.forEach((msg: ChatMessage) => {
             const margin = 0.5; 
             if (msg.location.lat > bounds.getNorth() + margin || 
@@ -146,31 +148,24 @@ const GlowLayer = L.Layer.extend({
 
             if (x < -baseRadius || x > width + baseRadius || y < -baseRadius || y > height + baseRadius) return;
 
-            const expiry = msg.expiresAt || (msg.timestamp + MESSAGE_LIFESPAN_MS);
-            const msLeft = expiry - now;
-            const hoursLeft = msLeft / (1000 * 60 * 60);
-            const totalAgeHours = (now - msg.timestamp) / (1000 * 60 * 60);
-
-            let r=34, g=211, b=238; 
-
-            if (totalAgeHours < 1) {
-                r=150; g=230; b=255; 
-            } else if (hoursLeft < 4) {
-                r=239; g=68; b=68; 
-            }
+            // MONOCHROMATIC CYAN FOG
+            // Cyan-400: 34, 211, 238
+            const r=34, g=211, b=238; 
 
             let radius = baseRadius;
             let intensity = baseIntensity;
             
-            if (msg.score > 5) { radius *= 1.2; intensity *= 1.2; }
-            if (msg.score > 20) { radius *= 1.4; intensity *= 1.3; }
+            // Slight boost for popular messages
+            if (msg.score > 5) { radius *= 1.1; intensity *= 1.2; }
+            if (msg.score > 20) { radius *= 1.2; intensity *= 1.3; }
 
-            intensity = Math.min(intensity, 0.9);
+            // Cap intensity
+            intensity = Math.min(intensity, 0.6);
 
             const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
-            grad.addColorStop(0, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity})`);
-            grad.addColorStop(0.4, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${intensity * 0.3})`);
-            grad.addColorStop(1, `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, 0)`);
+            grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${intensity})`);
+            grad.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${intensity * 0.4})`);
+            grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
 
             ctx.fillStyle = grad;
             ctx.beginPath();
@@ -182,7 +177,6 @@ const GlowLayer = L.Layer.extend({
     },
     
     _animateZoom: function (e: any) {
-        // Ensure opacity is 0 during animation
         if (!this._hidden && this._canvas) {
              this._canvas.style.opacity = '0';
              this._hidden = true;
