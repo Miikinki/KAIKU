@@ -13,7 +13,12 @@
     "visitor_remote": "Etäsignaali maasta: {{country}}",
     "visitor_global": "Globaali signaali maasta: {{country}}",
     "scanning": "SKANNATAAN...",
-    "signal_locked": "SIGNAALI LUKITTU"
+    "signal_locked": "SIGNAALI LUKITTU",
+    "translate": "Käännä",
+    "show_original": "Näytä alkuperäinen",
+    "translated_by_ai": "Tekoälyn kääntämä",
+    "view_map": "KARTTA",
+    "view_list": "SYÖTE"
   },
   "input": {
     "broadcast_signal": "Lähetä Signaali",

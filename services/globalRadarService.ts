@@ -27,12 +27,6 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
       if (cachedEvents.length > 0) return cachedEvents;
   }
 
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-      console.warn("KAIKU: API_KEY missing from environment.");
-      return [];
-  }
-  
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = specificQuery 

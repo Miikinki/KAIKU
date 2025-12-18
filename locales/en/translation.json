@@ -13,7 +13,12 @@
     "visitor_remote": "Remote signal from {{country}}",
     "visitor_global": "Global signal from {{country}}",
     "scanning": "SCANNING...",
-    "signal_locked": "SIGNAL LOCKED"
+    "signal_locked": "SIGNAL LOCKED",
+    "translate": "Translate",
+    "show_original": "Show Original",
+    "translated_by_ai": "Translated by AI",
+    "view_map": "MAP",
+    "view_list": "FEED"
   },
   "input": {
     "broadcast_signal": "Broadcast Signal",

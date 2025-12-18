@@ -241,8 +241,8 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       }
 
       if (isParent) {
-         if (isCritical) borderClass += ' border-red-500/50';
-         else if (isWeak) borderClass += ' border-orange-500/30';
+         if (isCritical && !isNews) borderClass += ' border-red-500/50';
+         else if (isWeak && !isNews) borderClass += ' border-orange-500/30';
       }
 
       return (

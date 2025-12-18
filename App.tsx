@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Radio, Plus, Locate, Zap, Terminal, RefreshCw } from 'lucide-react';
+import { Radio, Plus, Locate, Zap, Terminal, RefreshCw, Map as MapIcon, List as ListIcon } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -21,12 +21,15 @@ import { useTranslation } from 'react-i18next';
 
 const BASE_SCAN_RADIUS_PX = 128; 
 const SCAN_MOVE_THRESHOLD_KM = 20; // Etäisyys jolloin "Hae tältä alueelta" ilmestyy
+const LIST_VIEW_RADIUS_KM = 20; // Fixed radius for list view
 
 type AppState = 'welcome' | 'boot' | 'app';
+type ViewMode = 'map' | 'list';
 
 function App() {
   const { t } = useTranslation();
   const [appState, setAppState] = useState<AppState>('welcome');
+  const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [isDesktop, setIsDesktop] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
@@ -51,6 +54,7 @@ function App() {
   
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
   const [currentUserLocation, setCurrentUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [currentCityName, setCurrentCityName] = useState<string | null>(null); // For List View Header
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); 
   
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
@@ -95,6 +99,12 @@ function App() {
       setCurrentUserLocation(startLoc);
       setIsFallbackLocation(isFallback);
       localStorage.setItem('kaiku_last_loc', JSON.stringify(startLoc));
+      
+      // Init City Name
+      getCityName(startLoc.lat, startLoc.lng).then(data => {
+          setCurrentCityName(data.city);
+      });
+
       triggerHaptic('light');
       setAppState('boot');
   };
@@ -205,6 +215,15 @@ function App() {
                     locationCache.current = newLoc;
                     setCurrentUserLocation(newLoc);
                     setGpsAccuracy(accuracy);
+                    
+                    // Update City Name occasionally or if moved significantly
+                    // For simplicity, updating every time GPS changes significantly might be heavy,
+                    // but since watchPosition triggers on change, let's just do it.
+                    // To optimize, could throttle this.
+                    getCityName(latitude, longitude).then(d => {
+                         if (d.city && d.city !== currentCityName) setCurrentCityName(d.city);
+                    });
+
                     localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
                     if (isFallbackLocation) {
                         setFlyToLocation({ ...newLoc, timestamp: Date.now() }); 
@@ -219,7 +238,7 @@ function App() {
     return () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
-  }, [isRunning, isFallbackLocation]);
+  }, [isRunning, isFallbackLocation, currentCityName]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -254,29 +273,49 @@ function App() {
   }, [globalEvents, scanResults, messages]);
 
   useEffect(() => {
-    if (!currentBounds) return;
+    // Determine filtering logic based on View Mode
     const now = Date.now();
-    const centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
-    const centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
+    let centerLat: number;
+    let centerLng: number;
+    let effectiveRadiusKm: number;
 
-    const scale = currentBounds.zoom >= 13 ? 1.0 : (currentBounds.zoom <= 7 ? 0.4 : 0.4 + ((currentBounds.zoom - 7) / (13 - 7)) * (1.0 - 0.4));
-    const effectiveRadiusPx = BASE_SCAN_RADIUS_PX * scale;
-    const metersPerPx = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
-    const radiusKm = (metersPerPx * effectiveRadiusPx) / 1000;
+    if (viewMode === 'list') {
+        // List Mode: Use User GPS + Fixed Radius
+        if (!currentUserLocation) return;
+        centerLat = currentUserLocation.lat;
+        centerLng = currentUserLocation.lng;
+        effectiveRadiusKm = LIST_VIEW_RADIUS_KM;
+    } else {
+        // Map Mode: Use Viewport Bounds
+        if (!currentBounds) return;
+        centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
+        centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
+
+        const scale = currentBounds.zoom >= 13 ? 1.0 : (currentBounds.zoom <= 7 ? 0.4 : 0.4 + ((currentBounds.zoom - 7) / (13 - 7)) * (1.0 - 0.4));
+        const effectiveRadiusPx = BASE_SCAN_RADIUS_PX * scale;
+        const metersPerPx = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
+        effectiveRadiusKm = (metersPerPx * effectiveRadiusPx) / 1000;
+    }
 
     let visible = mapMessages.filter(m => {
       const expiry = m.expiresAt || (m.timestamp + MESSAGE_LIFESPAN_MS);
       if (expiry <= now || m.score <= SCORE_THRESHOLD_HIDE) return false;
+      
       const dist = calculateDistance(centerLat, centerLng, m.location.lat, m.location.lng);
-      const effectiveRadius = (m.postType === 'GLOBAL_EVENT' || m.postType === 'SCAN_RESULT') ? radiusKm * 2.5 : radiusKm;
-      return dist <= effectiveRadius;
+      
+      // Global events have wider radius
+      const radiusToCheck = (m.postType === 'GLOBAL_EVENT' || m.postType === 'SCAN_RESULT') 
+          ? effectiveRadiusKm * 2.5 
+          : effectiveRadiusKm;
+          
+      return dist <= radiusToCheck;
     });
 
     visible = visible.sort((a, b) => b.timestamp - a.timestamp);
     setVisibleMessages(visible);
     
-    // Tarkistetaan onko kartta liikkunut merkittävästi skannauksesta
-    if (lastScannedCenter && !isScanningGlobal) {
+    // Tarkistetaan onko kartta liikkunut merkittävästi skannauksesta (Only relevant in Map mode)
+    if (viewMode === 'map' && lastScannedCenter && !isScanningGlobal) {
         const dist = calculateDistance(centerLat, centerLng, lastScannedCenter.lat, lastScannedCenter.lng);
         if (dist > SCAN_MOVE_THRESHOLD_KM) {
             setIsMapDirty(true);
@@ -284,7 +323,7 @@ function App() {
             setIsMapDirty(false);
         }
     }
-  }, [mapMessages, currentBounds, lastScannedCenter, isScanningGlobal]); 
+  }, [mapMessages, currentBounds, lastScannedCenter, isScanningGlobal, viewMode, currentUserLocation]); 
 
   const handleViewportChange = useCallback((bounds: ViewportBounds) => setCurrentBounds(bounds), []);
   const handleMapClick = useCallback(() => {
@@ -300,8 +339,8 @@ function App() {
       // Zoomataan kartta ja avataan modal heti
       setTimeout(() => setFocusedMessage(msg), 50);
       setSelectedMessage(msg);
-      setIsFeedOpen(false);   
-  }, []);
+      if (viewMode === 'map') setIsFeedOpen(false);   
+  }, [viewMode]);
 
   const handleOpenThread = useCallback((msg: ChatMessage) => {
       triggerHaptic('light');
@@ -311,9 +350,9 @@ function App() {
   const handleTagClick = useCallback((tag: string) => {
       triggerHaptic('light');
       setActiveTag(tag);
-      setIsFeedOpen(true);
+      if (viewMode === 'map') setIsFeedOpen(true);
       setSelectedMessage(null);
-  }, []);
+  }, [viewMode]);
 
   const handleLocateMe = async () => {
       setIsLocating(true);
@@ -335,6 +374,15 @@ function App() {
       triggerHaptic('light');
       setTargetLocation(null); 
       setIsInputOpen(true);
+  };
+
+  const handleToggleView = () => {
+      triggerHaptic('light');
+      setViewMode(prev => prev === 'map' ? 'list' : 'map');
+      // Reset active selections when switching
+      setSelectedMessage(null);
+      setFocusedMessage(null);
+      setIsFeedOpen(false);
   };
 
   useEffect(() => {
@@ -393,7 +441,10 @@ function App() {
   
   if (isDesktop) return <DesktopLanding />;
 
-  const shouldHideFAB = isInputOpen || isFeedOpen || visibleMessages.length > 0;
+  // Logic to determine if FAB is visible.
+  // Map Mode: Hidden if Input/Feed/Details open OR if there are visible messages (because FeedPanel covers bottom).
+  // List Mode: Always visible unless Input/Details open. FeedPanel is the main view, so FAB floats above it.
+  const shouldHideFAB = isInputOpen || selectedMessage || (viewMode === 'map' && (isFeedOpen || visibleMessages.length > 0));
 
   return (
     <>
@@ -410,24 +461,27 @@ function App() {
         {appState === 'app' && (
             <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
             
-            <ChatMap 
-                messages={mapMessages} 
-                signals={signals}
-                onViewportChange={handleViewportChange}
-                onMapClick={handleMapClick}
-                lastNewMessage={lastNewMessage}
-                hasSignal={visibleMessages.length > 0}
-                initialCenter={locationCache.current || undefined}
-                flyToLocation={flyToLocation}
-                focusedMessage={focusedMessage}
-                onOpenThread={handleOpenThread}
-                onClosePopup={() => setFocusedMessage(null)}
-                hiddenIds={hiddenIds}
-                getUserLocation={async () => locationCache.current || {lat: 0, lng: 0}}
-                userLocation={currentUserLocation} 
-                scannerStatus={scannerStatus}
-                scannerCity={scannerCity}
-            />
+            {/* Conditional Rendering of Map vs List container */}
+            <div style={{ display: viewMode === 'map' ? 'block' : 'none', width: '100%', height: '100%' }}>
+                <ChatMap 
+                    messages={mapMessages} 
+                    signals={signals}
+                    onViewportChange={handleViewportChange}
+                    onMapClick={handleMapClick}
+                    lastNewMessage={lastNewMessage}
+                    hasSignal={visibleMessages.length > 0}
+                    initialCenter={locationCache.current || undefined}
+                    flyToLocation={flyToLocation}
+                    focusedMessage={focusedMessage}
+                    onOpenThread={handleOpenThread}
+                    onClosePopup={() => setFocusedMessage(null)}
+                    hiddenIds={hiddenIds}
+                    getUserLocation={async () => locationCache.current || {lat: 0, lng: 0}}
+                    userLocation={currentUserLocation} 
+                    scannerStatus={scannerStatus}
+                    scannerCity={scannerCity}
+                />
+            </div>
 
             <TerminalScanner 
               isOpen={isSearchOpen} 
@@ -436,6 +490,7 @@ function App() {
               isScanning={isScanningGlobal} 
             />
 
+            {/* HEADER BAR */}
             <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex flex-col items-center">
                 <div className="w-full flex justify-between items-start">
                     <div className="flex items-center gap-2 pointer-events-auto">
@@ -449,9 +504,23 @@ function App() {
                                 <button onClick={() => setIsSearchOpen(true)} className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors shadow-lg">
                                     <Terminal size={16} />
                                 </button>
-
-                                <button onClick={() => performGlobalScan()} disabled={isScanningGlobal} className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-red-400 hover:text-red-300 transition-colors shadow-lg">
-                                    <Zap size={16} className={isScanningGlobal ? "animate-spin" : ""} />
+                                
+                                {/* VIEW TOGGLE SWITCH */}
+                                <button 
+                                    onClick={handleToggleView}
+                                    className="h-10 px-3 flex items-center justify-center gap-2 bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-colors shadow-lg"
+                                >
+                                    {viewMode === 'map' ? (
+                                        <>
+                                            <ListIcon size={16} />
+                                            <span className="text-[10px] font-bold hidden sm:inline">{t('feed.view_list')}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MapIcon size={16} />
+                                            <span className="text-[10px] font-bold hidden sm:inline">{t('feed.view_map')}</span>
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         )}
@@ -462,9 +531,9 @@ function App() {
                     </button>
                 </div>
 
-                {/* SEARCH THIS AREA BUTTON */}
+                {/* SEARCH THIS AREA BUTTON (Only relevant for Map Mode) */}
                 <AnimatePresence>
-                    {isMapDirty && !isScanningGlobal && !isSearchOpen && !isInputOpen && (
+                    {viewMode === 'map' && isMapDirty && !isScanningGlobal && !isSearchOpen && !isInputOpen && (
                         <motion.div 
                             initial={{ opacity: 0, y: -10 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -499,6 +568,8 @@ function App() {
                 hiddenIds={hiddenIds}
                 onToggleHidden={handleToggleHidden}
                 onCompose={handleOpenInput}
+                viewMode={viewMode}
+                currentLocationName={currentCityName}
             />
 
             <div className={`fixed bottom-24 right-5 z-[500] transition-all duration-300 ${shouldHideFAB ? 'opacity-0 translate-y-10 pointer-events-none' : 'opacity-100 translate-y-0 pointer-events-auto'}`}>

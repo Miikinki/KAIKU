@@ -33,21 +33,27 @@ interface ChatMapProps {
 // Määritellään maailman rajat estämään Leafletin "3x" maailman toisto ja tyhjät alueet
 const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
 
+const isNewsPost = (msg: ChatMessage) => msg.postType === 'GLOBAL_EVENT' || msg.postType === 'SCAN_RESULT';
+
 const getMarkerIcon = (msg: ChatMessage) => {
     const isMasked = msg.isMasked || false;
-    const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
-    const isScanResult = msg.postType === 'SCAN_RESULT';
-    const containerSize = isGlobalEvent || isScanResult ? 50 : 40; 
+    const isNews = isNewsPost(msg);
+    const containerSize = isNews ? 50 : 40; 
 
-    const color = isGlobalEvent ? '#ef4444' : '#22d3ee';
-    const glow = isGlobalEvent ? 'rgba(239,68,68,0.8)' : 'rgba(34,211,238,0.9)';
+    const color = isNews ? '#ef4444' : '#22d3ee';
+    const glow = isNews ? 'rgba(239,68,68,0.8)' : 'rgba(34,211,238,0.9)';
+
+    // Switch geometry: Triangle Alert for news, Lightning Bolt for users
+    const svgContent = isNews 
+        ? `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`
+        : `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>`;
 
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
             <div class="absolute inset-0 rounded-full animate-ping opacity-20" style="background-color: ${color}"></div>
             <div class="relative z-10 transition-all duration-300 flex items-center justify-center" style="color: ${color}; filter: drop-shadow(0 0 8px ${glow})">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${isMasked ? 'none' : 'currentColor'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${isMasked && !isNews ? 'none' : 'currentColor'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    ${svgContent}
                 </svg>
             </div>
         </div>
@@ -77,16 +83,16 @@ const MessageMarker = ({ msg, position, isHidden, onOpenThread, mapInstance }: {
     onOpenThread: (msg: ChatMessage) => void, mapInstance: L.Map | null
 }) => {
     const { t } = useTranslation();
-    const isGlobalEvent = msg.postType === 'GLOBAL_EVENT';
+    const isNews = isNewsPost(msg);
     const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType]);
 
     return (
-        <Marker position={position} icon={icon} zIndexOffset={isGlobalEvent ? 2000 : 0}>
+        <Marker position={position} icon={icon} zIndexOffset={isNews ? 2000 : 0}>
             <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}>
                 <div className="p-3">
                     <div className="flex justify-between items-center mb-2">
-                         <span className={`text-[10px] font-mono font-bold ${isGlobalEvent ? 'text-red-500' : 'text-cyan-400'}`}>
-                            {isGlobalEvent ? 'SYSTEM ALERT' : t('map.signal_locked')}
+                         <span className={`text-[10px] font-mono font-bold ${isNews ? 'text-red-500' : 'text-cyan-400'}`}>
+                            {isNews ? 'SYSTEM ALERT' : t('map.signal_locked')}
                          </span>
                     </div>
                     <p className="text-xs text-gray-200 mb-3 line-clamp-3 leading-relaxed">
@@ -94,7 +100,7 @@ const MessageMarker = ({ msg, position, isHidden, onOpenThread, mapInstance }: {
                     </p>
                     <button 
                         onClick={(e) => { e.stopPropagation(); onOpenThread(msg); mapInstance?.closePopup(); }}
-                        className={`w-full py-2 rounded text-[10px] font-black tracking-widest ${isGlobalEvent ? 'bg-red-600 text-white' : 'bg-cyan-500 text-black'}`}
+                        className={`w-full py-2 rounded text-[10px] font-black tracking-widest ${isNews ? 'bg-red-600 text-white' : 'bg-cyan-500 text-black'}`}
                     >
                         {t('map.open_channel')}
                     </button>

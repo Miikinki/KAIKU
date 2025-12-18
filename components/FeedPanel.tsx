@@ -24,6 +24,8 @@ interface FeedPanelProps {
   hiddenIds: Set<string>;
   onToggleHidden: (msgId: string) => void;
   onCompose: () => void;
+  viewMode: 'map' | 'list';
+  currentLocationName?: string | null;
 }
 
 const getSourceName = (url?: string) => {
@@ -63,7 +65,8 @@ const formatRelativeTime = (timestamp: number) => {
 
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
     visibleMessages, onMessageClick, isOpen, toggleOpen, onVote, onDelete, onRefresh, zoomLevel,
-    activeTag, onTagClick, onClearTag, nearbyTypingCount = 0, hiddenIds, onToggleHidden, onCompose
+    activeTag, onTagClick, onClearTag, nearbyTypingCount = 0, hiddenIds, onToggleHidden, onCompose,
+    viewMode, currentLocationName
 }) => {
   const { t, i18n } = useTranslation();
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
@@ -85,15 +88,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   
   const currentSessionId = getAnonymousID();
 
+  const isListMode = viewMode === 'list';
+
   useEffect(() => {
-      if (!isOpen) return;
+      if (!isOpen && !isListMode) return;
       const interval = setInterval(() => setNow(Date.now()), 60000);
       return () => clearInterval(interval);
-  }, [isOpen]);
+  }, [isOpen, isListMode]);
 
   useEffect(() => {
     setUserVotes(getUserVotes());
-  }, [visibleMessages, isOpen]);
+  }, [visibleMessages, isOpen, viewMode]);
 
   useEffect(() => {
     const hasNewMessage = visibleMessages.length > prevMsgCountRef.current;
@@ -101,13 +106,13 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
     const isRecent = newest && (Date.now() - newest.timestamp) < 60000;
 
     if (hasNewMessage && isRecent) {
-        if (isOpen && scrollRef.current && scrollRef.current.scrollTop > 150) {
+        if ((isOpen || isListMode) && scrollRef.current && scrollRef.current.scrollTop > 150) {
             setShowNewMsgToast(true);
             triggerHaptic('light'); 
         }
     }
     prevMsgCountRef.current = visibleMessages.length;
-  }, [visibleMessages, isOpen]);
+  }, [visibleMessages, isOpen, isListMode]);
 
   const handleScroll = () => {
     if (!scrollRef.current) return;
@@ -268,37 +273,56 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
     );
   };
 
-  const feedTitle = (zoomLevel && zoomLevel < 9) ? t('feed.regional_intercept') : t('feed.local_signals');
+  const feedTitle = isListMode 
+    ? (currentLocationName || t('feed.local_signals'))
+    : (zoomLevel && zoomLevel < 9) ? t('feed.regional_intercept') : t('feed.local_signals');
   const hasSignal = displayMessages.length > 0;
   
-  const variants = {
+  // Variants for Map Mode (Bottom Sheet)
+  const mapVariants = {
       open: { y: 0 },
       peek: { y: '55%' },
       collapsed: { y: 'calc(100% - 76px)' } 
   };
 
-  const currentState = isOpen 
+  // Variants for List Mode (Full Screen, No Animation between "open/closed" because it's always open)
+  const listVariants = {
+      open: { y: 0, top: '60px' },
+      peek: { y: 0, top: '60px' },
+      collapsed: { y: 0, top: '60px' } 
+  };
+
+  const currentState = (isOpen || isListMode) 
     ? 'open' 
     : (displayMessages.length === 0 ? 'collapsed' : 'peek');
+
+  const containerClasses = isListMode 
+    ? "fixed inset-x-0 bottom-0 bg-[#0a0a12] z-[400] overflow-hidden flex flex-col" // Removed shadow/border for seamless look
+    : "fixed inset-x-0 bottom-0 top-[15vh] bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden";
 
   return (
     <>
       <motion.div
-        initial="collapsed"
+        initial={isListMode ? "open" : "collapsed"}
         animate={currentState}
-        variants={variants}
+        variants={isListMode ? listVariants : mapVariants}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed inset-x-0 bottom-0 top-[15vh] bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden"
+        className={containerClasses}
       >
         <div 
-            className="p-4 border-b border-white/5 flex flex-col items-center bg-white/5 cursor-pointer transition-colors hover:bg-white/10 shrink-0"
-            onClick={() => { triggerHaptic('light'); toggleOpen(); }}
+            className={`p-4 border-b border-white/5 flex flex-col items-center cursor-pointer transition-colors shrink-0 ${isListMode ? 'bg-[#0a0a12]' : 'bg-white/5 hover:bg-white/10'}`}
+            onClick={() => { 
+                if (!isListMode) {
+                    triggerHaptic('light'); toggleOpen(); 
+                }
+            }}
         >
-          {isOpen && <div className="w-12 h-1.5 bg-white/20 rounded-full mb-4" />}
+          {/* Only show Drag Handle in Map Mode */}
+          {!isListMode && isOpen && <div className="w-12 h-1.5 bg-white/20 rounded-full mb-4" />}
           
           <div className="w-full flex justify-between items-center px-2">
             <div className="flex items-center gap-4">
-                {!isOpen ? (
+                {(!isOpen && !isListMode) ? (
                     <div className="flex items-center gap-3">
                          <div className={`p-1.5 rounded-full ${hasSignal ? 'bg-cyan-500/20 text-cyan-400' : 'bg-gray-800/50 text-gray-500'} ${isRefreshing ? 'animate-spin' : ''}`}>
                              {hasSignal ? <Lock size={18} /> : <ScanLine size={18} />}
@@ -316,8 +340,8 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     </div>
                 ) : (
                     <div>
-                        <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-                            <Radar size={24} className="text-cyan-400" />
+                        <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-3">
+                            {isListMode ? <MapPin size={24} className="text-cyan-400" /> : <Radar size={24} className="text-cyan-400" />}
                             {feedTitle}
                         </h2>
                     </div>
@@ -325,15 +349,18 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             </div>
             
             <div className="flex items-center gap-1">
-                <button
-                    onClick={handleComposeClick}
-                    className="p-2 rounded-full bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.1)]"
-                    title="Broadcast Signal"
-                >
-                    <Plus size={20} />
-                </button>
+                {/* Only show Compose in Map Mode Header. In List Mode, we rely on the main FAB */}
+                {!isListMode && (
+                    <button
+                        onClick={handleComposeClick}
+                        className="p-2 rounded-full bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.1)]"
+                        title="Broadcast Signal"
+                    >
+                        <Plus size={20} />
+                    </button>
+                )}
 
-                {isOpen && (
+                {(isOpen || isListMode) && (
                     <>
                         <button
                             onClick={handleToggleFilter}
@@ -354,12 +381,15 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     </>
                 )}
                 
-                <button 
-                    onClick={(e) => { e.stopPropagation(); triggerHaptic('light'); toggleOpen(); }} 
-                    className="p-2 hover:bg-white/10 rounded-full text-gray-400"
-                >
-                {isOpen ? <ChevronDown size={24} /> : <ChevronUp size={24} />}
-                </button>
+                {/* Hide chevron in List Mode */}
+                {!isListMode && (
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); triggerHaptic('light'); toggleOpen(); }} 
+                        className="p-2 hover:bg-white/10 rounded-full text-gray-400"
+                    >
+                    {isOpen ? <ChevronDown size={24} /> : <ChevronUp size={24} />}
+                    </button>
+                )}
             </div>
           </div>
         </div>
@@ -391,7 +421,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
         <div 
             ref={scrollRef}
             onScroll={handleScroll}
-            className={`relative flex-1 p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508] ${isOpen ? 'overflow-y-auto' : 'overflow-hidden'}`}
+            className={`relative flex-1 p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508] ${isOpen || isListMode ? 'overflow-y-auto' : 'overflow-hidden'}`}
         >
             <AnimatePresence>
                 {showNewMsgToast && (
@@ -400,7 +430,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         animate={{ opacity: 1, y: 0, x: "-50%" }}
                         exit={{ opacity: 0, y: -20, x: "-50%" }}
                         className="fixed left-1/2 z-[500] pointer-events-none"
-                        style={{ top: "calc(15vh + 90px)" }}
+                        style={{ top: isListMode ? "100px" : "calc(15vh + 90px)" }}
                     >
                          <button
                             onClick={scrollToTop}
@@ -417,7 +447,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 )}
             </AnimatePresence>
 
-            {isOpen && !activeTag && !showMyMessagesOnly && trendingTags.length > 0 && (
+            {(isOpen || isListMode) && !activeTag && !showMyMessagesOnly && trendingTags.length > 0 && (
                 <motion.div 
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -476,10 +506,10 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 if (isMe) {
                     borderClass = 'border-cyan-500/60 hover:border-cyan-400';
                     bgClass = 'bg-cyan-950/10 hover:bg-cyan-950/20';
-                } else if (isCritical) {
+                } else if (isCritical && !isNews) {
                     borderClass = 'border-red-500/50 hover:border-red-500';
                     bgClass = 'bg-red-950/10';
-                } else if (isWeak) {
+                } else if (isWeak && !isNews) {
                     borderClass = 'border-orange-500/30 hover:border-orange-500/60';
                     bgClass = 'bg-orange-950/5';
                 }
@@ -492,7 +522,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 return (
                 <motion.div
                 key={msg.id}
-                layoutId={msg.id}
+                layoutId={isListMode ? undefined : msg.id} // Disable layoutId in list mode to prevent transition issues
                 onClick={() => !isHidden && onMessageClick(msg)}
                 className={`group border rounded-xl p-4 cursor-pointer transition-all flex gap-4 ${borderClass} ${bgClass}`}
                 >
@@ -569,7 +599,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                 </span>
                             )}
 
-                            {!isMe && !isHidden && isCritical && (
+                            {!isMe && !isHidden && isCritical && !isNews && (
                                 <span className="text-red-500 text-[10px] font-bold animate-pulse tracking-wider">FAILING</span>
                             )}
 
@@ -691,7 +721,8 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
             <div className="h-20" /> 
             
-            {!isOpen && displayMessages.length > 2 && (
+            {/* Show "Pull Up" chevron ONLY in Map Mode (when closed) */}
+            {!isOpen && !isListMode && displayMessages.length > 2 && (
                 <div 
                     onClick={(e) => {
                         e.stopPropagation();
