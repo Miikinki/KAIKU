@@ -61,7 +61,9 @@
     "search_placeholder": "Search coordinates...",
     "search_not_found": "TARGET NOT FOUND",
     "search_this_area": "SEARCH THIS AREA",
-    "search_context": "Search news: {{location}}"
+    "search_context": "Search news: {{location}}",
+    "teleport": "RELOCATE UPLINK",
+    "teleport_active": "REMOTE UPLINK ACTIVE"
   },
   "welcome": {
     "subtitle": "Hyperlocal Signal Grid",
@@ -80,6 +82,9 @@
     "error_signal_lost": "SIGNAL LOST. CHECK GPS/NETWORK.",
     "error_permission": "LOCATION PERMISSION REQUIRED",
     "btn_initialize": "INITIALIZE UPLINK",
+    "btn_restore": "RESTORE IDENTITY",
+    "restore_placeholder": "ENTER TRANSFER KEY",
+    "restore_submit": "ESTABLISH LINK",
     "footer_version": "v2.0 • ENCRYPTED CONNECTION"
   },
   "boot": {
@@ -92,10 +97,10 @@
     "read_original": "Read original ({{source}}) →"
   },
   "dossier": {
-    "title": "AGENT DOSSIER",
+    "title": "IDENTITY",
     "edit_identity": "EDIT IDENTITY",
     "configure_visuals": "Configure visual signature",
-    "clearance": "CLEARANCE LEVEL",
+    "clearance": "ACCESS LEVEL",
     "transmissions": "TRANSMISSIONS",
     "impact": "SIGNAL IMPACT",
     "replies": "REPLIES RECD",
@@ -103,9 +108,38 @@
     "scans": "NEWS SCANNED",
     "footer": "DATA ENCRYPTED • EYES ONLY",
     "callsign": "CALLSIGN",
-    "anonymous": "ANONYMOUS",
+    "anonymous": "UNKNOWN",
     "icon": "ICON",
     "color": "COLOR",
-    "save_identity": "SAVE IDENTITY"
+    "save_identity": "SAVE IDENTITY",
+    "hide_level": "HIDE LEVEL PUBLICLY",
+    "transfer_title": "DEVICE TRANSFER & BACKUP",
+    "generate_key": "GENERATE TRANSFER KEY",
+    "key_warning": "WRITE THIS DOWN. THIS KEY CANNOT BE RECOVERED IF LOST.",
+    "key_generated": "KEY GENERATED",
+    "notifications": "NOTIFICATIONS",
+    "notifications_desc": "Alert on replies & activity spikes",
+    "streak": "UPLINK STREAK",
+    "days": "DAYS",
+    "prime_status": "OPERATOR PRIME",
+    "ranks": {
+        "1": "OBSERVER",
+        "2": "SIGNALER",
+        "3": "OPERATOR",
+        "4": "BEACON"
+    }
+  },
+  "prime": {
+    "title": "OPERATOR PRIME",
+    "subtitle": "ELITE CLEARANCE LEVEL",
+    "feature_teleport": "SATELLITE UPLINK (TELEPORT)",
+    "feature_teleport_desc": "Transmit & Receive from any global sector.",
+    "feature_gold": "GOLD PRIORITY SIGNAL",
+    "feature_gold_desc": "Stand out with elite visual signature.",
+    "feature_alert": "PRIORITY ALERTS",
+    "feature_alert_desc": "Instant notification on relevant traffic.",
+    "price": "4.99€ / MONTH",
+    "btn_activate": "INITIALIZE PRIME STATUS",
+    "active": "STATUS ACTIVE"
   }
 }

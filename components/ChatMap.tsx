@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert } from 'lucide-react';
+import { Crosshair, Lock, ShieldAlert, Satellite } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION, AVATAR_ICONS } from '../constants';
 import ArcLayer from './ArcLayer';
@@ -10,6 +10,7 @@ import L from 'leaflet';
 import { motion, AnimatePresence } from 'framer-motion';
 // @ts-ignore
 import useSupercluster from 'use-supercluster';
+import { getUserProfile } from '../services/storageService';
 
 interface ChatMapProps {
   messages: ChatMessage[];
@@ -28,6 +29,10 @@ interface ChatMapProps {
   userLocation: { lat: number, lng: number } | null;
   scannerStatus?: string | null;
   scannerCity?: string | null;
+  
+  // New Props for Prime Teleport
+  onTeleport?: (lat: number, lng: number) => void;
+  isTeleporting?: boolean;
 }
 
 // Määritellään maailman rajat estämään Leafletin "3x" maailman toisto ja tyhjät alueet
@@ -38,7 +43,8 @@ const isNewsPost = (msg: ChatMessage) => msg.postType === 'GLOBAL_EVENT' || msg.
 const getMarkerIcon = (msg: ChatMessage) => {
     const isMasked = msg.isMasked || false;
     const isNews = isNewsPost(msg);
-    const containerSize = isNews ? 50 : 40; 
+    // User signals are smaller, abstract dots to blend with the "Fog" concept
+    const containerSize = isNews ? 50 : 30; 
 
     // DEFAULT COLORS (Fallback)
     let color = isNews ? '#ef4444' : '#22d3ee';
@@ -47,29 +53,34 @@ const getMarkerIcon = (msg: ChatMessage) => {
     if (msg.userColor) {
         color = msg.userColor;
     }
-
-    const glow = isNews ? 'rgba(239,68,68,0.8)' : `${color}E6`; // Hex alpha for glow
+    
+    // PRIME GLOW
+    const isPrime = msg.isPrime;
+    const glow = isPrime 
+        ? 'rgba(234, 179, 8, 0.9)' // GOLD for Prime
+        : (isNews ? 'rgba(239,68,68,0.8)' : `${color}E6`);
 
     // ICON SELECTION
-    let svgPath = `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>`; // Default Bolt
+    let svgPath = ``;
     let viewBox = "0 0 24 24";
     let strokeWidth = "2";
-    let fill = isMasked && !isNews ? 'none' : 'currentColor';
+    let fill = 'currentColor';
 
     if (isNews) {
-        // Alert Triangle
+        // Alert Triangle for System/News (Keep specific icon for global events)
         svgPath = `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`;
-    } else if (msg.userAvatar && AVATAR_ICONS[msg.userAvatar]) {
-        // USER AVATAR
-        svgPath = `<path d="${AVATAR_ICONS[msg.userAvatar]}" />`;
-        fill = "none"; // Avatars are line-art usually
-        strokeWidth = "2.5";
+        fill = "none";
+    } else {
+        // GENERIC SIGNAL DOT for Users (The "Fog" aesthetic)
+        svgPath = `<circle cx="12" cy="12" r="5" />`;
+        fill = "currentColor";
+        strokeWidth = "0";
     }
 
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
-            <div class="absolute inset-0 rounded-full animate-ping opacity-20" style="background-color: ${color}"></div>
-            <div class="relative z-10 transition-all duration-300 flex items-center justify-center" style="color: ${color}; filter: drop-shadow(0 0 8px ${glow})">
+            <div class="absolute inset-0 rounded-full animate-ping opacity-20" style="background-color: ${isPrime ? '#eab308' : color}"></div>
+            <div class="relative z-10 transition-all duration-300 flex items-center justify-center" style="color: ${isPrime ? '#eab308' : color}; filter: drop-shadow(0 0 8px ${glow})">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="${viewBox}" fill="${fill}" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
                     ${svgPath}
                 </svg>
@@ -108,9 +119,9 @@ const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, 
     const { t } = useTranslation();
     const isNews = isNewsPost(msg);
     // Include userAvatar/Color in dependency array to refresh markers on profile update
-    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType, msg.userAvatar, msg.userColor]);
+    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType, msg.userAvatar, msg.userColor, msg.isPrime]);
 
-    const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : 'ANONYMOUS');
+    const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : t('dossier.anonymous'));
 
     return (
         <Marker position={position} icon={icon} zIndexOffset={isNews ? 2000 : 0}>
@@ -119,10 +130,10 @@ const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, 
                     <div className="flex justify-between items-center mb-2">
                          <span 
                             className="text-[10px] font-mono font-bold uppercase tracking-wider" 
-                            style={{ color: isNews ? '#ef4444' : (msg.userColor || '#22d3ee') }}
+                            style={{ color: isNews ? '#ef4444' : (msg.isPrime ? '#eab308' : (msg.userColor || '#22d3ee')) }}
                         >
                             {isNews ? 'SYSTEM ALERT' : displayName}
-                         </span>
+                        </span>
                     </div>
                     <p className="text-xs text-gray-200 mb-3 line-clamp-3 leading-relaxed">
                         {isHidden ? t('map.content_hidden') : msg.text.split('\n\n')[0]}
@@ -196,11 +207,12 @@ const MapController: React.FC<{
 };
 
 const ChatMap: React.FC<ChatMapProps> = (props) => {
-  const { messages, signals, onViewportChange, onMapClick, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, hiddenIds, userLocation, scannerStatus, scannerCity } = props;
+  const { messages, signals, onViewportChange, onMapClick, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, hiddenIds, userLocation, scannerStatus, scannerCity, onTeleport, isTeleporting } = props;
   
   const [zoom, setZoom] = useState(3);
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const profile = getUserProfile();
   
   // SPLIT LOGIC: News (Pins) vs Chats (Heatmap/Clusters)
   const newsMessages = useMemo(() => messages.filter(m => isNewsPost(m)), [messages]);
@@ -243,6 +255,14 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
 
   const isMaxZoom = zoom >= 17;
   const radarScale = isMaxZoom ? 1.0 : (zoom <= 7 ? 0.4 : 0.4 + ((zoom - 7) / (13 - 7)) * 0.6);
+
+  // Teleport Handler (Click on Center)
+  const handleTeleport = () => {
+      if (onTeleport && mapRef.current) {
+          const center = mapRef.current.getCenter();
+          onTeleport(center.lat, center.lng);
+      }
+  };
 
   return (
     <div className="fixed inset-0 w-full h-full bg-[#0a0a12] overflow-hidden">
@@ -299,8 +319,11 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
         {userLocation && (
             <Marker position={[userLocation.lat, userLocation.lng]} zIndexOffset={5000} icon={L.divIcon({
                 className: 'bg-transparent border-none',
-                html: `<div class="w-4 h-4 bg-white rounded-full border-2 border-[#0a0a12] shadow-[0_0_10px_white] animate-pulse"></div>`,
-                iconSize: [16, 16], iconAnchor: [8, 8]
+                html: isTeleporting 
+                    ? `<div class="w-6 h-6 rounded-full border-2 border-yellow-400 bg-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.8)] animate-pulse flex items-center justify-center"><div class="w-1.5 h-1.5 bg-yellow-400 rounded-full"></div></div>`
+                    : `<div class="w-4 h-4 bg-white rounded-full border-2 border-[#0a0a12] shadow-[0_0_10px_white] animate-pulse"></div>`,
+                iconSize: isTeleporting ? [24, 24] : [16, 16], 
+                iconAnchor: isTeleporting ? [12, 12] : [8, 8]
             })} />
         )}
         
@@ -334,11 +357,33 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
               </div>
               
               <AnimatePresence>
+                {/* Scanner Status */}
                 {scannerStatus && (
                     <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="absolute -bottom-16 flex flex-col items-center whitespace-nowrap">
                         <span className="font-mono text-[10px] font-bold tracking-[0.3em] uppercase text-white drop-shadow-lg bg-[#0a0a12]/80 px-4 py-1 rounded-full border border-white/10">
                             {scannerStatus} {scannerCity && <span className="text-cyan-400 ml-2">[{scannerCity}]</span>}
                         </span>
+                    </motion.div>
+                )}
+
+                {/* Prime Teleport Button */}
+                {profile.isPrime && !scannerStatus && (
+                    <motion.div 
+                        initial={{ opacity: 0, scale: 0.5 }} 
+                        animate={{ opacity: 1, scale: 1 }} 
+                        className="absolute -top-24 pointer-events-auto"
+                    >
+                        <button 
+                            onClick={handleTeleport}
+                            className={`flex flex-col items-center gap-1 group ${isTeleporting ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'}`}
+                        >
+                            <div className="p-2 rounded-full bg-black/60 border border-current shadow-lg backdrop-blur-md transition-all group-active:scale-95">
+                                <Satellite size={20} />
+                            </div>
+                            <span className="text-[9px] font-black tracking-widest uppercase bg-black/60 px-2 rounded">
+                                {isTeleporting ? props.t?.('map.teleport_active') || "UPLINK ACTIVE" : props.t?.('map.teleport') || "RELOCATE"}
+                            </span>
+                        </button>
                     </motion.div>
                 )}
               </AnimatePresence>

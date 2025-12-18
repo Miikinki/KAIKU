@@ -27,11 +27,17 @@ export interface ChatMessage {
   userDisplayName?: string;
   userAvatar?: string;
   userColor?: string;
+  userLevel?: number; // NEW: Level at time of posting
+  hideLevel?: boolean; // NEW: Privacy preference at time of posting
+  isPrime?: boolean; // NEW: Prime status
 
   // GLOBAL RADAR FIELDS
   postType?: 'USER' | 'GLOBAL_EVENT' | 'SCAN_RESULT';
   eventMetadata?: {
     source_url?: string;
+    user_level?: number;
+    hide_level?: boolean;
+    is_prime?: boolean;
   };
 }
 
@@ -54,7 +60,9 @@ export interface AgentStats {
   id: string;
   rankTitle: string;
   rankLevel: number;
-  progress: number; // 0.0 to 1.0
+  xp: number; // Total XP
+  nextLevelXp: number; // XP needed for next level
+  progress: number; // 0.0 to 1.0 for current level
   totalTransmissions: number;
   signalImpact: number; // Total Score
   repliesReceived: number;
@@ -66,4 +74,12 @@ export interface UserProfile {
   displayName: string | null;
   avatar: string;
   color: string;
+  hideLevel: boolean;
+  
+  // RETENTION & PRIME
+  isPrime: boolean;
+  primeExpiry?: number;
+  streak: number;
+  lastLogin: number; // Timestamp
+  notificationsEnabled: boolean;
 }

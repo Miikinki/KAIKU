@@ -282,7 +282,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
          else if (isWeak && !isNews) borderClass += ' border-orange-500/30';
       }
       
-      const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : 'ANONYMOUS');
+      const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : t('dossier.anonymous'));
       const identityColor = isNews ? '#ef4444' : (msg.userColor || '#9ca3af');
 
       return (
@@ -317,7 +317,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
             {/* Content */}
             <div className={`flex-1 ${isBlurred && !isHidden ? 'blur-sm grayscale opacity-50 hover:blur-none hover:grayscale-0 hover:opacity-100 transition-all duration-300' : ''}`}>
                 <div className="flex justify-between items-start mb-1">
-                    <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500">
+                    <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500 font-medium">
                         {/* Avatar Mini Icon */}
                         {!isNews && msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && (
                             <div className="w-4 h-4 rounded-full border border-white/10 flex items-center justify-center bg-black/30" style={{ color: identityColor }}>
@@ -340,6 +340,13 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                             <span className="font-mono font-bold tracking-wide uppercase text-[10px]" style={{ color: identityColor }}>
                                 {displayName}
                             </span>
+                        )}
+                        
+                        {/* LEVEL BADGE */}
+                        {!isNews && msg.userLevel && !msg.hideLevel && (
+                            <div className="px-1.5 py-0.5 rounded border border-white/10 bg-cyan-900/30 text-cyan-400 text-[9px] font-mono font-black">
+                                LVL {msg.userLevel}
+                            </div>
                         )}
                         
                         {isOp && (

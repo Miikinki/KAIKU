@@ -3,14 +3,15 @@ import { supabase } from './supabaseClient';
 import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS, THEME_COLOR } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { fetchAgentStats } from './statsService'; // Import needed for level calc
 
-const STORAGE_KEY = 'kaiku_local_data'; 
-const USER_ID_KEY = 'kaiku_session_id'; 
-const USER_PROFILE_KEY = 'kaiku_user_profile';
-const USER_VOTES_KEY = 'kaiku_user_votes';
-const LAST_POST_TIMESTAMP_KEY = 'kaiku_last_post_ts';
-const DELETED_IDS_KEY = 'kaiku_deleted_ids'; 
-const HIDDEN_IDS_KEY = 'kaiku_hidden_ids';
+export const STORAGE_KEY = 'kaiku_local_data'; 
+export const USER_ID_KEY = 'kaiku_session_id'; 
+export const USER_PROFILE_KEY = 'kaiku_user_profile';
+export const USER_VOTES_KEY = 'kaiku_user_votes';
+export const LAST_POST_TIMESTAMP_KEY = 'kaiku_last_post_ts';
+export const DELETED_IDS_KEY = 'kaiku_deleted_ids'; 
+export const HIDDEN_IDS_KEY = 'kaiku_hidden_ids';
 
 // --- SEED DATA ---
 
@@ -121,6 +122,18 @@ export const getAnonymousID = (): string => {
   return id;
 };
 
+// Helper for Identity Restoration
+export const restoreSession = (sessionId: string, profile: UserProfile | null) => {
+    localStorage.setItem(USER_ID_KEY, sessionId);
+    if (profile) {
+        localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+    }
+    // Clear local cache to force refresh with new identity
+    localStorage.removeItem(STORAGE_KEY);
+    // Reload page to apply changes cleanly
+    window.location.reload();
+};
+
 // --- PROFILE MANAGEMENT ---
 
 export const getUserProfile = (): UserProfile => {
@@ -132,7 +145,12 @@ export const getUserProfile = (): UserProfile => {
     return {
         displayName: null,
         avatar: 'radar',
-        color: THEME_COLOR
+        color: THEME_COLOR,
+        hideLevel: false,
+        isPrime: false,
+        streak: 0,
+        lastLogin: Date.now(),
+        notificationsEnabled: false
     };
 };
 
@@ -358,7 +376,11 @@ const mapRowToMessage = (d: any): ChatMessage => {
         
         userDisplayName: d.user_display_name,
         userAvatar: d.user_avatar,
-        userColor: d.user_color
+        userColor: d.user_color,
+        // Map new fields from metadata
+        userLevel: d.event_metadata?.user_level,
+        hideLevel: d.event_metadata?.hide_level,
+        isPrime: d.event_metadata?.is_prime
     };
 };
 
@@ -455,6 +477,17 @@ export const saveMessage = async (
   const userId = getAnonymousID();
   const profile = getUserProfile();
 
+  // 1. CALCULATE CURRENT LEVEL (To attach to message)
+  let currentLevel = 1;
+  try {
+      // We do a quick fetch to get current stats. 
+      // Note: This adds latency. In a real high-perf app we'd cache this or update optimistically.
+      const stats = await fetchAgentStats();
+      currentLevel = stats.rankLevel;
+  } catch (e) {
+      console.warn("Failed to fetch level for new post, using default 1");
+  }
+
   if (!moderateContent(text)) {
     throw new Error("Message blocked by moderation.");
   }
@@ -497,6 +530,13 @@ export const saveMessage = async (
 
   const now = Date.now();
   
+  // Construct Metadata with Level
+  const eventMetadata = {
+      user_level: currentLevel,
+      hide_level: profile.hideLevel,
+      is_prime: profile.isPrime // Inject Prime Status
+  };
+
   const newMessage: ChatMessage = {
     id: generateUUID(), 
     text,
@@ -518,10 +558,14 @@ export const saveMessage = async (
     postType: 'USER', 
     userDisplayName: profile.displayName || undefined,
     userAvatar: profile.avatar,
-    userColor: profile.color
+    userColor: profile.color,
+    eventMetadata: eventMetadata,
+    userLevel: currentLevel,
+    hideLevel: profile.hideLevel,
+    isPrime: profile.isPrime
   };
 
-  // 1. SAVE LOCALLY FIRST (Optimistic UI)
+  // 2. SAVE LOCALLY FIRST (Optimistic UI)
   try {
       const stored = localStorage.getItem(STORAGE_KEY);
       const messages = stored ? JSON.parse(stored) : [];
@@ -533,7 +577,7 @@ export const saveMessage = async (
       console.error("Local save failed", localError);
   }
 
-  // 2. ATTEMPT REMOTE SYNC
+  // 3. ATTEMPT REMOTE SYNC
   supabase
       .from('kaiku_posts')
       .insert([{
@@ -553,7 +597,7 @@ export const saveMessage = async (
           user_display_name: newMessage.userDisplayName, 
           user_avatar: newMessage.userAvatar,
           user_color: newMessage.userColor,
-          event_metadata: {},
+          event_metadata: eventMetadata, // Insert level here
       }])
       .then(({ error }) => {
           if (error) {
@@ -576,78 +620,55 @@ export const deleteMessage = async (msgId: string) => {
     } catch (e) {}
 };
 
-/**
- * Handles Up/Down voting logic with toggle support.
- * Updates local cache immediately and sends delta to server.
- */
 export const castVote = async (msgId: string, direction: 'up' | 'down') => {
     const votes = getUserVotes();
-    const currentVote = votes[msgId]; // 'up' | 'down' | undefined
+    const currentVote = votes[msgId]; 
     let scoreDelta = 0;
     let newVoteState: 'up' | 'down' | undefined = undefined;
 
-    // Determine Logic
     if (direction === 'up') {
         if (currentVote === 'up') {
-            // Toggle OFF
             delete votes[msgId];
             scoreDelta = -1;
         } else if (currentVote === 'down') {
-            // Switch Down -> Up
             votes[msgId] = 'up';
             newVoteState = 'up';
-            scoreDelta = 2; // Remove down (-1 becomes 0) then add up (0 becomes 1) -> +2
+            scoreDelta = 2; 
         } else {
-            // New Vote
             votes[msgId] = 'up';
             newVoteState = 'up';
             scoreDelta = 1;
         }
-    } else { // direction === 'down'
+    } else { 
         if (currentVote === 'down') {
-            // Toggle OFF
             delete votes[msgId];
-            scoreDelta = 1; // Remove -1 effect
+            scoreDelta = 1; 
         } else if (currentVote === 'up') {
-            // Switch Up -> Down
             votes[msgId] = 'down';
             newVoteState = 'down';
-            scoreDelta = -2; // Remove up (+1 becomes 0) then add down (0 becomes -1) -> -2
+            scoreDelta = -2; 
         } else {
-            // New Vote
             votes[msgId] = 'down';
             newVoteState = 'down';
             scoreDelta = -1;
         }
     }
 
-    // Save Vote State
     localStorage.setItem(USER_VOTES_KEY, JSON.stringify(votes));
     
-    // 1. Optimistic Local Update
     const stored = localStorage.getItem(STORAGE_KEY);
-    let newTotalScore = 0;
     if (stored) {
         const localData = JSON.parse(stored);
         const msgIndex = localData.findIndex((m: ChatMessage) => m.id === msgId);
         if (msgIndex !== -1) {
             localData[msgIndex].score = (localData[msgIndex].score || 0) + scoreDelta;
-            
-            // Extend lifespan if upvoted
             if (newVoteState === 'up') {
                 localData[msgIndex].expiresAt = (localData[msgIndex].expiresAt || Date.now()) + BOOST_EXTENSION_MS;
             }
-            
-            newTotalScore = localData[msgIndex].score;
             localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
         }
     }
 
-    // 2. Send Delta to Server (RPC preferred, but we use direct update to avoid SQL requirements for user)
-    // Note: Concurrency issue exists here without RPC 'increment', but sufficient for MVP.
-    // Ideally: supabase.rpc('increment_score', { row_id: msgId, delta: scoreDelta })
-    
-    // We will attempt to fetch current score and update it.
     try {
         const { data: currentMsg } = await supabase
             .from('kaiku_posts')
@@ -686,7 +707,7 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
             
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
                 const d = payload.new;
-                const msg = mapRowToMessage(d); // Use helper
+                const msg = mapRowToMessage(d); 
                 callback({ type: 'INSERT', message: msg });
             } else if (payload.eventType === 'DELETE') {
                 callback({ type: 'DELETE', id: payload.old.id });

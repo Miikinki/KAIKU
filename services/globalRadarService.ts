@@ -4,14 +4,19 @@ import { generateUUID } from './storageService';
 import { supabase } from './supabaseClient';
 import { getEnvVar } from './env';
 
-const CACHE_DURATION_MS = 3 * 60 * 60 * 1000;
-const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000; 
+// SHARED WORLD SETTINGS
+const NEWS_TTL_HOURS = 12;
+const NEWS_TTL_MS = NEWS_TTL_HOURS * 60 * 60 * 1000;
 const RADAR_MODEL = 'gemini-3-flash-preview';
+
+// CACHE (API Cost Optimization)
+const API_CACHE_DURATION_MS = 60 * 60 * 1000; 
 
 const cleanJsonString = (text: string): string => {
   let cleaned = text.replace(/```json\n?|```/g, '').trim();
   const firstBracket = cleaned.indexOf('[');
   const lastBracket = cleaned.lastIndexOf(']');
+  
   if (firstBracket !== -1 && lastBracket !== -1) {
       cleaned = cleaned.substring(firstBracket, lastBracket + 1);
   }
@@ -22,15 +27,97 @@ const applyStrongJitter = (coord: number) => {
     return coord + (Math.random() - 0.5) * 0.015;
 };
 
-// --- MOCK DATA FOR DEMO MODE ---
+// --- DB HELPERS ---
+
+const normalizeCacheKey = (query?: string): string => {
+    if (!query) return 'news:global';
+    return `news:${query.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+};
+
+// SHARED WORLD CHECK: Look for active pins in the main feed
+const checkExistingActiveNews = async (cityQuery?: string): Promise<ChatMessage[] | null> => {
+    if (!cityQuery) return null;
+
+    try {
+        const nowISO = new Date().toISOString();
+        
+        // Find news created recently for this specific city/query
+        // We filter by tag or city_name matching the query roughly
+        const { data, error } = await supabase
+            .from('kaiku_posts')
+            .select('*')
+            .eq('post_type', 'GLOBAL_EVENT')
+            .gt('expires_at', nowISO) // Must still be active
+            .textSearch('city_name', cityQuery, { type: 'websearch', config: 'english' }) 
+            .limit(10);
+
+        if (error || !data || data.length === 0) return null;
+
+        console.log(`KAIKU SHARED: Found ${data.length} active news items for ${cityQuery}`);
+        
+        // Map DB rows to ChatMessage
+        return data.map((d: any) => ({
+            id: d.id, 
+            text: d.text, 
+            timestamp: new Date(d.created_at).getTime(), 
+            expiresAt: new Date(d.expires_at).getTime(),
+            location: { lat: Number(d.latitude), lng: Number(d.longitude) }, 
+            city: d.city_name, 
+            country: d.target_country,
+            sessionId: d.session_id, 
+            score: d.score, 
+            replyCount: 0, 
+            isRemote: d.is_remote, 
+            originCountry: d.origin_country, 
+            tags: d.tags, 
+            postType: 'GLOBAL_EVENT', 
+            eventMetadata: d.event_metadata, 
+            isMasked: false,
+            language: d.tags?.find((t: string) => t.startsWith('lang:'))?.split(':')[1] || 'en'
+        }));
+    } catch (e) {
+        console.warn("Shared news check failed", e);
+        return null;
+    }
+};
+
+const checkApiCache = async (key: string): Promise<ChatMessage[] | null> => {
+    try {
+        const { data, error } = await supabase
+            .from('kaiku_news_cache')
+            .select('*')
+            .eq('location_key', key)
+            .gt('expires_at', new Date().toISOString()) 
+            .single();
+
+        if (error || !data) return null;
+        return data.data as ChatMessage[];
+    } catch (e) {
+        return null;
+    }
+};
+
+const saveToApiCache = async (key: string, messages: ChatMessage[]) => {
+    try {
+        // Cache for API cost reduction (1 hour)
+        const expiresAt = new Date(Date.now() + API_CACHE_DURATION_MS).toISOString();
+        await supabase
+            .from('kaiku_news_cache')
+            .upsert({ location_key: key, data: messages, expires_at: expiresAt });
+    } catch (e) {
+        console.warn("Cache save failed", e);
+    }
+};
+
+// --- MOCK DATA ---
 const generateMockEvents = (): ChatMessage[] => {
     const now = Date.now();
     return [
         {
             id: `mock-${now}-1`,
-            text: "SYSTEM ALERT: Simulation Mode Active.\n\nGlobal radar operating in offline simulation. Check Debug Console for API status.",
+            text: "SYSTEM ALERT: Simulation Mode Active.\n\nGlobal radar operating in offline simulation.",
             timestamp: now,
-            expiresAt: now + 3600000,
+            expiresAt: now + NEWS_TTL_MS,
             location: { lat: 60.1699, lng: 24.9384 },
             city: "Helsinki",
             country: "FI",
@@ -39,43 +126,7 @@ const generateMockEvents = (): ChatMessage[] => {
             replyCount: 0,
             isRemote: true,
             originCountry: "FI",
-            tags: ["#SYSTEM", "#SIMULATION"],
-            postType: 'GLOBAL_EVENT',
-            isMasked: false,
-            eventMetadata: {}
-        },
-        {
-            id: `mock-${now}-2`,
-            text: "SIGNAL DETECTED: Anomalous energy readings in Sector 7G.\n\nAtmospheric interference detected.",
-            timestamp: now - 180000,
-            expiresAt: now + 3600000,
-            location: { lat: 40.7128, lng: -74.0060 },
-            city: "New York",
-            country: "US",
-            sessionId: "SYSTEM",
-            score: 50,
-            replyCount: 0,
-            isRemote: true,
-            originCountry: "US",
-            tags: ["#SIGNAL", "#DEMO"],
-            postType: 'GLOBAL_EVENT',
-            isMasked: false,
-            eventMetadata: {}
-        },
-        {
-            id: `mock-${now}-3`,
-            text: "WEATHER WARNING: Solar flare activity increasing. Communications may be disrupted.",
-            timestamp: now - 360000,
-            expiresAt: now + 3600000,
-            location: { lat: 35.6762, lng: 139.6503 },
-            city: "Tokyo",
-            country: "JP",
-            sessionId: "SYSTEM",
-            score: 25,
-            replyCount: 0,
-            isRemote: true,
-            originCountry: "JP",
-            tags: ["#WEATHER", "#DEMO"],
+            tags: ["#SYSTEM", "#DEMO"],
             postType: 'GLOBAL_EVENT',
             isMasked: false,
             eventMetadata: {}
@@ -84,42 +135,57 @@ const generateMockEvents = (): ChatMessage[] => {
 };
 
 export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolean = false): Promise<ChatMessage[]> => {
-  // Check cache first if not a specific search
-  if (!specificQuery && !skipSave) {
-      const cachedEvents = await getCachedEvents();
-      if (cachedEvents.length > 0) return cachedEvents;
+  const cacheKey = normalizeCacheKey(specificQuery);
+  
+  // 1. SHARED WORLD CHECK (Layer 1)
+  // Before calling AI, check if valid news posts already exist in the DB for this location.
+  // This ensures User B sees what User A scanned, without creating duplicates.
+  if (specificQuery && !skipSave) {
+      const existingSharedNews = await checkExistingActiveNews(specificQuery);
+      if (existingSharedNews && existingSharedNews.length > 0) {
+          return existingSharedNews;
+      }
   }
 
-  // Retrieve key from Environment Variables
+  // 2. API CACHE CHECK (Layer 2)
+  // If no public posts exist, check if we have raw JSON cached to save tokens.
+  const cachedRawEvents = await checkApiCache(cacheKey);
+  if (cachedRawEvents) {
+      // Re-hydrate these events as NEW posts (since we didn't find them in Layer 1)
+      const freshPosts = rehydrateEvents(cachedRawEvents);
+      if (!skipSave) await saveToDatabase(freshPosts);
+      return freshPosts;
+  }
+
+  // 3. GENERATE NEW CONTENT (Layer 3)
   const apiKey = getEnvVar('GOOGLE_API_KEY');
   
-  // CRITICAL: Fallback to Demo Mode if key is missing
   if (!apiKey || apiKey.length < 5 || apiKey.includes("REPLACE_WITH")) {
-      console.warn("KAIKU: Google API Key missing or invalid. Switching to DEMO MODE.");
+      console.warn("KAIKU: Google API Key missing. Switching to DEMO MODE.");
       return generateMockEvents();
   }
 
   const ai = new GoogleGenAI({ apiKey });
   
   const prompt = specificQuery 
-    ? `Search for 5 DIFFERENT major current news stories, events, or local developments in ${specificQuery} from the last 24 hours. Use Google Search. Do not repeat the same story. Return 5 unique items.`
-    : "Search for 5 major different global news stories happening right now. Use Google Search.";
+    ? `Find 5 recent news stories or events related to: ${specificQuery}. Use Google Search. Return strictly JSON.`
+    : "Find 5 major global news stories happening right now. Use Google Search. Return strictly JSON.";
 
   const SYSTEM_PROMPT = `
-  You are KAIKU_SCANNER. Your task is to provide real-world situational awareness data.
-  Return ONLY a raw JSON array of 5 objects. Each object MUST represent a DIFFERENT news story.
-  Do not include markdown blocks or explanations.
+  You are KAIKU_SCANNER. 
+  Your task: Return a JSON array of 5 news objects.
+  Format: JSON ONLY. No markdown.
   
-  Each object MUST follow this schema: 
+  Schema per object: 
   { 
-    "headline": string, 
-    "content": string, 
-    "lat": number, 
-    "lng": number, 
-    "city_name": string, 
-    "country_code": string, 
-    "source_url": string,
-    "language": string (ISO 639-1 code of the source text, e.g. "en", "fi", "es")
+    "headline": "Short title", 
+    "content": "2-3 sentence summary", 
+    "lat": 0.0, 
+    "lng": 0.0, 
+    "city_name": "City", 
+    "country_code": "ISO 2-letter code", 
+    "source_url": "URL if available",
+    "language": "ISO 2-letter code"
   }
   `;
 
@@ -134,111 +200,89 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
       }
     });
 
-    const events = processResponse(response.text, skipSave);
-    if (!skipSave && events.length > 0) await saveToDatabase(events);
-    return events;
+    const rawEvents = processResponse(response.text);
+    
+    if (rawEvents.length === 0) {
+        throw new Error("Grounded scan returned 0 events.");
+    }
+
+    // Save RAW result to API Cache (for token saving)
+    await saveToApiCache(cacheKey, rawEvents);
+
+    // Save ACTUAL POSTS to Shared DB (for visibility)
+    if (!skipSave && rawEvents.length > 0) await saveToDatabase(rawEvents);
+    
+    return rawEvents;
 
   } catch (error: any) {
     console.warn("KAIKU: Grounded Scan failed. Retrying with Fallback.", error);
     
-    // Fallback: Try without tools if grounded fails
+    // Fallback: Internal Knowledge
     try {
         const fallbackPrompt = specificQuery 
-            ? `List 5 major likely recent news topics or general knowledge facts about ${specificQuery}.`
-            : "List 5 major global news headlines.";
+            ? `Generate 5 likely recent news headlines about: ${specificQuery}. Based on your internal knowledge.`
+            : "Generate 5 major global news headlines based on your internal knowledge.";
             
         const response = await ai.models.generateContent({
             model: RADAR_MODEL,
             contents: fallbackPrompt,
             config: {
-                systemInstruction: SYSTEM_PROMPT + "\nIMPORTANT: Do not use tools. Generate based on internal knowledge.",
+                systemInstruction: SYSTEM_PROMPT + "\nIMPORTANT: Do not use tools.",
                 responseMimeType: "application/json"
             }
         });
 
-        const events = processResponse(response.text, skipSave);
+        const events = processResponse(response.text);
+        
+        if (events.length === 0 && !specificQuery) return generateMockEvents();
+        
+        if (!skipSave && events.length > 0) await saveToDatabase(events);
         return events;
 
     } catch (fallbackError: any) {
         console.error("KAIKU: Both Scan methods failed.", fallbackError);
-        // Fallback to mock data on total failure
-        return generateMockEvents();
+        if (!specificQuery) return generateMockEvents();
+        return [];
     }
   }
 };
 
-const processResponse = (rawText: string | undefined, skipSave: boolean): ChatMessage[] => {
+const processResponse = (rawText: string | undefined): ChatMessage[] => {
     if (!rawText) return [];
-    
     const jsonText = cleanJsonString(rawText);
     let events = [];
-    
-    try {
-        events = JSON.parse(jsonText);
-    } catch (parseError) {
-        console.error("KAIKU: JSON Parse failed", parseError);
-        return [];
-    }
-    
+    try { events = JSON.parse(jsonText); } catch (e) { return []; }
     if (!Array.isArray(events)) return [];
 
+    return rehydrateEvents(events);
+}
+
+// Helper to turn raw JSON objects into fresh ChatMessages with new IDs and Timestamps
+const rehydrateEvents = (events: any[]): ChatMessage[] => {
     const now = Date.now();
-    const expiry = skipSave ? (now + SCAN_RESULT_DURATION_MS) : (now + CACHE_DURATION_MS); 
+    const expiry = now + NEWS_TTL_MS; // 12 Hours
 
     return events.map((evt: any) => ({
         id: generateUUID(), 
-        text: `${evt.headline}\n\n${evt.content}`,
+        text: evt.text || `${evt.headline}\n\n${evt.content}`,
         timestamp: now,
         expiresAt: expiry,
         location: { 
-            lat: applyStrongJitter(Number(evt.lat) || 0), 
-            lng: applyStrongJitter(Number(evt.lng) || 0) 
+            lat: applyStrongJitter(Number(evt.lat || evt.location?.lat) || 0), 
+            lng: applyStrongJitter(Number(evt.lng || evt.location?.lng) || 0) 
         },
-        city: evt.city_name || "Unknown Sector",
-        country: (evt.country_code || "XX").toUpperCase().slice(0, 2), 
+        city: evt.city_name || evt.city || "Unknown Sector",
+        country: (evt.country_code || evt.country || "XX").toUpperCase().slice(0, 2), 
         sessionId: "SYSTEM_BROADCAST",
-        score: skipSave ? 100 : 999, 
+        score: 999, 
         replyCount: 0,
         isRemote: true,
         originCountry: "SYSTEM", 
-        tags: skipSave ? ["#SCAN_RESULT"] : ["#GLOBAL_ALERT", "#SYSTEM", `#${(evt.country_code || 'XX').toUpperCase()}`],
-        postType: skipSave ? 'SCAN_RESULT' : 'GLOBAL_EVENT',
-        eventMetadata: { source_url: evt.source_url || "" },
+        tags: ["#GLOBAL_ALERT", "#SYSTEM", `#${(evt.country_code || 'XX').toUpperCase()}`],
+        postType: 'GLOBAL_EVENT',
+        eventMetadata: { source_url: evt.source_url || evt.eventMetadata?.source_url || "" },
         isMasked: false,
         language: evt.language || 'en'
-    }));
-}
-
-const getCachedEvents = async (): Promise<ChatMessage[]> => {
-    const nowISO = new Date().toISOString();
-    const { data, error } = await supabase
-        .from('kaiku_posts')
-        .select('*')
-        .eq('post_type', 'GLOBAL_EVENT')
-        .gt('expires_at', nowISO)
-        .order('created_at', { ascending: false })
-        .limit(15);
-
-    if (error || !data) return [];
-    
-    return data.map((d: any) => ({
-        id: d.id, 
-        text: d.text, 
-        timestamp: new Date(d.created_at).getTime(), 
-        expiresAt: new Date(d.expires_at).getTime(),
-        location: { lat: Number(d.latitude), lng: Number(d.longitude) }, 
-        city: d.city_name, 
-        country: d.target_country,
-        sessionId: d.session_id, 
-        score: d.score, 
-        replyCount: 0, 
-        isRemote: d.is_remote, 
-        originCountry: d.origin_country, 
-        tags: d.tags, 
-        postType: 'GLOBAL_EVENT', 
-        eventMetadata: d.event_metadata, 
-        isMasked: false,
-        language: d.tags?.find((t: string) => t.startsWith('lang:'))?.split(':')[1] || 'en'
     }));
 };
 
@@ -262,6 +306,7 @@ const saveToDatabase = async (messages: ChatMessage[]) => {
     
     try {
         await supabase.from('kaiku_posts').insert(rows);
+        console.log(`KAIKU DB: Persisted ${messages.length} global events.`);
     } catch (e) {
         console.error("KAIKU: Failed to persist radar events to DB", e);
     }

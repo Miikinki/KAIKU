@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Radio, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff, AlertTriangle } from 'lucide-react';
+import { Radio, Shield, Loader2, ChevronRight, Globe, Lock, EyeOff, AlertTriangle, Key, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getIpLocation } from '../services/moderationService';
 import { getPreciseLocation } from '../services/locationService';
 import { useTranslation } from 'react-i18next';
+import { restoreIdentity } from '../services/identityService';
+import { triggerHaptic } from '../services/hapticService';
 
 interface WelcomeScreenProps {
   onStart: (location: { lat: number; lng: number }, isFallback: boolean) => void;
@@ -13,6 +15,11 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Restore Flow
+  const [view, setView] = useState<'intro' | 'restore'>('intro');
+  const [restoreCode, setRestoreCode] = useState('');
+  const [isRestoring, setIsRestoring] = useState(false);
 
   // Intro animation sequence
   const [showContent, setShowContent] = useState(false);
@@ -24,6 +31,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const handleConnect = async () => {
     setIsLoading(true);
     setError(null);
+    triggerHaptic('light');
     
     try {
         // Attempt high precision first
@@ -78,6 +86,25 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
     if (!error) setError(t('welcome.error_signal_lost'));
   };
 
+  const handleRestoreSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!restoreCode.trim()) return;
+      
+      setIsRestoring(true);
+      setError(null);
+      triggerHaptic('light');
+
+      try {
+          await restoreIdentity(restoreCode);
+          // Success handled inside restoreIdentity via page reload, but just in case:
+          triggerHaptic('success');
+      } catch (err: any) {
+          setError(err.message || "Failed to restore identity");
+          triggerHaptic('error');
+          setIsRestoring(false);
+      }
+  };
+
   return (
     <div className="fixed inset-0 bg-[#020203] flex items-center justify-center overflow-hidden font-sans text-white z-[9999]">
       
@@ -126,66 +153,123 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
                     {t('welcome.subtitle')}
                 </p>
 
-                <div className="w-full space-y-6 mb-12">
-                    <FeatureRow 
-                        icon={<Globe size={18} />} 
-                        title={t('welcome.feature_scan_title')}
-                        desc={t('welcome.feature_scan_desc')} 
-                        delay={0.1}
-                    />
-                    <FeatureRow 
-                        icon={<EyeOff size={18} />} 
-                        title={t('welcome.feature_ghost_title')}
-                        desc={t('welcome.feature_ghost_desc')} 
-                        delay={0.2}
-                    />
-                    <FeatureRow 
-                        icon={<Lock size={18} />} 
-                        title={t('welcome.feature_decay_title')}
-                        desc={t('welcome.feature_decay_desc')}
-                        delay={0.3}
-                    />
-                </div>
+                <AnimatePresence mode="wait">
+                    {view === 'intro' ? (
+                        <motion.div 
+                            key="intro"
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            className="w-full space-y-6"
+                        >
+                            <div className="w-full space-y-6 mb-12">
+                                <FeatureRow 
+                                    icon={<Globe size={18} />} 
+                                    title={t('welcome.feature_scan_title')}
+                                    desc={t('welcome.feature_scan_desc')} 
+                                    delay={0.1}
+                                />
+                                <FeatureRow 
+                                    icon={<EyeOff size={18} />} 
+                                    title={t('welcome.feature_ghost_title')}
+                                    desc={t('welcome.feature_ghost_desc')} 
+                                    delay={0.2}
+                                />
+                                <FeatureRow 
+                                    icon={<Lock size={18} />} 
+                                    title={t('welcome.feature_decay_title')}
+                                    desc={t('welcome.feature_decay_desc')}
+                                    delay={0.3}
+                                />
+                            </div>
+
+                            <button
+                                onClick={handleConnect}
+                                disabled={isLoading}
+                                className="relative w-full h-16 bg-white hover:bg-gray-100 text-black rounded-xl overflow-hidden transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] disabled:opacity-50 disabled:cursor-not-allowed group/btn"
+                            >
+                                <div className="absolute inset-0 flex items-center justify-center gap-3 z-10">
+                                    {isLoading ? (
+                                        <div className="flex items-center gap-3 font-mono text-xs font-bold tracking-widest uppercase">
+                                            <Loader2 size={20} className="animate-spin text-cyan-500" />
+                                            <span>INITIALIZING UPLINK...</span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-3 font-mono text-xs font-bold tracking-widest uppercase">
+                                            <span>{t('welcome.btn_initialize')}</span>
+                                            <ChevronRight size={20} className="group-hover/btn:translate-x-1 transition-transform" />
+                                        </div>
+                                    )}
+                                </div>
+                                {isLoading && (
+                                    <motion.div 
+                                        className="absolute inset-0 bg-cyan-300/10 origin-left"
+                                        initial={{ scaleX: 0 }}
+                                        animate={{ scaleX: 1 }}
+                                        transition={{ duration: 1.2, ease: "linear" }} 
+                                    />
+                                )}
+                            </button>
+
+                            <button 
+                                onClick={() => setView('restore')}
+                                className="text-[10px] font-mono tracking-widest text-gray-500 hover:text-cyan-400 transition-colors uppercase flex items-center justify-center gap-2 mx-auto"
+                            >
+                                <Key size={12} />
+                                {t('welcome.btn_restore')}
+                            </button>
+                        </motion.div>
+                    ) : (
+                        <motion.div
+                            key="restore"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: 20 }}
+                            className="w-full"
+                        >
+                            <div className="mb-6 flex items-center justify-between">
+                                <button 
+                                    onClick={() => { setView('intro'); setError(null); }}
+                                    className="p-2 text-gray-500 hover:text-white transition-colors"
+                                >
+                                    <ArrowLeft size={20} />
+                                </button>
+                                <span className="text-xs font-bold font-mono text-cyan-500 uppercase tracking-widest">
+                                    {t('welcome.btn_restore')}
+                                </span>
+                                <div className="w-9" />
+                            </div>
+
+                            <form onSubmit={handleRestoreSubmit} className="space-y-4">
+                                <input 
+                                    type="text" 
+                                    value={restoreCode}
+                                    onChange={(e) => setRestoreCode(e.target.value)}
+                                    placeholder={t('welcome.restore_placeholder')}
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-4 text-white font-mono text-center font-bold tracking-widest focus:outline-none focus:border-cyan-500/50 uppercase placeholder-gray-700"
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={isRestoring || !restoreCode}
+                                    className="w-full h-14 bg-cyan-900/40 hover:bg-cyan-900/60 border border-cyan-500/30 text-cyan-400 rounded-xl font-mono text-xs font-bold tracking-widest uppercase transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {isRestoring ? <Loader2 size={16} className="animate-spin" /> : t('welcome.restore_submit')}
+                                </button>
+                            </form>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {error && (
                     <motion.div 
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mb-6 px-4 py-3 w-full bg-red-950/30 border border-red-500/30 rounded-lg text-red-400 text-xs font-mono flex items-center justify-center gap-2"
+                        className="mt-6 px-4 py-3 w-full bg-red-950/30 border border-red-500/30 rounded-lg text-red-400 text-xs font-mono flex items-center justify-center gap-2"
                     >
                         <AlertTriangle size={14} className="shrink-0" />
                         <span>{error}</span>
                     </motion.div>
                 )}
-
-                <button
-                    onClick={handleConnect}
-                    disabled={isLoading}
-                    className="relative w-full h-16 bg-white hover:bg-gray-100 text-black rounded-xl overflow-hidden transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(6,182,212,0.3)] disabled:opacity-50 disabled:cursor-not-allowed group/btn"
-                >
-                    <div className="absolute inset-0 flex items-center justify-center gap-3 z-10">
-                        {isLoading ? (
-                            <div className="flex items-center gap-3 font-mono text-xs font-bold tracking-widest uppercase">
-                                <Loader2 size={20} className="animate-spin text-cyan-500" />
-                                <span>INITIALIZING UPLINK...</span>
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-3 font-mono text-xs font-bold tracking-widest uppercase">
-                                <span>{t('welcome.btn_initialize')}</span>
-                                <ChevronRight size={20} className="group-hover/btn:translate-x-1 transition-transform" />
-                            </div>
-                        )}
-                    </div>
-                    
-                    {isLoading && (
-                        <motion.div 
-                            className="absolute inset-0 bg-cyan-300/10 origin-left"
-                            initial={{ scaleX: 0 }}
-                            animate={{ scaleX: 1 }}
-                            transition={{ duration: 1.2, ease: "linear" }} 
-                        />
-                    )}
-                </button>
 
                 <p className="mt-6 text-[10px] text-gray-600 font-mono">
                     {t('welcome.footer_version')}

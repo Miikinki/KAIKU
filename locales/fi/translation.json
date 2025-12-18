@@ -80,6 +80,9 @@
     "error_signal_lost": "SIGNAALI KATKESI. TARKISTA GPS/VERKKO.",
     "error_permission": "SIJAINTILUPA VAADITAAN",
     "btn_initialize": "ALUSTA YHTEYS",
+    "btn_restore": "PALAUTA IDENTITEETTI",
+    "restore_placeholder": "SYÖTÄ SIIRTOAVAIN",
+    "restore_submit": "MUODOSTA LINKKI",
     "footer_version": "v2.0 • SALATTU YHTEYS"
   },
   "boot": {
@@ -92,7 +95,7 @@
     "read_original": "Lue alkuperäinen ({{source}}) →"
   },
   "dossier": {
-    "title": "AGENTTI TIEDOSTO",
+    "title": "IDENTITEETTI",
     "edit_identity": "MUOKKAA IDENTITEETTIÄ",
     "configure_visuals": "Määritä visuaalinen allekirjoitus",
     "clearance": "TURVALUOKITUS",
@@ -102,10 +105,39 @@
     "sectors": "AKTIIVISET SEKTORIT",
     "scans": "UUTISIA SKANNATTU",
     "footer": "TIEDOT SALATTU • VAIN SINULLE",
-    "callsign": "KUTSUNIMI",
-    "anonymous": "ANONYMOUS",
+    "callsign": "NIMIMERKKI",
+    "anonymous": "TUNTEMATON",
     "icon": "IKONI",
     "color": "VÄRI",
-    "save_identity": "TALLENNA IDENTITEETTI"
+    "save_identity": "TALLENNA IDENTITEETTI",
+    "hide_level": "PIILOTA TASO MUILTA",
+    "transfer_title": "LAITTEENVAIHTO & VARMUUSKOPIO",
+    "generate_key": "LUO SIIRTOAVAIN",
+    "key_warning": "KIRJOITA TÄMÄ YLÖS. TÄTÄ KOODIA EI VOI PALAUTTAA JOS SE HUKKUU.",
+    "key_generated": "AVAIN LUOTU",
+    "notifications": "ILMOITUKSET",
+    "notifications_desc": "Hälytys vastauksista ja piikeistä",
+    "streak": "UPLINK-PUTKI",
+    "days": "PV",
+    "prime_status": "OPERATOR PRIME",
+    "ranks": {
+        "1": "TARKKAILIJA",
+        "2": "VIESTITTÄJÄ",
+        "3": "OPERAATTORI",
+        "4": "MAJAKKA"
+    }
+  },
+  "prime": {
+    "title": "OPERATOR PRIME",
+    "subtitle": "ELITE CLEARANCE LEVEL",
+    "feature_teleport": "SATELLITE UPLINK (TELEPORT)",
+    "feature_teleport_desc": "Lähetä ja vastaanota mistä tahansa sektorista.",
+    "feature_gold": "KULTAINEN SIGNAALI",
+    "feature_gold_desc": "Erotu joukosta eliittistatuksella.",
+    "feature_alert": "PRIORITEETTIHÄLYTYKSET",
+    "feature_alert_desc": "Välitön tieto liikenteestä.",
+    "price": "4.99€ / KK",
+    "btn_activate": "AKTIVOI PRIME-STATUS",
+    "active": "STATUS AKTIIVINEN"
   }
 }

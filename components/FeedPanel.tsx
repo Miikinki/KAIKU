@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock, Newspaper, ExternalLink, Sparkles, Languages, Loader2 } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock, Newspaper, ExternalLink, Sparkles, Languages, Loader2, RefreshCw } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
 import { translateText } from '../services/translationService';
@@ -64,6 +64,11 @@ const formatRelativeTime = (timestamp: number) => {
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
     return new Date(timestamp).toLocaleDateString(); 
+};
+
+// Helper for absolute time (for cached news)
+const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const FeedPanel: React.FC<FeedPanelProps> = ({ 
@@ -541,7 +546,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 }
 
                 // Identity Styling
-                const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : 'ANONYMOUS');
+                const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : t('dossier.anonymous'));
                 const identityColor = isNews ? '#ef4444' : (msg.userColor || (isMe ? '#06b6d4' : '#9ca3af'));
 
                 return (
@@ -592,6 +597,13 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             <span className="font-mono font-bold tracking-wide uppercase text-[10px]" style={{ color: identityColor }}>
                                 {displayName}
                             </span>
+                            
+                            {/* LEVEL BADGE */}
+                            {!isNews && msg.userLevel && !msg.hideLevel && (
+                                <div className="px-1.5 py-0.5 rounded border border-white/10 bg-cyan-900/30 text-cyan-400 text-[9px] font-mono font-black">
+                                    LVL {msg.userLevel}
+                                </div>
+                            )}
                             
                             <span>•</span>
                             
@@ -683,18 +695,25 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             </p>
                             
                             <div className="flex items-center justify-between pt-2">
-                                {sourceUrl && (
-                                    <a 
-                                        href={sourceUrl} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
-                                    >
-                                        {t('news.read_original', { source: sourceName })}
-                                        <ExternalLink size={10} />
-                                    </a>
-                                )}
+                                <div className="flex items-center gap-3">
+                                    {sourceUrl && (
+                                        <a 
+                                            href={sourceUrl} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
+                                        >
+                                            {t('news.read_original', { source: sourceName })}
+                                            <ExternalLink size={10} />
+                                        </a>
+                                    )}
+                                    {/* CACHE TIME INDICATOR */}
+                                    <span className="flex items-center gap-1 text-[9px] font-mono text-gray-500 uppercase tracking-tight" title="Data fetched time">
+                                        <RefreshCw size={8} />
+                                        UPDATED: {formatTime(msg.timestamp)}
+                                    </span>
+                                </div>
 
                                 {isTranslated && (
                                     <span className="text-[9px] font-mono text-cyan-500/50 flex items-center gap-1 uppercase tracking-tighter">

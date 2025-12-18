@@ -8,11 +8,22 @@
  * 1. Run the SQL in Supabase to create the 'kaiku_posts' table and add new columns.
  * 2. Paste your URL and SERVICE_ROLE_KEY below.
  * 3. Run: node seed_world.js
+ * 
+ * --- SQL FOR CACHING (REQUIRED FOR NEWS SCANNER) ---
+ * 
+ * create table if not exists kaiku_news_cache (
+ *   location_key text primary key,
+ *   data jsonb not null,
+ *   expires_at timestamptz not null,
+ *   created_at timestamptz default now()
+ * );
+ * 
+ * ---------------------------------------------------
  */
 
 // --- CONFIGURATION: PASTE CREDENTIALS HERE ---
-const MANUAL_URL = ""; 
-const MANUAL_KEY = ""; 
+const MANUAL_URL = "https://njaujopcvyuqtnsjslxi.supabase.co"; 
+const MANUAL_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYXVqb3Bjdnl1cXRuc2pzbHhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzOTEzNjgsImV4cCI6MjA4MDk2NzM2OH0.xVEtbHoiZMpWgzI21IpZrWHKEAcUIGimT-tJ_14N6c4"; 
 // ---------------------------------------------
 
 require('dotenv').config();

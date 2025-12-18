@@ -10,21 +10,22 @@ import DesktopLanding from './components/DesktopLanding';
 import TerminalScanner from './components/TerminalScanner';
 import AgentDossier from './components/AgentDossier';
 import DebugOverlay from './components/DebugOverlay';
+import { Toast } from './components/Toast'; 
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, getHiddenIds, toggleHiddenMessage } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, getHiddenIds, toggleHiddenMessage, getUserProfile } from './services/storageService';
 import { scanGlobalNetwork } from './services/globalRadarService';
 import { getCityName, searchLocations } from './services/moderationService';
 import { getPreciseLocation } from './services/locationService';
 import { SoundService } from './services/soundService';
-import { incrementScanCount } from './services/statsService';
+import { incrementScanCount, processDailyLogin } from './services/statsService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
 import { triggerHaptic } from './services/hapticService';
 import { useTranslation } from 'react-i18next';
 
 const BASE_SCAN_RADIUS_PX = 128; 
-const SCAN_MOVE_THRESHOLD_KM = 20; // Etäisyys jolloin "Hae tältä alueelta" ilmestyy
-const LIST_VIEW_RADIUS_KM = 20; // Fixed radius for list view
+const SCAN_MOVE_THRESHOLD_KM = 20; 
+const LIST_VIEW_RADIUS_KM = 20; 
 
 type AppState = 'welcome' | 'boot' | 'app';
 type ViewMode = 'map' | 'list';
@@ -35,9 +36,10 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [isDesktop, setIsDesktop] = useState(false);
 
+  // UNIFIED MESSAGE STREAM
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
-  const [globalEvents, setGlobalEvents] = useState<ChatMessage[]>([]); 
-  const [scanResults, setScanResults] = useState<ChatMessage[]>([]); 
+  
+  // Signals for Arc Layer
   const [signals, setSignals] = useState<ChatMessage[]>([]);
   
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
@@ -52,7 +54,6 @@ function App() {
   const [lastScannedCenter, setLastScannedCenter] = useState<{lat: number, lng: number} | null>(null);
   const [isMapDirty, setIsMapDirty] = useState(false);
   
-  // NEW: State for contextual scanner button
   const [scanLocationName, setScanLocationName] = useState<string | null>(null);
   const [isDossierOpen, setIsDossierOpen] = useState(false);
   
@@ -61,8 +62,12 @@ function App() {
   
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
   const [currentUserLocation, setCurrentUserLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [currentCityName, setCurrentCityName] = useState<string | null>(null); // For List View Header
-  const [currentCountry, setCurrentCountry] = useState<string | null>(null); // For Reply Foreign Indicators
+  
+  // PRIME TELEPORT: Virtual Location State
+  const [virtualLocation, setVirtualLocation] = useState<{lat: number, lng: number} | null>(null);
+  
+  const [currentCityName, setCurrentCityName] = useState<string | null>(null); 
+  const [currentCountry, setCurrentCountry] = useState<string | null>(null); 
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); 
   
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
@@ -73,6 +78,7 @@ function App() {
   const [isScanningGlobal, setIsScanningGlobal] = useState(false); 
   const [scannerStatus, setScannerStatus] = useState<string | null>(null);
   const [scannerCity, setScannerCity] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   // Debug / Status State
   const [isDemoMode, setIsDemoMode] = useState(false);
@@ -86,6 +92,18 @@ function App() {
   });
 
   const [nearbyTypingCount, setNearbyTypingCount] = useState(0);
+
+  // EFFECT: Check Daily Streak on App Start
+  useEffect(() => {
+      const result = processDailyLogin();
+      if (result) {
+          // Add small delay so it appears after boot
+          setTimeout(() => {
+              setToastMessage(`${result.message} (+${result.xpGained} XP)`);
+              SoundService.playSuccess();
+          }, 4000);
+      }
+  }, []);
 
   useEffect(() => {
     const checkDevice = () => {
@@ -147,23 +165,12 @@ function App() {
       }
   }, [appState]);
 
-  useEffect(() => {
-      if (scanResults.length === 0) return;
-      const interval = setInterval(() => {
-          const now = Date.now();
-          setScanResults(prev => prev.filter(r => r.expiresAt > now));
-      }, 30000); 
-      return () => clearInterval(interval);
-  }, [scanResults.length]);
-
   const performGlobalScan = async (specificQuery?: string) => {
       if (isScanningGlobal) return;
       setIsScanningGlobal(true);
       setScannerStatus(t('welcome.status_acquiring'));
       setScannerCity(null);
       setIsMapDirty(false); 
-      
-      incrementScanCount();
       
       const isTargeted = !!specificQuery;
       if (isTargeted) {
@@ -172,6 +179,8 @@ function App() {
           triggerHaptic('light');
       }
       
+      let effectiveCityName = "Global";
+
       try {
           let scanCoord = currentBounds?.sectorCenter || currentBounds?.center || locationCache.current;
           
@@ -179,6 +188,7 @@ function App() {
               const res = await searchLocations(specificQuery);
               if (res) {
                   setScannerCity(res.name);
+                  effectiveCityName = res.name;
                   setScannerStatus(t('welcome.status_target', { city: res.name }));
                   await new Promise(r => setTimeout(r, 1000));
                   setFlyToLocation({ lat: res.lat, lng: res.lng, timestamp: Date.now(), bounds: res.bounds });
@@ -187,6 +197,7 @@ function App() {
           } else if (scanCoord) {
               const cityData = await getCityName(scanCoord.lat, scanCoord.lng);
               const cityName = cityData.city || "Sector X";
+              effectiveCityName = cityName;
               setScannerCity(cityName);
               setScannerStatus(t('welcome.status_target', { city: cityName }));
               await new Promise(r => setTimeout(r, 800));
@@ -196,7 +207,7 @@ function App() {
 
           setScannerStatus(t('welcome.status_scanning_freq'));
           
-          // CRITICAL: Call the service
+          // SERVICE CALL:
           const events = await scanGlobalNetwork(specificQuery, isTargeted);
           await new Promise(r => setTimeout(r, 600));
           
@@ -205,19 +216,18 @@ function App() {
               if (events[0].tags?.includes('#DEMO')) {
                   setIsDemoMode(true);
               }
-
-              if (isTargeted) {
-                  setScanResults(prev => [...prev, ...events]);
-              } else {
-                  setGlobalEvents(prev => {
-                      const map = new Map(prev.map(p => [p.id, p]));
-                      events.forEach(e => map.set(e.id, e));
-                      return Array.from(map.values());
-                  });
-              }
+              
               SoundService.playSuccess();
+              // Force a reload to see new pins immediately
+              loadData(); 
+              
+              const earnedCredit = incrementScanCount(effectiveCityName);
+              if (earnedCredit) {
+                  setToastMessage(`INTEL ACQUIRED: ${effectiveCityName.toUpperCase()}`);
+                  triggerHaptic('success');
+              } 
+
           } else {
-              // Notify user if specific search found nothing
               if (isTargeted) {
                   alert(`Signal intercept failed for: ${specificQuery}. No news found.`);
               }
@@ -225,8 +235,6 @@ function App() {
       } catch (e: any) {
           console.error("Global scan failed", e);
           setLastError(`Scan: ${e.message}`);
-          // Only show alert for manual targeted searches. 
-          // Suppress errors for auto-scans to prevent startup annoyance.
           if (isTargeted) {
              alert(`Scanner Error: ${e.message || "Connection Failed"}`);
           }
@@ -251,10 +259,13 @@ function App() {
                     setGpsAccuracy(accuracy);
                     
                     // Update City Name & Country occasionally
-                    getCityName(latitude, longitude).then(d => {
-                         if (d.city && d.city !== currentCityName) setCurrentCityName(d.city);
-                         if (d.countryCode) setCurrentCountry(d.countryCode);
-                    });
+                    // Only update city name if NOT teleporting (teleport handles its own name)
+                    if (!virtualLocation) {
+                        getCityName(latitude, longitude).then(d => {
+                             if (d.city && d.city !== currentCityName) setCurrentCityName(d.city);
+                             if (d.countryCode) setCurrentCountry(d.countryCode);
+                        });
+                    }
 
                     localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
                     if (isFallbackLocation) {
@@ -273,7 +284,7 @@ function App() {
     return () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
-  }, [isRunning, isFallbackLocation, currentCityName]);
+  }, [isRunning, isFallbackLocation, currentCityName, virtualLocation]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -300,25 +311,27 @@ function App() {
     return () => { if (subMessages) subMessages.unsubscribe(); };
   }, [isRunning]);
 
+  // Combined messages for map
   const mapMessages = useMemo(() => {
-      const combined = [...globalEvents, ...scanResults, ...messages];
       const unique = new Map();
-      combined.forEach(m => unique.set(m.id, m));
+      messages.forEach(m => unique.set(m.id, m));
       return Array.from(unique.values());
-  }, [globalEvents, scanResults, messages]);
+  }, [messages]);
+
+  // Use Virtual Location if Active, else User GPS
+  const effectiveLocation = virtualLocation || currentUserLocation;
 
   useEffect(() => {
-    // Determine filtering logic based on View Mode
     const now = Date.now();
     let centerLat: number;
     let centerLng: number;
     let effectiveRadiusKm: number;
 
     if (viewMode === 'list') {
-        // List Mode: Use User GPS + Fixed Radius
-        if (!currentUserLocation) return;
-        centerLat = currentUserLocation.lat;
-        centerLng = currentUserLocation.lng;
+        // List Mode: Use Effective Location (Virtual or GPS)
+        if (!effectiveLocation) return;
+        centerLat = effectiveLocation.lat;
+        centerLng = effectiveLocation.lng;
         effectiveRadiusKm = LIST_VIEW_RADIUS_KM;
     } else {
         // Map Mode: Use Viewport Bounds
@@ -338,7 +351,6 @@ function App() {
       
       const dist = calculateDistance(centerLat, centerLng, m.location.lat, m.location.lng);
       
-      // Global events have wider radius
       const radiusToCheck = (m.postType === 'GLOBAL_EVENT' || m.postType === 'SCAN_RESULT') 
           ? effectiveRadiusKm * 2.5 
           : effectiveRadiusKm;
@@ -349,7 +361,6 @@ function App() {
     visible = visible.sort((a, b) => b.timestamp - a.timestamp);
     setVisibleMessages(visible);
     
-    // Tarkistetaan onko kartta liikkunut merkittävästi skannauksesta (Only relevant in Map mode)
     if (viewMode === 'map' && lastScannedCenter && !isScanningGlobal) {
         const dist = calculateDistance(centerLat, centerLng, lastScannedCenter.lat, lastScannedCenter.lng);
         if (dist > SCAN_MOVE_THRESHOLD_KM) {
@@ -358,17 +369,14 @@ function App() {
             setIsMapDirty(false);
         }
     }
-  }, [mapMessages, currentBounds, lastScannedCenter, isScanningGlobal, viewMode, currentUserLocation]); 
+  }, [mapMessages, currentBounds, lastScannedCenter, isScanningGlobal, viewMode, effectiveLocation]); 
 
   // EFFECT: Fetch Contextual Name for Scanner Button when map moves
   useEffect(() => {
       if (viewMode !== 'map' || !currentBounds) return;
-      
       const { lat, lng } = currentBounds.center;
       
-      // Fetch new name based on center
       getCityName(lat, lng).then(data => {
-          // If Zoom <= 6, use Country Name. Else use City Name.
           if (currentBounds.zoom <= 6) {
               setScanLocationName(data.countryName || data.countryCode);
           } else {
@@ -388,7 +396,6 @@ function App() {
   const handleMessageClick = useCallback((msg: ChatMessage) => {
       triggerHaptic('light'); 
       setFocusedMessage(null);
-      // Zoomataan kartta ja avataan modal heti
       setTimeout(() => setFocusedMessage(msg), 50);
       setSelectedMessage(msg);
       if (viewMode === 'map') setIsFeedOpen(false);   
@@ -409,6 +416,8 @@ function App() {
   const handleLocateMe = async () => {
       setIsLocating(true);
       triggerHaptic('light');
+      // Clear Virtual Location on GPS locate
+      setVirtualLocation(null); 
       try {
           const res = await getPreciseLocation();
           const loc = { lat: res.lat, lng: res.lng };
@@ -423,6 +432,20 @@ function App() {
       }
   };
 
+  // NEW: Teleport Handler
+  const handleTeleport = (lat: number, lng: number) => {
+      triggerHaptic('heavy');
+      const newLoc = { lat, lng };
+      setVirtualLocation(newLoc);
+      
+      // Update Name Context
+      getCityName(lat, lng).then(d => {
+          setCurrentCityName(d.city);
+          if (d.countryCode) setCurrentCountry(d.countryCode);
+          setToastMessage(`SATELLITE UPLINK ESTABLISHED: ${d.city.toUpperCase()}`);
+      });
+  };
+
   const handleOpenInput = () => {
       triggerHaptic('light');
       setTargetLocation(null); 
@@ -432,17 +455,23 @@ function App() {
   const handleToggleView = () => {
       triggerHaptic('light');
       setViewMode(prev => prev === 'map' ? 'list' : 'map');
-      // Reset active selections when switching
       setSelectedMessage(null);
       setFocusedMessage(null);
       setIsFeedOpen(false);
   };
 
-  // CRITICAL FIX: Robust Input Opening
-  // Immediately use cached location so user isn't stuck on "Locating..."
+  // Updated Input Opening logic to respect Virtual Location
   useEffect(() => {
     if (isInputOpen && !targetLocation) {
         
+        // 0. VIRTUAL LOCATION (Priority 1)
+        if (virtualLocation) {
+             getCityName(virtualLocation.lat, virtualLocation.lng).then(nameData => {
+                setTargetLocation({ lat: virtualLocation.lat, lng: virtualLocation.lng, name: nameData.city });
+            });
+            return;
+        }
+
         // 1. Instant Cache Hit (Fastest)
         if (locationCache.current) {
             const cachedLat = locationCache.current.lat;
@@ -456,11 +485,9 @@ function App() {
         // 2. Background Refresh (Precision)
         const acquireLocation = async () => {
             try {
-                // Try to get fresh location with the new robust service
                 const res = await getPreciseLocation();
                 const nameData = await getCityName(res.lat, res.lng);
                 
-                // Update target and cache
                 setTargetLocation({ lat: res.lat, lng: res.lng, name: nameData.city });
                 locationCache.current = { lat: res.lat, lng: res.lng };
                 
@@ -468,7 +495,6 @@ function App() {
                 console.warn("Input GPS failed, using fallback/cache logic...", e);
                 setLastError(`Input GPS: ${e.message}`);
                 
-                // If we didn't have a cache hit earlier, we MUST set something now or modal hangs
                 if (!locationCache.current) {
                      setTargetLocation({ lat: 0, lng: 0, name: "Unknown Sector" });
                 }
@@ -477,49 +503,33 @@ function App() {
         
         acquireLocation();
     }
-  }, [isInputOpen]);
+  }, [isInputOpen, virtualLocation]);
 
   const handleSaveMessage = async (text: string, imageUrl?: string, isMasked: boolean = false) => {
     let finalLat = 0;
     let finalLng = 0;
 
-    // IMMEDIATE SEND LOGIC: Never await getPreciseLocation inside the submit handler
-    // This prevents the button from freezing/spinning indefinitely on bad networks
+    // IMMEDIATE SEND LOGIC
     if (targetLocation) {
         finalLat = targetLocation.lat;
         finalLng = targetLocation.lng;
-    } else if (locationCache.current) {
-        finalLat = locationCache.current.lat;
-        finalLng = locationCache.current.lng;
-    } else if (currentUserLocation) {
-        finalLat = currentUserLocation.lat;
-        finalLng = currentUserLocation.lng;
+    } else if (effectiveLocation) {
+        finalLat = effectiveLocation.lat;
+        finalLng = effectiveLocation.lng;
     } else {
-        // Absolute fallback: 0,0. Better to send a broken location than block the user.
         console.warn("Forcing blind send (0,0)");
         finalLat = 0;
         finalLng = 0;
         setLastError("Sent with 0,0 coords (GPS Lock Missing)");
     }
 
-    // We pass finalLat/Lng as BOTH target and user location for simplicity in this fallback scenario
     await saveMessage(text, finalLat, finalLng, finalLat, finalLng, undefined, imageUrl, isMasked);
     await loadData();
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
-      // IMMEDIATE REPLY LOGIC: Use cache or die trying (0,0)
-      // Never block UI on reply for GPS
-      let userLoc = locationCache.current;
-      
-      if (!userLoc) {
-          if (currentUserLocation) {
-              userLoc = currentUserLocation;
-          } else {
-              // Blind reply
-              userLoc = { lat: 0, lng: 0 };
-          }
-      }
+      // Use effective location (Virtual or GPS)
+      let userLoc = effectiveLocation || { lat: 0, lng: 0 };
       
       await saveMessage(text, userLoc.lat, userLoc.lng, userLoc.lat, userLoc.lng, parentId);
       await loadData();
@@ -545,14 +555,12 @@ function App() {
   
   if (isDesktop) return <DesktopLanding />;
 
-  // Logic to determine if FAB is visible.
-  // Map Mode: Hidden if Input/Feed/Details open OR if there are visible messages (because FeedPanel covers bottom).
-  // List Mode: Always visible unless Input/Details open. FeedPanel is the main view, so FAB floats above it.
   const shouldHideFAB = isInputOpen || selectedMessage || (viewMode === 'map' && (isFeedOpen || visibleMessages.length > 0));
 
   return (
     <>
-        <DebugOverlay gpsAccuracy={gpsAccuracy} userLocation={currentUserLocation} lastError={lastError} />
+        <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
+        <DebugOverlay gpsAccuracy={gpsAccuracy} userLocation={effectiveLocation} lastError={lastError} />
 
         <AnimatePresence mode="wait">
             {appState === 'boot' && (
@@ -567,7 +575,6 @@ function App() {
         {appState === 'app' && (
             <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
             
-            {/* Conditional Rendering of Map vs List container */}
             <div style={{ display: viewMode === 'map' ? 'block' : 'none', width: '100%', height: '100%' }}>
                 <ChatMap 
                     messages={mapMessages} 
@@ -582,10 +589,12 @@ function App() {
                     onOpenThread={handleOpenThread}
                     onClosePopup={() => setFocusedMessage(null)}
                     hiddenIds={hiddenIds}
-                    getUserLocation={async () => locationCache.current || {lat: 0, lng: 0}}
-                    userLocation={currentUserLocation} 
+                    getUserLocation={async () => effectiveLocation || {lat: 0, lng: 0}}
+                    userLocation={effectiveLocation} 
                     scannerStatus={scannerStatus}
                     scannerCity={scannerCity}
+                    onTeleport={handleTeleport}
+                    isTeleporting={!!virtualLocation}
                 />
             </div>
 
@@ -621,16 +630,17 @@ function App() {
                     <div className="flex items-center gap-2 pointer-events-auto">
                         {!isSearchOpen && (
                             <div className="flex items-center gap-2">
-                                <div className="flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-lg h-10">
-                                    <Radio size={18} style={{ color: THEME_COLOR }} className={isScanningGlobal ? "animate-spin" : "animate-pulse"} />
-                                    <h1 className="text-sm font-bold tracking-widest text-white">KAIKU</h1>
+                                <div className={`flex items-center gap-3 bg-[#0a0a12]/80 backdrop-blur-md px-4 py-2 rounded-full border shadow-lg h-10 ${virtualLocation ? 'border-yellow-500/50' : 'border-white/10'}`}>
+                                    <Radio size={18} style={{ color: virtualLocation ? '#eab308' : THEME_COLOR }} className={isScanningGlobal ? "animate-spin" : "animate-pulse"} />
+                                    <h1 className={`text-sm font-bold tracking-widest ${virtualLocation ? 'text-yellow-400' : 'text-white'}`}>
+                                        {virtualLocation ? 'UPLINK' : 'KAIKU'}
+                                    </h1>
                                 </div>
 
                                 <button onClick={() => setIsSearchOpen(true)} className="w-10 h-10 flex items-center justify-center bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-cyan-400 transition-colors shadow-lg">
                                     <Terminal size={16} />
                                 </button>
                                 
-                                {/* VIEW TOGGLE SWITCH */}
                                 <button 
                                     onClick={handleToggleView}
                                     className="h-10 px-3 flex items-center justify-center gap-2 bg-[#0a0a12]/80 backdrop-blur-md rounded-full border border-white/10 hover:bg-white/10 text-gray-400 hover:text-white transition-colors shadow-lg"
@@ -716,7 +726,7 @@ function App() {
                 onCompose={handleOpenInput}
                 viewMode={viewMode}
                 currentLocationName={currentCityName}
-                userLocation={currentUserLocation}
+                userLocation={effectiveLocation}
             />
 
             <div className={`fixed bottom-24 right-5 z-[500] transition-all duration-300 ${shouldHideFAB ? 'opacity-0 translate-y-10 pointer-events-none' : 'opacity-100 translate-y-0 pointer-events-auto'}`}>
@@ -746,7 +756,7 @@ function App() {
                     hiddenIds={hiddenIds}
                     onToggleHidden={handleToggleHidden}
                     currentUserCountry={currentCountry}
-                    userLocation={currentUserLocation}
+                    userLocation={effectiveLocation}
                 />
             )}
             </div>
