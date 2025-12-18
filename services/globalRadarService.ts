@@ -8,11 +8,23 @@ const CACHE_DURATION_MS = 3 * 60 * 60 * 1000;
 const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000; // 15 minutes for scan results
 const RADAR_MODEL = 'gemini-3-flash-preview';
 
+// --- CONFIGURATION ---
+// DEVELOPER: If you are not using an .env file, paste your Google Gemini API Key here.
+// This key will be used for ALL users of the app.
+const HARDCODED_API_KEY = "AIzaSyBu9BLySGeO_lkJv9m3DcWsxt1JfLGE7Hc"; 
+
 /**
  * Utility to clean JSON string from potential Markdown code blocks
  */
 const cleanJsonString = (text: string): string => {
-  return text.replace(/```json\n?|```/g, '').trim();
+  let cleaned = text.replace(/```json\n?|```/g, '').trim();
+  // Sometimes the model adds "Here is the JSON..." preamble
+  const firstBracket = cleaned.indexOf('[');
+  const lastBracket = cleaned.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket !== -1) {
+      cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+  }
+  return cleaned;
 };
 
 /**
@@ -28,12 +40,15 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
       if (cachedEvents.length > 0) return cachedEvents;
   }
 
-  // Safety check for API Key (supports process.env for standard Node and getEnvVar for Vite/Browsers)
-  const apiKey = process.env.API_KEY || getEnvVar('API_KEY');
+  // 1. Check Hardcoded Key (Easiest for quick deployment without env vars)
+  // 2. Check Environment Variables (Best practice: VITE_API_KEY, etc.)
+  // 3. Check process.env (Node.js/Server environments)
+  const apiKey = HARDCODED_API_KEY || getEnvVar('API_KEY') || (typeof process !== 'undefined' ? process.env.API_KEY : undefined);
   
   if (!apiKey) {
-      console.error("KAIKU: Missing API_KEY. Cannot perform global scan.");
-      throw new Error("System configuration error: Missing API Key.");
+      console.error("KAIKU: Missing API_KEY.");
+      // More user-friendly error for the UI
+      throw new Error("System configuration error: Server Uplink Offline (Missing Credentials).");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -72,7 +87,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
     });
 
     const rawText = response.text;
-    if (!rawText) return [];
+    if (!rawText) throw new Error("Empty response from radar.");
     
     const jsonText = cleanJsonString(rawText);
     let events = [];
@@ -82,7 +97,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
     } catch (parseError) {
         console.error("KAIKU: JSON Parse failed", parseError);
         console.log("Raw Text:", rawText);
-        throw new Error("Data corruption in signal stream.");
+        throw new Error("Signal decryption failed (JSON Error).");
     }
     
     if (!Array.isArray(events)) return [];
@@ -118,9 +133,13 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
     }
     
     return formattedMessages;
-  } catch (error) {
+  } catch (error: any) {
     console.error("KAIKU: Radar Scan Exception:", error);
-    throw error; // Re-throw to let App.tsx handle the alert
+    // Hide technical API key details from the user alert
+    if (error.message?.includes("API key")) {
+         throw new Error("Uplink Configuration Error (Invalid Key).");
+    }
+    throw error; 
   }
 };
 
