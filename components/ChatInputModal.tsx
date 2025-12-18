@@ -17,7 +17,7 @@ interface ChatInputModalProps {
   gpsAccuracy: number | null; 
 }
 
-const REQUIRED_ACCURACY_METERS = 50; 
+const REQUIRED_ACCURACY_METERS = 100; // Increased tolerance, but purely visual now
 
 const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave, cooldownUntil, targetLocationName, onTypingStateChange, gpsAccuracy }) => {
   const { t } = useTranslation();
@@ -142,11 +142,14 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
     }
   };
 
+  // REMOVED BLOCKING LOGIC: We now only use this for visual warning, not disabling the button.
   const isSignalWeak = gpsAccuracy === null || gpsAccuracy > REQUIRED_ACCURACY_METERS;
-  const isExactModeBlocked = !isMasked && isSignalWeak;
+  
   const isLocked = !!cooldownUntil && timeLeft !== '';
   const canAttachImages = canSendImages();
-  const isSendDisabled = isSubmitting || (!text.trim() && !selectedFile) || !targetLocationName || isExactModeBlocked;
+  
+  // CRITICAL FIX: targetLocationName is optional now to allow "Blind Send" if location is purely coordinate based
+  const isSendDisabled = isSubmitting || (!text.trim() && !selectedFile); 
 
   return (
     <AnimatePresence>
@@ -179,13 +182,15 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                             <MapPin size={10} /> {targetLocationName}
                         </span>
                         {gpsAccuracy && (
-                            <span className={`ml-2 font-mono text-[10px] ${gpsAccuracy > REQUIRED_ACCURACY_METERS ? 'text-red-400' : 'text-green-400'}`}>
+                            <span className={`ml-2 font-mono text-[10px] ${gpsAccuracy > REQUIRED_ACCURACY_METERS ? 'text-amber-400' : 'text-green-400'}`}>
                                 [GPS: ±{Math.round(gpsAccuracy)}m]
                             </span>
                         )}
                     </>
                  ) : (
-                    <span className="animate-pulse">{t('input.locating')}</span>
+                    <span className="animate-pulse text-amber-400 flex items-center gap-1">
+                        <Loader2 size={10} className="animate-spin" /> {t('input.locating')}
+                    </span>
                  )}
             </div>
 
@@ -262,9 +267,9 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                     </div>
                     
                     <div className="flex items-center gap-3">
-                        {isExactModeBlocked && (
-                             <div title="Signal too weak for exact mode">
-                                <AlertTriangle size={16} className="text-red-500 animate-pulse" />
+                        {!isMasked && isSignalWeak && (
+                             <div title="Signal weak, location might drift">
+                                <AlertTriangle size={16} className="text-amber-500/50" />
                              </div>
                         )}
                         <div className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${isMasked ? 'bg-cyan-500' : 'bg-gray-700'}`}>
@@ -283,21 +288,12 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
                 <button
                   onClick={handleSubmit}
                   disabled={isSendDisabled}
-                  className={`w-full py-3 font-bold rounded-xl flex items-center justify-center gap-2 transition-all 
-                      ${isExactModeBlocked 
-                          ? 'bg-amber-900/50 text-amber-200 cursor-not-allowed border border-amber-500/30' 
-                          : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
-                      }`}
+                  className="w-full py-3 font-bold rounded-xl flex items-center justify-center gap-2 transition-all bg-white text-black hover:bg-gray-200 disabled:opacity-50"
                 >
                   {isSubmitting ? (
                       <>
                         <Loader2 className="animate-spin" />
                         <span>{isUploading ? "UPLOADING..." : "SENDING..."}</span>
-                      </>
-                  ) : isExactModeBlocked ? (
-                      <>
-                        <Loader2 className="animate-spin" />
-                        <span className="animate-pulse">ACQUIRING SATELLITES...</span>
                       </>
                   ) : (
                       <>
@@ -309,7 +305,7 @@ const ChatInputModal: React.FC<ChatInputModalProps> = ({ isOpen, onClose, onSave
               </>
             )}
             
-            <div className={`mt-4 flex items-center gap-2 text-[10px] font-mono tracking-widest uppercase transition-colors duration-300 ${isMasked ? 'text-cyan-400' : 'text-amber-500'}`}>
+            <div className={`mt-4 flex items-center gap-2 text-[10px] font-mono tracking-widest uppercase transition-colors duration-300 ${isMasked ? 'text-cyan-400' : 'text-gray-500'}`}>
                {isMasked ? (
                    <Shield size={12} className="mt-0.5" />
                ) : (

@@ -9,12 +9,10 @@ export interface LocationResult {
 }
 
 /**
- * ROBUST GEOLOCATION STRATEGY FOR MOBILE CHROME
+ * ROBUST GEOLOCATION STRATEGY FOR MOBILE CHROME (SIMPLIFIED)
  * 
- * Android Chrome issues addressed:
- * 1. Increased timeout (5s -> 15s) to allow cold GPS start.
- * 2. Enabled cached positions (maximumAge: 10000) to prevent lock-ups.
- * 3. Automatic fall-through to IP location if hardware fails.
+ * Reverted to "Try High, Accept Low" logic without strict timeouts blocking usage.
+ * This ensures the app always gets a location eventually.
  */
 export const getPreciseLocation = async (): Promise<LocationResult> => {
   
@@ -29,17 +27,14 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
     });
 
   // STEP 1: Attempt High Accuracy (GPS Hardware)
-  // Timeout increased to 15s for Android "Cold Start"
+  // If it takes too long (>10s), we failover.
   try {
-    console.log("KAIKU_GPS: Step 1 - High Accuracy...");
     const pos = await getPos({
       enableHighAccuracy: true,
-      timeout: 15000, 
-      maximumAge: 10000 // Accept positions up to 10s old to allow instant UI response
+      timeout: 10000, 
+      maximumAge: 60000 // Accept positions up to 1m old
     });
 
-    console.log(`KAIKU_GPS: High Accuracy Lock. ±${Math.round(pos.coords.accuracy)}m`);
-    
     return {
       lat: pos.coords.latitude,
       lng: pos.coords.longitude,
@@ -48,24 +43,16 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
     };
 
   } catch (err: any) {
-    // Check if permission was explicitly denied - STOP HERE if so.
-    if (err.code === 1) { // PERMISSION_DENIED
-        console.error("KAIKU_GPS: Permission Denied.");
-        throw new Error("Permission Denied: Please enable Location in Browser Settings.");
-    }
+    console.warn(`KAIKU_GPS: High Accuracy Failed (Code: ${err.code}). Reverting to standard...`);
 
-    console.warn(`KAIKU_GPS: High Accuracy Failed (Code: ${err.code}). Reverting to Network/IP...`);
-
-    // STEP 2: Low Accuracy Fallback (Network Triangulation)
-    // Faster timeout (7s) since network location should be quick if available.
+    // STEP 2: Standard Accuracy (Network/Cell)
+    // Very loose constraints to just get SOMETHING
     try {
       const pos = await getPos({
         enableHighAccuracy: false,
-        timeout: 7000, 
-        maximumAge: 30000 
+        timeout: 10000, 
+        maximumAge: 300000 // Accept 5 min old data
       });
-
-      console.log(`KAIKU_GPS: Low Accuracy Lock. ±${Math.round(pos.coords.accuracy)}m`);
 
       return {
         lat: pos.coords.latitude,
@@ -77,14 +64,12 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
       console.warn("KAIKU_GPS: Hardware methods failed. Attempting IP fallback...");
       
       // STEP 3: IP LOCATION FALLBACK (Last Resort)
-      // This ensures the UI never gets stuck on "Locating..."
       const ipLoc = await getIpLocation();
       if (ipLoc) {
-          console.log("KAIKU_GPS: IP Location used.");
           return {
               lat: ipLoc.lat,
               lng: ipLoc.lng,
-              accuracy: 5000, // Low accuracy for IP
+              accuracy: 5000, // Low accuracy
               isFallback: true
           };
       }

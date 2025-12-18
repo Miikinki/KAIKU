@@ -411,66 +411,84 @@ function App() {
       setIsFeedOpen(false);
   };
 
-  // ROBUST INPUT OPENING LOGIC
+  // CRITICAL FIX: Robust Input Opening
+  // Immediately use cached location so user isn't stuck on "Locating..."
   useEffect(() => {
     if (isInputOpen && !targetLocation) {
+        
+        // 1. Instant Cache Hit (Fastest)
+        if (locationCache.current) {
+            const cachedLat = locationCache.current.lat;
+            const cachedLng = locationCache.current.lng;
+            
+            getCityName(cachedLat, cachedLng).then(nameData => {
+                setTargetLocation({ lat: cachedLat, lng: cachedLng, name: nameData.city });
+            });
+        }
+
+        // 2. Background Refresh (Precision)
         const acquireLocation = async () => {
             try {
                 // Try to get fresh location with the new robust service
                 const res = await getPreciseLocation();
                 const nameData = await getCityName(res.lat, res.lng);
-                setTargetLocation({ lat: res.lat, lng: res.lng, name: nameData.city });
-                // Also update cache
-                locationCache.current = { lat: res.lat, lng: res.lng };
-            } catch (e) {
-                console.warn("Input GPS failed, using fallback logic...", e);
                 
-                // FALLBACK 1: Use cached location if available
-                if (locationCache.current) {
-                    const nameData = await getCityName(locationCache.current.lat, locationCache.current.lng);
-                    setTargetLocation({ 
-                        lat: locationCache.current.lat, 
-                        lng: locationCache.current.lng, 
-                        name: nameData.city 
-                    });
-                } else {
-                    // FALLBACK 2: Absolute worst case, set dummy data so modal opens
-                    // This prevents the "Locating..." spinner from spinning forever
-                    setTargetLocation({ lat: 0, lng: 0, name: "Unknown Signal" });
+                // Update target and cache
+                setTargetLocation({ lat: res.lat, lng: res.lng, name: nameData.city });
+                locationCache.current = { lat: res.lat, lng: res.lng };
+                
+            } catch (e) {
+                console.warn("Input GPS failed, using fallback/cache logic...", e);
+                
+                // If we didn't have a cache hit earlier, we MUST set something now or modal hangs
+                if (!locationCache.current) {
+                     setTargetLocation({ lat: 0, lng: 0, name: "Unknown Sector" });
                 }
             }
         };
+        
         acquireLocation();
     }
   }, [isInputOpen]);
 
   const handleSaveMessage = async (text: string, imageUrl?: string, isMasked: boolean = false) => {
-    if (!targetLocation) {
-        // Should not happen with new logic, but robust safety
-        try {
-            const res = await getPreciseLocation();
-            await saveMessage(text, res.lat, res.lng, res.lat, res.lng, undefined, imageUrl, isMasked);
-        } catch (e) {
-            throw new Error("GPS Signal required to broadcast.");
-        }
+    let finalLat = 0;
+    let finalLng = 0;
+
+    // IMMEDIATE SEND LOGIC: Never await getPreciseLocation inside the submit handler
+    // This prevents the button from freezing/spinning indefinitely on bad networks
+    if (targetLocation) {
+        finalLat = targetLocation.lat;
+        finalLng = targetLocation.lng;
+    } else if (locationCache.current) {
+        finalLat = locationCache.current.lat;
+        finalLng = locationCache.current.lng;
+    } else if (currentUserLocation) {
+        finalLat = currentUserLocation.lat;
+        finalLng = currentUserLocation.lng;
     } else {
-        // Use the location we already resolved in the modal
-        const userLoc = { lat: targetLocation.lat, lng: targetLocation.lng };
-        await saveMessage(text, targetLocation.lat, targetLocation.lng, userLoc.lat, userLoc.lng, undefined, imageUrl, isMasked);
+        // Absolute fallback: 0,0. Better to send a broken location than block the user.
+        console.warn("Forcing blind send (0,0)");
+        finalLat = 0;
+        finalLng = 0;
     }
+
+    // We pass finalLat/Lng as BOTH target and user location for simplicity in this fallback scenario
+    await saveMessage(text, finalLat, finalLng, finalLat, finalLng, undefined, imageUrl, isMasked);
     await loadData();
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
-      // For replies, use cached location or try to get a quick fix
+      // IMMEDIATE REPLY LOGIC: Use cache or die trying (0,0)
+      // Never block UI on reply for GPS
       let userLoc = locationCache.current;
+      
       if (!userLoc) {
-          try {
-              const res = await getPreciseLocation();
-              userLoc = { lat: res.lat, lng: res.lng };
-          } catch (e) {
-              console.warn("Reply GPS failed", e);
-              return; // Can't reply without location
+          if (currentUserLocation) {
+              userLoc = currentUserLocation;
+          } else {
+              // Blind reply
+              userLoc = { lat: 0, lng: 0 };
           }
       }
       
