@@ -152,9 +152,8 @@ function App() {
       setIsScanningGlobal(true);
       setScannerStatus(t('welcome.status_acquiring'));
       setScannerCity(null);
-      setIsMapDirty(false); // Piilotetaan nappi heti skannauksen alussa
+      setIsMapDirty(false); 
       
-      // Increment stats locally
       incrementScanCount();
       
       const isTargeted = !!specificQuery;
@@ -184,10 +183,11 @@ function App() {
               await new Promise(r => setTimeout(r, 800));
           }
 
-          // Päivitetään viimeisin skannattu sijainti
           if (scanCoord) setLastScannedCenter(scanCoord);
 
           setScannerStatus(t('welcome.status_scanning_freq'));
+          
+          // CRITICAL: Call the service
           const events = await scanGlobalNetwork(specificQuery, isTargeted);
           await new Promise(r => setTimeout(r, 600));
           
@@ -203,10 +203,15 @@ function App() {
               }
               SoundService.playSuccess();
           } else {
-              if (isTargeted) alert("No active signals intercepted in sector.");
+              // Notify user if specific search found nothing
+              if (isTargeted) {
+                  alert(`Signal intercept failed for: ${specificQuery}. No news found.`);
+              }
           }
-      } catch (e) {
+      } catch (e: any) {
           console.error("Global scan failed", e);
+          // Show alert so user knows why it "flashed"
+          alert(`Scanner Error: ${e.message || "Connection Failed"}`);
       } finally {
           setIsScanningGlobal(false);
           setScannerStatus(null);
@@ -626,7 +631,7 @@ function App() {
                             className="mt-4 pointer-events-auto"
                         >
                             <button 
-                                onClick={() => performGlobalScan()}
+                                onClick={() => performGlobalScan(scanLocationName || undefined)}
                                 className="px-5 py-2.5 bg-cyan-950/80 backdrop-blur-md border border-cyan-500/50 rounded-full text-cyan-100 text-[10px] font-black tracking-[0.2em] uppercase flex items-center gap-2 shadow-[0_10px_30px_rgba(0,0,0,0.5),0_0_15px_rgba(6,182,212,0.3)] hover:bg-cyan-900 transition-all active:scale-95 border-t-cyan-400"
                             >
                                 <RefreshCw size={12} className="animate-[spin_4s_linear_infinite]" />

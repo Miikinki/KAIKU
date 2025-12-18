@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { ChatMessage } from '../types';
 import { generateUUID } from './storageService';
 import { supabase } from './supabaseClient';
+import { getEnvVar } from './env';
 
 const CACHE_DURATION_MS = 3 * 60 * 60 * 1000;
 const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000; // 15 minutes for scan results
@@ -27,7 +28,15 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
       if (cachedEvents.length > 0) return cachedEvents;
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Safety check for API Key (supports process.env for standard Node and getEnvVar for Vite/Browsers)
+  const apiKey = process.env.API_KEY || getEnvVar('API_KEY');
+  
+  if (!apiKey) {
+      console.error("KAIKU: Missing API_KEY. Cannot perform global scan.");
+      throw new Error("System configuration error: Missing API Key.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   
   const prompt = specificQuery 
     ? `Search for 5 DIFFERENT major current news stories, events, or local developments in ${specificQuery} from the last 24 hours. Use Google Search. Do not repeat the same story. Return 5 unique items.`
@@ -66,7 +75,15 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
     if (!rawText) return [];
     
     const jsonText = cleanJsonString(rawText);
-    const events = JSON.parse(jsonText);
+    let events = [];
+    
+    try {
+        events = JSON.parse(jsonText);
+    } catch (parseError) {
+        console.error("KAIKU: JSON Parse failed", parseError);
+        console.log("Raw Text:", rawText);
+        throw new Error("Data corruption in signal stream.");
+    }
     
     if (!Array.isArray(events)) return [];
 
@@ -103,7 +120,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
     return formattedMessages;
   } catch (error) {
     console.error("KAIKU: Radar Scan Exception:", error);
-    return [];
+    throw error; // Re-throw to let App.tsx handle the alert
   }
 };
 
