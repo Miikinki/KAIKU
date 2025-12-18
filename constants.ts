@@ -1,5 +1,6 @@
 
 
+
 export const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 export const MAP_ATTRIBUTION = ''; // Hidden as per request
 
@@ -20,6 +21,36 @@ export const THEME_COLOR_GLOW = '#22d3ee'; // Cyan-400
 export const BANNED_WORDS = [
   'spam', 'scam', 'buy', 'sell', 'crypto', 'nft' 
 ];
+
+// --- IDENTITY PRESETS ---
+
+export const AVATAR_COLORS = [
+  '#06b6d4', // Cyan (Default)
+  '#ef4444', // Red
+  '#f97316', // Orange
+  '#eab308', // Yellow
+  '#84cc16', // Lime
+  '#10b981', // Emerald
+  '#8b5cf6', // Violet
+  '#d946ef', // Fuchsia
+  '#ffffff', // White
+];
+
+// Mapping of ID -> SVG Path Data (for raw usage in Leaflet & React)
+export const AVATAR_ICONS: Record<string, string> = {
+  'radar': 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0 M12 12m-5 0a5 5 0 1 0 10 0a5 5 0 1 0 -10 0 M12 2v10 l4 4', // Radar
+  'ghost': 'M9 22v-3.333a2 2 0 0 1 .6-1.46L10.3 16.5A5.6 5.6 0 0 0 12 12V6a4 4 0 0 0-8 0v6a5.6 5.6 0 0 0 1.7 4.5l.7 1.04a2 2 0 0 1 .6 1.46V22', // Ghost
+  'skull': 'M12 4c-3.3 0-6 2.7-6 6c0 1.3.4 2.5 1 3.5c.6 1.1 1 2.3 1 3.5h8c0-1.2.4-2.4 1-3.5c.6-1 1-2.2 1-3.5c0-3.3-2.7-6-6-6z M10 12h.01 M14 12h.01', // Skull
+  'robot': 'M12 8V4H8 M16 4h-4v4 M10 8h4 M4 14v2a2 2 0 0 0 2 2h2v4h8v-4h2a2 2 0 0 0 2-2v-2 M9 10a3 3 0 0 1 6 0v4H9z', // Bot
+  'shield': 'M12 22s8-4 8-10V5l-8-3l-8 3v7c0 6 8 10 8 10z', // Shield
+  'zap': 'M13 2L3 14h9l-1 8 10-12h-9l1-8z', // Lightning
+  'crosshair': 'M12 2v4 M12 18v4 M4 12H2 M22 12h-2 M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0', // Target
+  'wolf': 'M12 2l-3 6l-6 1l4.5 4l-1 6l5.5-3l5.5 3l-1-6l4.5-4l-6-1z', // Star/Wolfish shape
+  'radio': 'M4.9 19.1C1 15.2 1 8.8 4.9 4.9 M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5 M12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6', // Signal
+  'hexagon': 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z', // Hex
+  'eye': 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0', // Eye
+  'flame': 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.6-3z' // Flame
+};
 
 // Approximate POPULATION centers for arc generation (Not geographic centers)
 // This ensures arcs look like they come from where people actually are.

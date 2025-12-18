@@ -9,6 +9,7 @@ import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
 import { getHumanizedDistance } from '../services/locationService';
+import { AVATAR_ICONS } from '../constants';
 
 interface ThreadViewProps {
   parentMessage: ChatMessage;
@@ -284,19 +285,31 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
          if (isCritical && !isNews) borderClass += ' border-red-500/50';
          else if (isWeak && !isNews) borderClass += ' border-orange-500/30';
       }
+      
+      const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : 'ANONYMOUS');
+      const identityColor = isNews ? '#ef4444' : (msg.userColor || '#9ca3af');
 
       return (
         <div className={`p-4 ${isParent ? 'bg-white/10' : 'bg-transparent'} ${borderClass} ${isHidden ? 'opacity-70' : ''}`}>
         <div className="flex gap-3">
-            {/* Boost Column */}
+            {/* Avatar Column */}
             <div className="flex flex-col items-center gap-1 min-w-[24px]">
-                <button 
-                    onClick={(e) => handleBoostClick(e, msg.id)}
-                    className={`p-1.5 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
-                    disabled={isBoosted || isHidden}
-                >
-                    <Zap size={18} className={isBoosted ? "fill-cyan-400" : ""} />
-                </button>
+                {msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && !isNews ? (
+                    <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-black/30 mb-1" style={{ color: identityColor }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                            <path d={AVATAR_ICONS[msg.userAvatar]} />
+                        </svg>
+                    </div>
+                ) : (
+                    <button 
+                        onClick={(e) => handleBoostClick(e, msg.id)}
+                        className={`p-1.5 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                        disabled={isBoosted || isHidden}
+                    >
+                        <Zap size={18} className={isBoosted ? "fill-cyan-400" : ""} />
+                    </button>
+                )}
+
                 {!isHidden && (
                     isNews ? (
                         <Newspaper size={12} className="text-gray-600" />
@@ -322,7 +335,9 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                              )}
                            </>
                         ) : (
-                           <span className="font-mono text-cyan-400 font-bold">ID: {msg.sessionId.slice(0, 6)}</span>
+                            <span className="font-mono font-bold tracking-wide uppercase text-[10px]" style={{ color: identityColor }}>
+                                {displayName}
+                            </span>
                         )}
                         
                         {isOp && (

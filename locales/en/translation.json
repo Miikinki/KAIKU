@@ -94,12 +94,19 @@
   },
   "dossier": {
     "title": "AGENT DOSSIER",
+    "edit_identity": "EDIT IDENTITY",
+    "configure_visuals": "Configure visual signature",
     "clearance": "CLEARANCE LEVEL",
     "transmissions": "TRANSMISSIONS",
     "impact": "SIGNAL IMPACT",
     "replies": "REPLIES RECD",
     "sectors": "ACTIVE SECTORS",
     "scans": "NEWS SCANNED",
-    "footer": "DATA ENCRYPTED • EYES ONLY"
+    "footer": "DATA ENCRYPTED • EYES ONLY",
+    "callsign": "CALLSIGN",
+    "anonymous": "ANONYMOUS",
+    "icon": "ICON",
+    "color": "COLOR",
+    "save_identity": "SAVE IDENTITY"
   }
 }

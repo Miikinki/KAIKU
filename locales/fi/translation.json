@@ -94,12 +94,19 @@
   },
   "dossier": {
     "title": "AGENTTI TIEDOSTO",
+    "edit_identity": "MUOKKAA IDENTITEETTIÄ",
+    "configure_visuals": "Määritä visuaalinen allekirjoitus",
     "clearance": "TURVALUOKITUS",
     "transmissions": "LÄHETYKSET",
     "impact": "SIGNAALIVAIKUTUS",
     "replies": "VASTAUKSET",
     "sectors": "AKTIIVISET SEKTORIT",
     "scans": "UUTISIA SKANNATTU",
-    "footer": "TIEDOT SALATTU • VAIN SINULLE"
+    "footer": "TIEDOT SALATTU • VAIN SINULLE",
+    "callsign": "KUTSUNIMI",
+    "anonymous": "ANONYMOUS",
+    "icon": "IKONI",
+    "color": "VÄRI",
+    "save_identity": "TALLENNA IDENTITEETTI"
   }
 }

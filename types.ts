@@ -23,6 +23,11 @@ export interface ChatMessage {
   isMasked?: boolean; // NEW: Indicates if the location is fuzzy/masked
   language?: string; // NEW: Detected source language (ISO code)
   
+  // IDENTITY FIELDS
+  userDisplayName?: string;
+  userAvatar?: string;
+  userColor?: string;
+
   // GLOBAL RADAR FIELDS
   postType?: 'USER' | 'GLOBAL_EVENT' | 'SCAN_RESULT';
   eventMetadata?: {
@@ -55,4 +60,10 @@ export interface AgentStats {
   repliesReceived: number;
   sectorsActive: number; // Unique cities
   newsScanned: number;
+}
+
+export interface UserProfile {
+  displayName: string | null;
+  avatar: string;
+  color: string;
 }

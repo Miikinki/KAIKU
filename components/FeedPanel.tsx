@@ -8,6 +8,7 @@ import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
 import { getHumanizedDistance } from '../services/locationService';
+import { AVATAR_ICONS } from '../constants';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -532,6 +533,10 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     borderClass = 'border-white/5';
                 }
 
+                // Identity Styling
+                const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : 'ANONYMOUS');
+                const identityColor = isNews ? '#ef4444' : (msg.userColor || (isMe ? '#06b6d4' : '#9ca3af'));
+
                 return (
                 <motion.div
                 key={msg.id}
@@ -539,19 +544,28 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 onClick={() => !isHidden && onMessageClick(msg)}
                 className={`group border rounded-xl p-4 cursor-pointer transition-all flex gap-4 ${borderClass} ${bgClass}`}
                 >
-                <div className="flex flex-col items-center justify-start gap-1 min-w-[30px] pt-1">
-                    <button 
-                        onClick={(e) => handleBoostClick(e, msg.id)}
-                        className={`p-2 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
-                        disabled={isBoosted || isHidden}
-                    >
-                        <Zap size={20} className={isBoosted ? "fill-cyan-400" : ""} />
-                    </button>
+                <div className="flex flex-col items-center justify-start gap-2 min-w-[30px] pt-1">
+                    {!isHidden && msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && !isNews ? (
+                         <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-black/30" style={{ color: identityColor }}>
+                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                                <path d={AVATAR_ICONS[msg.userAvatar]} />
+                             </svg>
+                         </div>
+                    ) : (
+                        <button 
+                            onClick={(e) => handleBoostClick(e, msg.id)}
+                            className={`p-2 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
+                            disabled={isBoosted || isHidden}
+                        >
+                            <Zap size={20} className={isBoosted ? "fill-cyan-400" : ""} />
+                        </button>
+                    )}
+                    
                     {!isHidden && (
                         isNews ? (
                              <Newspaper size={14} className="text-gray-500 group-hover:text-cyan-400 transition-colors" />
                         ) : (
-                            <span className={`text-xs font-bold font-mono ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
+                            <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
                                 {msg.score}
                             </span>
                         )
@@ -559,8 +573,14 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 </div>
 
                 <div className="flex-1">
-                    <div className="flex justify-between items-start mb-2">
+                    <div className="flex justify-between items-start mb-1">
                         <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500 font-medium">
+                            <span className="font-mono font-bold tracking-wide uppercase text-[10px]" style={{ color: identityColor }}>
+                                {displayName}
+                            </span>
+                            
+                            <span>•</span>
+                            
                             <div className="flex items-center gap-1">
                                 <MapPin size={10} className={userLocation ? 'text-cyan-500' : 'text-gray-600'} />
                                 <span className={`truncate max-w-[120px] flex items-center gap-1 ${distanceLabel.style}`}>
@@ -573,14 +593,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                 </span>
                             </div>
                             
-                            <span>•</span>
-
                             {isNews && sourceName && (
-                                <div className="bg-white/5 text-gray-300 px-2 py-0.5 rounded-full border border-white/10 text-[9px] font-bold tracking-widest flex items-center gap-1">
-                                    <span className="w-1 h-1 bg-cyan-400 rounded-full animate-pulse"></span>
-                                    {sourceName}
-                                </div>
+                                <>
+                                    <span>•</span>
+                                    <div className="bg-white/5 text-gray-300 px-2 py-0.5 rounded-full border border-white/10 text-[9px] font-bold tracking-widest flex items-center gap-1">
+                                        <span className="w-1 h-1 bg-cyan-400 rounded-full animate-pulse"></span>
+                                        {sourceName}
+                                    </div>
+                                </>
                             )}
+
+                            <span>•</span>
 
                             <div className="flex items-center gap-1">
                                 <Clock size={10} />
@@ -701,7 +724,15 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     
                     {!isHidden && (
                         <div className="mt-4 flex justify-between items-center border-t border-white/5 pt-3">
-                            <span className="text-[10px] text-gray-600 font-mono">ID: {msg.sessionId.slice(0, 8)}</span>
+                             <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={(e) => handleBoostClick(e, msg.id)}
+                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/5' : 'text-gray-500 hover:text-white'}`}
+                                >
+                                    <Zap size={14} className={isBoosted ? "fill-cyan-400" : ""} />
+                                    <span className="text-xs font-bold">{t('dossier.impact', 'IMPACT')}</span>
+                                </button>
+                             </div>
                             
                             <div className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">
                                 <MessageSquare size={14} />

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
 import { Crosshair, Lock, ShieldAlert } from 'lucide-react';
 import { ChatMessage, ViewportBounds } from '../types';
-import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
+import { MAP_TILE_URL, MAP_ATTRIBUTION, AVATAR_ICONS } from '../constants';
 import ArcLayer from './ArcLayer';
 import HeatmapLayer from './HeatmapLayer';
 import { useTranslation } from 'react-i18next';
@@ -40,20 +40,38 @@ const getMarkerIcon = (msg: ChatMessage) => {
     const isNews = isNewsPost(msg);
     const containerSize = isNews ? 50 : 40; 
 
-    const color = isNews ? '#ef4444' : '#22d3ee';
-    const glow = isNews ? 'rgba(239,68,68,0.8)' : 'rgba(34,211,238,0.9)';
+    // DEFAULT COLORS (Fallback)
+    let color = isNews ? '#ef4444' : '#22d3ee';
+    
+    // OVERRIDE WITH USER COLOR IF SET
+    if (msg.userColor) {
+        color = msg.userColor;
+    }
 
-    // Switch geometry: Triangle Alert for news, Lightning Bolt for users
-    const svgContent = isNews 
-        ? `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`
-        : `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>`;
+    const glow = isNews ? 'rgba(239,68,68,0.8)' : `${color}E6`; // Hex alpha for glow
+
+    // ICON SELECTION
+    let svgPath = `<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>`; // Default Bolt
+    let viewBox = "0 0 24 24";
+    let strokeWidth = "2";
+    let fill = isMasked && !isNews ? 'none' : 'currentColor';
+
+    if (isNews) {
+        // Alert Triangle
+        svgPath = `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`;
+    } else if (msg.userAvatar && AVATAR_ICONS[msg.userAvatar]) {
+        // USER AVATAR
+        svgPath = `<path d="${AVATAR_ICONS[msg.userAvatar]}" />`;
+        fill = "none"; // Avatars are line-art usually
+        strokeWidth = "2.5";
+    }
 
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
             <div class="absolute inset-0 rounded-full animate-ping opacity-20" style="background-color: ${color}"></div>
             <div class="relative z-10 transition-all duration-300 flex items-center justify-center" style="color: ${color}; filter: drop-shadow(0 0 8px ${glow})">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${isMasked && !isNews ? 'none' : 'currentColor'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    ${svgContent}
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="${viewBox}" fill="${fill}" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
+                    ${svgPath}
                 </svg>
             </div>
         </div>
@@ -84,15 +102,22 @@ const MessageMarker = ({ msg, position, isHidden, onOpenThread, mapInstance }: {
 }) => {
     const { t } = useTranslation();
     const isNews = isNewsPost(msg);
-    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType]);
+    // Include userAvatar/Color in dependency array to refresh markers on profile update
+    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType, msg.userAvatar, msg.userColor]);
+
+    const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : 'ANONYMOUS');
+    const headerColor = isNews ? 'text-red-500' : (msg.userColor ? `text-[${msg.userColor}]` : 'text-cyan-400');
 
     return (
         <Marker position={position} icon={icon} zIndexOffset={isNews ? 2000 : 0}>
             <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}>
                 <div className="p-3">
                     <div className="flex justify-between items-center mb-2">
-                         <span className={`text-[10px] font-mono font-bold ${isNews ? 'text-red-500' : 'text-cyan-400'}`}>
-                            {isNews ? 'SYSTEM ALERT' : t('map.signal_locked')}
+                         <span 
+                            className="text-[10px] font-mono font-bold uppercase tracking-wider" 
+                            style={{ color: isNews ? '#ef4444' : (msg.userColor || '#22d3ee') }}
+                        >
+                            {isNews ? 'SYSTEM ALERT' : displayName}
                          </span>
                     </div>
                     <p className="text-xs text-gray-200 mb-3 line-clamp-3 leading-relaxed">
@@ -100,7 +125,8 @@ const MessageMarker = ({ msg, position, isHidden, onOpenThread, mapInstance }: {
                     </p>
                     <button 
                         onClick={(e) => { e.stopPropagation(); onOpenThread(msg); mapInstance?.closePopup(); }}
-                        className={`w-full py-2 rounded text-[10px] font-black tracking-widest ${isNews ? 'bg-red-600 text-white' : 'bg-cyan-500 text-black'}`}
+                        className={`w-full py-2 rounded text-[10px] font-black tracking-widest text-black`}
+                        style={{ backgroundColor: isNews ? '#ef4444' : (msg.userColor || '#06b6d4') }}
                     >
                         {t('map.open_channel')}
                     </button>

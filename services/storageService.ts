@@ -1,12 +1,15 @@
 
-import { ChatMessage, RateLimitStatus } from '../types';
+
+
+import { ChatMessage, RateLimitStatus, UserProfile } from '../types';
 import { supabase } from './supabaseClient';
-import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS } from '../constants';
+import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS, THEME_COLOR } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 const STORAGE_KEY = 'kaiku_local_data'; 
 const USER_ID_KEY = 'kaiku_session_id'; 
+const USER_PROFILE_KEY = 'kaiku_user_profile';
 const USER_VOTES_KEY = 'kaiku_user_votes';
 const LAST_POST_TIMESTAMP_KEY = 'kaiku_last_post_ts';
 const DELETED_IDS_KEY = 'kaiku_deleted_ids'; 
@@ -119,6 +122,25 @@ export const getAnonymousID = (): string => {
     localStorage.setItem(USER_ID_KEY, id);
   }
   return id;
+};
+
+// --- PROFILE MANAGEMENT ---
+
+export const getUserProfile = (): UserProfile => {
+    try {
+        const stored = localStorage.getItem(USER_PROFILE_KEY);
+        if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    
+    return {
+        displayName: null,
+        avatar: 'radar',
+        color: THEME_COLOR
+    };
+};
+
+export const saveUserProfile = (profile: UserProfile) => {
+    localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
 };
 
 export const getFlagUrl = (countryCode?: string) => {
@@ -345,7 +367,12 @@ const mapRowToMessage = (d: any): ChatMessage => {
         imageUrl: d.image_url,
         isMasked: isMasked,
         postType: d.post_type || 'USER', // Map new column
-        eventMetadata: d.event_metadata || {} // Map new column
+        eventMetadata: d.event_metadata || {}, // Map new column
+        
+        // Map Identity
+        userDisplayName: d.user_display_name,
+        userAvatar: d.user_avatar,
+        userColor: d.user_color
     };
 };
 
@@ -424,6 +451,7 @@ export const saveMessage = async (
   }
 
   const userId = getAnonymousID();
+  const profile = getUserProfile();
 
   if (!moderateContent(text)) {
     throw new Error("Message blocked by moderation.");
@@ -491,7 +519,11 @@ export const saveMessage = async (
     preciseOrigin: { lat: finalSenderLat, lng: finalSenderLng },
     imageUrl: imageUrl,
     isMasked: useSignalMasking,
-    postType: 'USER' // Defaults to User
+    postType: 'USER', // Defaults to User
+    // Identity Snapshot
+    userDisplayName: profile.displayName || undefined,
+    userAvatar: profile.avatar,
+    userColor: profile.color
   };
 
   // We don't send expires_at explicitly here; we let the DB Default (now() + 24h) handle it.
@@ -510,7 +542,10 @@ export const saveMessage = async (
           is_remote: newMessage.isRemote,
           tags: newMessage.tags,
           image_url: newMessage.imageUrl,
-          post_type: 'USER' // Explicitly set
+          post_type: 'USER', // Explicitly set
+          user_display_name: newMessage.userDisplayName, // Map to DB
+          user_avatar: newMessage.userAvatar,
+          user_color: newMessage.userColor
       }]);
 
   if (error) {
