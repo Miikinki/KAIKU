@@ -1,6 +1,3 @@
-
-
-
 export const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 export const MAP_ATTRIBUTION = ''; // Hidden as per request
 
@@ -12,7 +9,11 @@ export const SPAM_RATE_LIMIT_MS = 4000; // 4 seconds between posts
 export const BASE_LIFESPAN_MS = 24 * 60 * 60 * 1000; // 24 Hours Base Life
 export const BOOST_EXTENSION_MS = 4 * 60 * 60 * 1000; // +4 Hours per Boost
 export const MESSAGE_LIFESPAN_MS = BASE_LIFESPAN_MS; // Fallback ref
-export const SCORE_THRESHOLD_HIDE = -999; // Deprecated (since we don't downvote anymore), kept low to show everything alive
+export const SCORE_THRESHOLD_HIDE = -999; // Hard deletion threshold (Deprecated)
+
+// VOTING THRESHOLDS (COLD START TUNING)
+export const HIGH_SIGNAL_THRESHOLD = 5;  // Score required to glow (Low for cold start)
+export const LOW_SIGNAL_THRESHOLD = -3;  // Score where content gets blurred/collapsed
 
 export const THEME_COLOR = '#06b6d4'; // Cyan-500
 export const THEME_COLOR_GLOW = '#22d3ee'; // Cyan-400

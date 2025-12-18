@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 // Added Shield icon to imports
-import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff, Image as ImageIcon, Newspaper, ExternalLink, Sparkles, Languages, Shield } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff, Image as ImageIcon, Newspaper, ExternalLink, Sparkles, Languages, Shield, ChevronUp, ChevronDown } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
 import { translateText } from '../services/translationService';
@@ -9,7 +9,7 @@ import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
 import { getHumanizedDistance } from '../services/locationService';
-import { AVATAR_ICONS } from '../constants';
+import { AVATAR_ICONS, HIGH_SIGNAL_THRESHOLD, LOW_SIGNAL_THRESHOLD } from '../constants';
 
 interface ThreadViewProps {
   parentMessage: ChatMessage;
@@ -66,10 +66,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
-  const [localReactions, setLocalReactions] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('kaiku_reactions');
-    return saved ? JSON.parse(saved) : {};
-  });
   
   // Translation state
   const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({});
@@ -114,20 +110,20 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
     }
   };
 
-  const handleBoostClick = (e: React.MouseEvent, msgId: string) => {
+  const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
     e.stopPropagation();
-    if (userVotes[msgId] === 'up') return; 
     triggerHaptic('heavy');
-    onVote(msgId, 'up');
-    setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
-  };
+    onVote(msgId, direction);
 
-  const handleReaction = (msgId: string, emoji: string) => {
-    triggerHaptic('light');
-    setLocalReactions(prev => {
-        const updated = { ...prev, [msgId]: emoji === prev[msgId] ? '' : emoji };
-        localStorage.setItem('kaiku_reactions', JSON.stringify(updated));
-        return updated;
+    setUserVotes(prev => {
+        const current = prev[msgId];
+        const next = { ...prev };
+        if (current === direction) {
+            delete next[msgId];
+        } else {
+            next[msgId] = direction;
+        }
+        return next;
     });
   };
 
@@ -209,10 +205,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
             </div>
         );
     }
-
-    // 2. LOGIC FIX: Compare message origin against PARENT MESSAGE Country OR Current User Country
-    // If you (Finn) reply to a thread in Japan, you are a visitor TO THAT THREAD.
-    // So we check if msg.originCountry != parentMessage.country (Thread Context)
     
     const threadCountry = parentMessage.country || parentMessage.originCountry;
     
@@ -229,7 +221,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
         }
     }
 
-    // Fallback: If thread country undefined, check against current user (Viewer Context)
     if (currentUserCountry && msg.originCountry) {
         if (currentUserCountry.toUpperCase() !== msg.originCountry.toUpperCase()) {
             return (
@@ -247,7 +238,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   };
 
   const renderMessageCard = (msg: ChatMessage, isParent: boolean) => {
-      const isBoosted = userVotes[msg.id] === 'up';
+      const userVote = userVotes[msg.id];
       const { isCritical, isWeak } = getSignalHealth(msg);
       const isHidden = hiddenIds.has(msg.id);
       const isNews = msg.postType === 'GLOBAL_EVENT' || msg.postType === 'SCAN_RESULT';
@@ -255,6 +246,11 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
 
       const isTranslated = !!translatedMessages[msg.id];
       const activeText = translatedMessages[msg.id] || msg.text;
+
+      // Signal Strength Logic (Using new constants)
+      const isHighSignal = msg.score >= HIGH_SIGNAL_THRESHOLD;
+      const isLowSignal = msg.score <= LOW_SIGNAL_THRESHOLD;
+      const isBlurred = isLowSignal;
 
       const textParts = isNews ? activeText.split('\n\n') : [activeText];
       const headline = isNews ? textParts[0] : null;
@@ -292,39 +288,45 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       return (
         <div className={`p-4 ${isParent ? 'bg-white/10' : 'bg-transparent'} ${borderClass} ${isHidden ? 'opacity-70' : ''}`}>
         <div className="flex gap-3">
-            {/* Avatar Column */}
-            <div className="flex flex-col items-center gap-1 min-w-[24px]">
-                {msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && !isNews ? (
-                    <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-black/30 mb-1" style={{ color: identityColor }}>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                            <path d={AVATAR_ICONS[msg.userAvatar]} />
-                        </svg>
-                    </div>
-                ) : (
-                    <button 
-                        onClick={(e) => handleBoostClick(e, msg.id)}
-                        className={`p-1.5 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
-                        disabled={isBoosted || isHidden}
-                    >
-                        <Zap size={18} className={isBoosted ? "fill-cyan-400" : ""} />
-                    </button>
-                )}
+             {/* VOTING COLUMN (Left) */}
+             <div className="flex flex-col items-center justify-start gap-1 min-w-[24px]">
+                <button 
+                    onClick={(e) => handleVoteClick(e, msg.id, 'up')}
+                    className={`p-1 rounded transition-colors ${userVote === 'up' ? 'text-cyan-400' : 'text-gray-600 hover:text-cyan-400'}`}
+                >
+                    <ChevronUp size={20} strokeWidth={3} />
+                </button>
+                
+                <span className={`text-xs font-mono font-bold ${
+                    userVote === 'up' ? 'text-cyan-400' : 
+                    userVote === 'down' ? 'text-red-500' : 
+                    isHighSignal ? 'text-cyan-200 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' :
+                    'text-gray-500'
+                }`}>
+                    {msg.score}
+                </span>
 
-                {!isHidden && (
-                    isNews ? (
-                        <Newspaper size={12} className="text-gray-600" />
-                    ) : (
-                        <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
-                            {msg.score}
-                        </span>
-                    )
-                )}
+                <button 
+                    onClick={(e) => handleVoteClick(e, msg.id, 'down')}
+                    className={`p-1 rounded transition-colors ${userVote === 'down' ? 'text-red-500' : 'text-gray-600 hover:text-red-500'}`}
+                >
+                    <ChevronDown size={20} strokeWidth={3} />
+                </button>
             </div>
             
             {/* Content */}
-            <div className="flex-1">
+            <div className={`flex-1 ${isBlurred && !isHidden ? 'blur-sm grayscale opacity-50 hover:blur-none hover:grayscale-0 hover:opacity-100 transition-all duration-300' : ''}`}>
                 <div className="flex justify-between items-start mb-1">
                     <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500">
+                        {/* Avatar Mini Icon */}
+                        {!isNews && msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && (
+                            <div className="w-4 h-4 rounded-full border border-white/10 flex items-center justify-center bg-black/30" style={{ color: identityColor }}>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                    <path d={AVATAR_ICONS[msg.userAvatar]} />
+                                </svg>
+                            </div>
+                        )}
+
                         {isNews ? (
                            <>
                              {sourceName && (
@@ -438,26 +440,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                                 </span>
                             )}
                         </div>
-
-                        {isParent && (
-                            <div className="flex items-center gap-3 pt-2">
-                                {['🔥', '😢', '🌍', '⚡'].map((emoji) => (
-                                    <motion.button
-                                        key={emoji}
-                                        whileTap={{ scale: 0.9 }}
-                                        whileHover={{ scale: 1.1 }}
-                                        onClick={() => handleReaction(msg.id, emoji)}
-                                        className={`w-10 h-10 flex items-center justify-center rounded-full border transition-all duration-300 ${
-                                            localReactions[msg.id] === emoji
-                                            ? 'bg-cyan-500 border-cyan-400 text-white shadow-[0_0_12px_rgba(6,182,212,0.5)]'
-                                            : 'bg-transparent border-white/10 text-white/60 hover:border-white/20'
-                                        }`}
-                                    >
-                                        <span className="text-lg">{emoji}</span>
-                                    </motion.button>
-                                ))}
-                            </div>
-                        )}
                     </div>
                 ) : (
                     <p className={`leading-relaxed break-words ${isHidden ? 'text-gray-500 italic' : 'text-gray-200'} ${isParent && !isHidden ? 'font-medium text-base' : 'font-normal text-sm'} ${isNews ? 'text-[#D1D5DB]' : ''}`}>

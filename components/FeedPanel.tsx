@@ -8,7 +8,7 @@ import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
 import { getHumanizedDistance } from '../services/locationService';
-import { AVATAR_ICONS } from '../constants';
+import { AVATAR_ICONS, HIGH_SIGNAL_THRESHOLD, LOW_SIGNAL_THRESHOLD } from '../constants';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -76,10 +76,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [showMyMessagesOnly, setShowMyMessagesOnly] = useState(false);
-  const [localReactions, setLocalReactions] = useState<Record<string, string>>(() => {
-    const saved = localStorage.getItem('kaiku_reactions');
-    return saved ? JSON.parse(saved) : {};
-  });
   
   // Translation State
   const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({});
@@ -132,15 +128,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       }
   };
 
-  const handleReaction = (msgId: string, emoji: string) => {
-    triggerHaptic('light');
-    setLocalReactions(prev => {
-        const updated = { ...prev, [msgId]: emoji === prev[msgId] ? '' : emoji };
-        localStorage.setItem('kaiku_reactions', JSON.stringify(updated));
-        return updated;
-    });
-  };
-
   const displayMessages = useMemo(() => {
     let msgs = visibleMessages;
     if (activeTag) {
@@ -170,12 +157,22 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   }, [visibleMessages, activeTag, showMyMessagesOnly, now]);
 
 
-  const handleBoostClick = (e: React.MouseEvent, msgId: string) => {
+  const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
     e.stopPropagation();
-    if (userVotes[msgId] === 'up') return; 
     triggerHaptic('heavy'); 
-    onVote(msgId, 'up');
-    setUserVotes(prev => ({ ...prev, [msgId]: 'up' }));
+    onVote(msgId, direction);
+    
+    // Optimistic local update for UI responsiveness
+    setUserVotes(prev => {
+        const current = prev[msgId];
+        const next = { ...prev };
+        if (current === direction) {
+            delete next[msgId];
+        } else {
+            next[msgId] = direction;
+        }
+        return next;
+    });
   };
 
   const handleToggleHiddenClick = (e: React.MouseEvent, msgId: string) => {
@@ -488,12 +485,19 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             ) : (
             displayMessages.map((msg) => {
                 const { isCritical, isWeak } = getSignalHealth(msg);
-                const isBoosted = userVotes[msg.id] === 'up';
+                const userVote = userVotes[msg.id];
                 const isMe = msg.sessionId === currentSessionId;
                 const isHidden = hiddenIds.has(msg.id);
                 const isNews = msg.postType === 'GLOBAL_EVENT' || msg.postType === 'SCAN_RESULT';
                 const isTranslated = !!translatedMessages[msg.id];
                 const activeText = translatedMessages[msg.id] || msg.text;
+
+                // Signal Strength Logic (Using new constants)
+                const isHighSignal = msg.score >= HIGH_SIGNAL_THRESHOLD;
+                const isLowSignal = msg.score <= LOW_SIGNAL_THRESHOLD;
+                
+                // If collapsed (low signal), we blur unless user clicks expand (logic handled by isHidden for simplicity, or we can add local state)
+                const isBlurred = isLowSignal && !isMe;
 
                 const textParts = isNews ? activeText.split('\n\n') : [activeText];
                 const headline = isNews ? textParts[0] : null;
@@ -520,12 +524,15 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 if (isMe) {
                     borderClass = 'border-cyan-500/60 hover:border-cyan-400';
                     bgClass = 'bg-cyan-950/10 hover:bg-cyan-950/20';
+                } else if (isHighSignal && !isNews) {
+                    borderClass = 'border-cyan-400/50 hover:border-cyan-400';
+                    bgClass = 'bg-cyan-900/10 hover:bg-cyan-900/20 shadow-[0_0_15px_rgba(34,211,238,0.1)]';
+                } else if (isLowSignal && !isNews) {
+                     borderClass = 'border-white/5 opacity-50';
+                     bgClass = 'bg-black/40';
                 } else if (isCritical && !isNews) {
                     borderClass = 'border-red-500/50 hover:border-red-500';
                     bgClass = 'bg-red-950/10';
-                } else if (isWeak && !isNews) {
-                    borderClass = 'border-orange-500/30 hover:border-orange-500/60';
-                    bgClass = 'bg-orange-950/5';
                 }
 
                 if (isHidden) {
@@ -544,37 +551,44 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 onClick={() => !isHidden && onMessageClick(msg)}
                 className={`group border rounded-xl p-4 cursor-pointer transition-all flex gap-4 ${borderClass} ${bgClass}`}
                 >
-                <div className="flex flex-col items-center justify-start gap-2 min-w-[30px] pt-1">
-                    {!isHidden && msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && !isNews ? (
-                         <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center bg-black/30" style={{ color: identityColor }}>
-                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                                <path d={AVATAR_ICONS[msg.userAvatar]} />
-                             </svg>
-                         </div>
-                    ) : (
-                        <button 
-                            onClick={(e) => handleBoostClick(e, msg.id)}
-                            className={`p-2 rounded-full transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/10 shadow-[0_0_15px_rgba(34,211,238,0.4)]' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}
-                            disabled={isBoosted || isHidden}
-                        >
-                            <Zap size={20} className={isBoosted ? "fill-cyan-400" : ""} />
-                        </button>
-                    )}
+                {/* VOTING COLUMN (Left) */}
+                <div className="flex flex-col items-center justify-start gap-1 min-w-[30px]">
+                    <button 
+                        onClick={(e) => handleVoteClick(e, msg.id, 'up')}
+                        className={`p-1 rounded transition-colors ${userVote === 'up' ? 'text-cyan-400' : 'text-gray-600 hover:text-cyan-400'}`}
+                    >
+                        <ChevronUp size={24} strokeWidth={3} />
+                    </button>
                     
-                    {!isHidden && (
-                        isNews ? (
-                             <Newspaper size={14} className="text-gray-500 group-hover:text-cyan-400 transition-colors" />
-                        ) : (
-                            <span className={`text-xs font-mono font-bold ${isBoosted ? 'text-cyan-400' : 'text-gray-500'}`}>
-                                {msg.score}
-                            </span>
-                        )
-                    )}
+                    <span className={`text-sm font-mono font-bold ${
+                        userVote === 'up' ? 'text-cyan-400' : 
+                        userVote === 'down' ? 'text-red-500' : 
+                        isHighSignal ? 'text-cyan-200 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' :
+                        'text-gray-500'
+                    }`}>
+                        {msg.score}
+                    </span>
+
+                    <button 
+                        onClick={(e) => handleVoteClick(e, msg.id, 'down')}
+                        className={`p-1 rounded transition-colors ${userVote === 'down' ? 'text-red-500' : 'text-gray-600 hover:text-red-500'}`}
+                    >
+                        <ChevronDown size={24} strokeWidth={3} />
+                    </button>
                 </div>
 
-                <div className="flex-1">
+                <div className={`flex-1 ${isBlurred && !isHidden ? 'blur-sm grayscale opacity-50 hover:blur-none hover:grayscale-0 hover:opacity-100 transition-all duration-300' : ''}`}>
                     <div className="flex justify-between items-start mb-1">
                         <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500 font-medium">
+                            {/* Avatar Mini Icon */}
+                            {!isNews && msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && (
+                                <div className="w-4 h-4 rounded-full border border-white/10 flex items-center justify-center bg-black/30" style={{ color: identityColor }}>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                        <path d={AVATAR_ICONS[msg.userAvatar]} />
+                                    </svg>
+                                </div>
+                            )}
+
                             <span className="font-mono font-bold tracking-wide uppercase text-[10px]" style={{ color: identityColor }}>
                                 {displayName}
                             </span>
@@ -635,10 +649,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                 </span>
                             )}
 
-                            {!isMe && !isHidden && isCritical && !isNews && (
-                                <span className="text-red-500 text-[10px] font-bold animate-pulse tracking-wider">FAILING</span>
-                            )}
-
                             {msg.sessionId === currentSessionId ? (
                                 <button 
                                     onClick={(e) => handleDeleteClick(e, msg.id, msg.parentId)}
@@ -693,24 +703,6 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                                     </span>
                                 )}
                             </div>
-
-                            <div className="flex items-center gap-3 pt-2" onClick={(e) => e.stopPropagation()}>
-                                {['🔥', '😢', '🌍', '⚡'].map((emoji) => (
-                                    <motion.button
-                                        key={emoji}
-                                        whileTap={{ scale: 0.9 }}
-                                        whileHover={{ scale: 1.1 }}
-                                        onClick={() => handleReaction(msg.id, emoji)}
-                                        className={`w-9 h-9 flex items-center justify-center rounded-full border transition-all duration-300 ${
-                                            localReactions[msg.id] === emoji
-                                            ? 'bg-cyan-500 border-cyan-400 text-white shadow-[0_0_12px_rgba(6,182,212,0.5)]'
-                                            : 'bg-transparent border-white/10 text-white/60 hover:border-white/20'
-                                        }`}
-                                    >
-                                        <span className="text-base">{emoji}</span>
-                                    </motion.button>
-                                ))}
-                            </div>
                         </div>
                     ) : (
                         <p className={`text-base leading-relaxed font-normal break-words ${isNews ? 'text-[#D1D5DB]' : 'text-gray-100'}`}>
@@ -725,13 +717,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     {!isHidden && (
                         <div className="mt-4 flex justify-between items-center border-t border-white/5 pt-3">
                              <div className="flex items-center gap-2">
-                                <button 
-                                    onClick={(e) => handleBoostClick(e, msg.id)}
-                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all ${isBoosted ? 'text-cyan-400 bg-cyan-400/5' : 'text-gray-500 hover:text-white'}`}
-                                >
-                                    <Zap size={14} className={isBoosted ? "fill-cyan-400" : ""} />
-                                    <span className="text-xs font-bold">{t('dossier.impact', 'IMPACT')}</span>
-                                </button>
+                                {/* Removed old Impact button since voting is now main control */}
                              </div>
                             
                             <div className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">

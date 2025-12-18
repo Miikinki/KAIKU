@@ -8,9 +8,6 @@ const CACHE_DURATION_MS = 3 * 60 * 60 * 1000;
 const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000; 
 const RADAR_MODEL = 'gemini-3-flash-preview';
 
-// --- DIRECT API KEY CONFIGURATION ---
-const FINAL_API_KEY = "AIzaSyBu9BLySGeO_lkJv9m3DcWsxt1JfLGE7Hc";
-
 const cleanJsonString = (text: string): string => {
   let cleaned = text.replace(/```json\n?|```/g, '').trim();
   const firstBracket = cleaned.indexOf('[');
@@ -32,11 +29,11 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
       if (cachedEvents.length > 0) return cachedEvents;
   }
 
-  // FORCE USE OF KEY
-  const apiKey = FINAL_API_KEY;
+  // Retrieve key from Environment Variables
+  const apiKey = getEnvVar('GOOGLE_API_KEY');
   
   if (!apiKey || apiKey.length < 5) {
-      console.error("KAIKU: API Key is empty or invalid.");
+      console.error("KAIKU: Google API Key is missing. Please set VITE_GOOGLE_API_KEY in your environment variables.");
       throw new Error("API Key Missing");
   }
 

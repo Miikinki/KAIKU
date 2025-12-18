@@ -2,6 +2,7 @@ import React, { useEffect, useRef, forwardRef } from 'react';
 import { useMap } from 'react-leaflet';
 import { ChatMessage } from '../types';
 import L from 'leaflet';
+import { HIGH_SIGNAL_THRESHOLD } from '../constants';
 
 interface HeatmapLayerProps {
   messages: ChatMessage[];
@@ -135,6 +136,9 @@ const GlowLayer = L.Layer.extend({
         ctx.globalCompositeOperation = 'screen'; 
 
         this._data.forEach((msg: ChatMessage) => {
+            // FILTER: Only show signals with positive score
+            if (msg.score <= 0) return;
+
             const margin = 0.5; 
             if (msg.location.lat > bounds.getNorth() + margin || 
                 msg.location.lat < bounds.getSouth() - margin ||
@@ -155,9 +159,16 @@ const GlowLayer = L.Layer.extend({
             let radius = baseRadius;
             let intensity = baseIntensity;
             
-            // Slight boost for popular messages
-            if (msg.score > 5) { radius *= 1.1; intensity *= 1.2; }
-            if (msg.score > 20) { radius *= 1.2; intensity *= 1.3; }
+            // COLD START TUNING:
+            // Boost significantly at HIGH_SIGNAL_THRESHOLD (+5) so the map feels alive quickly.
+            if (msg.score >= HIGH_SIGNAL_THRESHOLD) { // +5
+                radius *= 1.5; 
+                intensity *= 1.5; 
+            } else if (msg.score >= 2) {
+                // Mild boost for just getting started
+                radius *= 1.2;
+                intensity *= 1.2;
+            }
 
             // Cap intensity
             intensity = Math.min(intensity, 0.6);

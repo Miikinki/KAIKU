@@ -557,12 +557,7 @@ export const saveMessage = async (
       }])
       .then(({ error }) => {
           if (error) {
-              // DETAILED LOGGING FOR DEBUGGING
-              console.error("CRITICAL: Cloud sync failed. Likely missing columns in Supabase.");
-              console.error("Error Code:", error.code);
-              console.error("Error Message:", error.message);
-              console.error("Details:", error.details);
-              console.error("Hint:", error.hint);
+              console.error("CRITICAL: Cloud sync failed.", error);
           }
       });
   
@@ -581,29 +576,94 @@ export const deleteMessage = async (msgId: string) => {
     } catch (e) {}
 };
 
+/**
+ * Handles Up/Down voting logic with toggle support.
+ * Updates local cache immediately and sends delta to server.
+ */
 export const castVote = async (msgId: string, direction: 'up' | 'down') => {
-    if (direction === 'down') return; 
-
     const votes = getUserVotes();
-    votes[msgId] = 'up'; 
+    const currentVote = votes[msgId]; // 'up' | 'down' | undefined
+    let scoreDelta = 0;
+    let newVoteState: 'up' | 'down' | undefined = undefined;
+
+    // Determine Logic
+    if (direction === 'up') {
+        if (currentVote === 'up') {
+            // Toggle OFF
+            delete votes[msgId];
+            scoreDelta = -1;
+        } else if (currentVote === 'down') {
+            // Switch Down -> Up
+            votes[msgId] = 'up';
+            newVoteState = 'up';
+            scoreDelta = 2; // Remove down (-1 becomes 0) then add up (0 becomes 1) -> +2
+        } else {
+            // New Vote
+            votes[msgId] = 'up';
+            newVoteState = 'up';
+            scoreDelta = 1;
+        }
+    } else { // direction === 'down'
+        if (currentVote === 'down') {
+            // Toggle OFF
+            delete votes[msgId];
+            scoreDelta = 1; // Remove -1 effect
+        } else if (currentVote === 'up') {
+            // Switch Up -> Down
+            votes[msgId] = 'down';
+            newVoteState = 'down';
+            scoreDelta = -2; // Remove up (+1 becomes 0) then add down (0 becomes -1) -> -2
+        } else {
+            // New Vote
+            votes[msgId] = 'down';
+            newVoteState = 'down';
+            scoreDelta = -1;
+        }
+    }
+
+    // Save Vote State
     localStorage.setItem(USER_VOTES_KEY, JSON.stringify(votes));
     
-    // Optimistically update local storage
+    // 1. Optimistic Local Update
     const stored = localStorage.getItem(STORAGE_KEY);
+    let newTotalScore = 0;
     if (stored) {
         const localData = JSON.parse(stored);
-        const msg = localData.find((m: ChatMessage) => m.id === msgId);
-        if (msg) {
-            msg.score = (msg.score || 0) + 1;
-            msg.expiresAt = (msg.expiresAt || Date.now()) + BOOST_EXTENSION_MS;
+        const msgIndex = localData.findIndex((m: ChatMessage) => m.id === msgId);
+        if (msgIndex !== -1) {
+            localData[msgIndex].score = (localData[msgIndex].score || 0) + scoreDelta;
+            
+            // Extend lifespan if upvoted
+            if (newVoteState === 'up') {
+                localData[msgIndex].expiresAt = (localData[msgIndex].expiresAt || Date.now()) + BOOST_EXTENSION_MS;
+            }
+            
+            newTotalScore = localData[msgIndex].score;
             localStorage.setItem(STORAGE_KEY, JSON.stringify(localData));
         }
     }
 
-    // Attempt RPC
-    const { error } = await supabase.rpc('boost_message', { message_id: msgId });
-    if (error) {
-        console.warn("Boost RPC failed, local update only.");
+    // 2. Send Delta to Server (RPC preferred, but we use direct update to avoid SQL requirements for user)
+    // Note: Concurrency issue exists here without RPC 'increment', but sufficient for MVP.
+    // Ideally: supabase.rpc('increment_score', { row_id: msgId, delta: scoreDelta })
+    
+    // We will attempt to fetch current score and update it.
+    try {
+        const { data: currentMsg } = await supabase
+            .from('kaiku_posts')
+            .select('score')
+            .eq('id', msgId)
+            .single();
+
+        if (currentMsg) {
+            const finalScore = (currentMsg.score || 0) + scoreDelta;
+            await supabase
+                .from('kaiku_posts')
+                .update({ score: finalScore })
+                .eq('id', msgId);
+        }
+    } catch (e) {
+        console.warn("Vote sync failed, local update only.");
     }
 };
 

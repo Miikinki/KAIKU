@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 import { getEnvVar } from './env';
 
@@ -6,25 +5,15 @@ import { getEnvVar } from './env';
 const envUrl = getEnvVar('SUPABASE_URL');
 const envKey = getEnvVar('SUPABASE_ANON_KEY');
 
-// 2. Fallback to Hardcoded values for Preview/Test Environment
-// This ensures the app works in the AI Studio preview window immediately.
-const FALLBACK_URL = "https://njaujopcvyuqtnsjslxi.supabase.co";
-const FALLBACK_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYXVqb3Bjdnl1cXRuc2pzbHhpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzOTEzNjgsImV4cCI6MjA4MDk2NzM2OH0.xVEtbHoiZMpWgzI21IpZrWHKEAcUIGimT-tJ_14N6c4";
+// NOTE: It is best practice to configure these in your deployment platform (e.g., Vercel)
+// rather than hardcoding them here to avoid Git leaks.
 
-const supabaseUrl = envUrl || FALLBACK_URL;
-const supabaseKey = envKey || FALLBACK_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.warn("KAIKU: Critical Error - No Supabase credentials found.");
-} else {
-  console.log("KAIKU: Supabase Client Initialized", { 
-    usingEnv: !!envUrl, 
-    url: supabaseUrl 
-  });
+if (!envUrl || !envKey) {
+  console.warn("KAIKU: Supabase credentials missing. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseKey || '');
+export const supabase = createClient(envUrl || '', envKey || '');
 
 export const isSupabaseConfigured = () => {
-    return !!supabaseUrl && !!supabaseKey;
+    return !!envUrl && !!envKey;
 };

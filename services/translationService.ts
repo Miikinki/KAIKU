@@ -1,16 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
+import { getEnvVar } from './env';
 
 const TRANSLATION_MODEL = 'gemini-3-flash-preview';
 
-// --- DIRECT API KEY CONFIGURATION ---
-const FINAL_API_KEY = "AIzaSyBu9BLySGeO_lkJv9m3DcWsxt1JfLGE7Hc"; 
-
 export const translateText = async (text: string, targetLang: string): Promise<string> => {
-    // FORCE USE OF KEY
-    const apiKey = FINAL_API_KEY;
+    const apiKey = getEnvVar('GOOGLE_API_KEY');
 
     if (!apiKey) {
-        console.warn("Translation skipped: Missing API Key");
+        console.warn("Translation skipped: Missing VITE_GOOGLE_API_KEY");
         return text;
     }
 
