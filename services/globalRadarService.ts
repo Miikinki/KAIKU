@@ -5,20 +5,18 @@ import { supabase } from './supabaseClient';
 import { getEnvVar } from './env';
 
 const CACHE_DURATION_MS = 3 * 60 * 60 * 1000;
-const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000; // 15 minutes for scan results
+const SCAN_RESULT_DURATION_MS = 15 * 60 * 1000; 
 const RADAR_MODEL = 'gemini-3-flash-preview';
 
-// --- CONFIGURATION ---
-// User provided key. NOTE: In a frontend app, this is visible in network requests.
-// Restrict it to your domain in Google Cloud Console.
-const HARDCODED_API_KEY = "AIzaSyBu9BLySGeO_lkJv9m3DcWsxt1JfLGE7Hc"; 
+// --- DIRECT API KEY CONFIGURATION ---
+// User provided key.
+const FINAL_API_KEY = "AIzaSyBu9BLySGeO_lkJv9m3DcWsxt1JfLGE7Hc";
 
 /**
  * Utility to clean JSON string from potential Markdown code blocks
  */
 const cleanJsonString = (text: string): string => {
   let cleaned = text.replace(/```json\n?|```/g, '').trim();
-  // Sometimes the model adds "Here is the JSON..." preamble
   const firstBracket = cleaned.indexOf('[');
   const lastBracket = cleaned.lastIndexOf(']');
   if (firstBracket !== -1 && lastBracket !== -1) {
@@ -27,25 +25,23 @@ const cleanJsonString = (text: string): string => {
   return cleaned;
 };
 
-/**
- * Voimakkaampi jitter (hajautus) uutisille.
- */
 const applyStrongJitter = (coord: number) => {
     return coord + (Math.random() - 0.5) * 0.015;
 };
 
 export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolean = false): Promise<ChatMessage[]> => {
+  // Check cache first if not a specific search
   if (!specificQuery && !skipSave) {
       const cachedEvents = await getCachedEvents();
       if (cachedEvents.length > 0) return cachedEvents;
   }
 
-  // Force use of the hardcoded key to prevent "Missing API Key" errors in preview
-  const apiKey = HARDCODED_API_KEY;
+  // FORCE USE OF KEY
+  const apiKey = FINAL_API_KEY;
   
-  if (!apiKey) {
-      console.error("KAIKU: Missing API_KEY.");
-      throw new Error("System configuration error: Server Uplink Offline (Missing Credentials).");
+  if (!apiKey || apiKey.length < 5) {
+      console.error("KAIKU: API Key is empty or invalid.");
+      throw new Error("CRITICAL ERROR: API Key Missing in globalRadarService.ts");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -133,7 +129,7 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   } catch (error: any) {
     console.error("KAIKU: Radar Scan Exception:", error);
     if (error.message?.includes("API key")) {
-         throw new Error("Uplink Configuration Error (Invalid Key).");
+         throw new Error("Uplink Configuration Error (Invalid Key Check).");
     }
     throw error; 
   }
