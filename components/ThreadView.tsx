@@ -18,6 +18,7 @@ interface ThreadViewProps {
   onTagClick: (tag: string) => void;
   hiddenIds: Set<string>;
   onToggleHidden: (msgId: string) => void;
+  currentUserCountry?: string | null;
 }
 
 const getSourceName = (url?: string) => {
@@ -54,7 +55,7 @@ const getSignalHealth = (msg: ChatMessage) => {
     };
 };
 
-const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick, hiddenIds, onToggleHidden }) => {
+const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply, onVote, onDelete, onTagClick, hiddenIds, onToggleHidden, currentUserCountry }) => {
   const { t, i18n } = useTranslation();
   const [replies, setReplies] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -192,28 +193,54 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
   };
 
   const renderVisitorBadge = (msg: ChatMessage) => {
-    if (!msg.isRemote && msg.postType !== 'GLOBAL_EVENT') return null;
+    // Priority Rule: "Check the reply author's countryCode against the current user's countryCode."
+    
+    // 1. GLOBAL EVENTS ALWAYS SHOW BADGE
+    if (msg.postType === 'GLOBAL_EVENT') {
+        return (
+            <div className="text-amber-400 flex items-center gap-1.5" title={`Global Event: ${msg.country}`}>
+                <Satellite size={12} />
+                {msg.country && (
+                    <span className="text-sm leading-none" role="img" aria-label={msg.country}>
+                        {getFlagEmoji(msg.country)}
+                    </span>
+                )}
+            </div>
+        );
+    }
 
-    const isDomestic = msg.country && msg.originCountry === msg.country;
-    const title = isDomestic 
-        ? t('feed.visitor_remote', { country: msg.originCountry })
-        : t('feed.visitor_global', { country: msg.originCountry });
+    // 2. USER REPLIES (FOREIGN INDICATOR)
+    // If we know the Viewer's Country AND the Reply's Origin Country
+    if (currentUserCountry && msg.originCountry) {
+        // Show badge if different
+        if (currentUserCountry.toUpperCase() !== msg.originCountry.toUpperCase()) {
+            return (
+                <div className="text-amber-400 flex items-center gap-1.5" title={`Signal from ${msg.originCountry}`}>
+                    <Satellite size={12} />
+                    <span className="text-sm leading-none" role="img" aria-label={msg.originCountry}>
+                        {getFlagEmoji(msg.originCountry)}
+                    </span>
+                </div>
+            );
+        }
+        // If same, return null (Local)
+        return null;
+    }
 
-    return (
-        <div className="text-amber-400 flex items-center gap-1.5" title={title}>
-            <Satellite size={12} />
-            {!isDomestic && msg.originCountry && msg.originCountry !== 'SYSTEM' && (
+    // 3. FALLBACK: Old logic (Comparison against message location)
+    // Used if we don't know the viewer's location (e.g. no GPS)
+    if (msg.isRemote && msg.originCountry && msg.originCountry !== 'SYSTEM') {
+         return (
+            <div className="text-amber-400 flex items-center gap-1.5" title={`Remote signal from ${msg.originCountry}`}>
+                <Satellite size={12} />
                 <span className="text-sm leading-none" role="img" aria-label={msg.originCountry}>
                     {getFlagEmoji(msg.originCountry)}
                 </span>
-            )}
-            {msg.postType === 'GLOBAL_EVENT' && msg.country && msg.originCountry === 'SYSTEM' && (
-                 <span className="text-sm leading-none" role="img" aria-label={msg.country}>
-                    {getFlagEmoji(msg.country)}
-                </span>
-            )}
-        </div>
-    );
+            </div>
+        );
+    }
+
+    return null;
   };
 
   const renderMessageCard = (msg: ChatMessage, isParent: boolean) => {

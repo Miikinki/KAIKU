@@ -55,6 +55,7 @@ function App() {
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
   const [currentUserLocation, setCurrentUserLocation] = useState<{lat: number, lng: number} | null>(null);
   const [currentCityName, setCurrentCityName] = useState<string | null>(null); // For List View Header
+  const [currentCountry, setCurrentCountry] = useState<string | null>(null); // For Reply Foreign Indicators
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); 
   
   const [isFallbackLocation, setIsFallbackLocation] = useState(false);
@@ -100,9 +101,10 @@ function App() {
       setIsFallbackLocation(isFallback);
       localStorage.setItem('kaiku_last_loc', JSON.stringify(startLoc));
       
-      // Init City Name
+      // Init City Name & Country
       getCityName(startLoc.lat, startLoc.lng).then(data => {
           setCurrentCityName(data.city);
+          if (data.countryCode) setCurrentCountry(data.countryCode);
       });
 
       triggerHaptic('light');
@@ -216,12 +218,10 @@ function App() {
                     setCurrentUserLocation(newLoc);
                     setGpsAccuracy(accuracy);
                     
-                    // Update City Name occasionally or if moved significantly
-                    // For simplicity, updating every time GPS changes significantly might be heavy,
-                    // but since watchPosition triggers on change, let's just do it.
-                    // To optimize, could throttle this.
+                    // Update City Name & Country occasionally
                     getCityName(latitude, longitude).then(d => {
                          if (d.city && d.city !== currentCityName) setCurrentCityName(d.city);
+                         if (d.countryCode) setCurrentCountry(d.countryCode);
                     });
 
                     localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
@@ -598,6 +598,7 @@ function App() {
                     onTagClick={handleTagClick}
                     hiddenIds={hiddenIds}
                     onToggleHidden={handleToggleHidden}
+                    currentUserCountry={currentCountry}
                 />
             )}
             </div>

@@ -16,6 +16,11 @@ export interface LocationResult {
  */
 export const getPreciseLocation = async (): Promise<LocationResult> => {
   
+  // 0. SECURE CONTEXT CHECK (Critical for Chrome)
+  if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.protocol !== 'file:') {
+      throw new Error("Secure Context Required (HTTPS) for location access.");
+  }
+
   const getPos = (options: PositionOptions): Promise<GeolocationPosition> =>
     new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, options);
@@ -26,7 +31,7 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
     console.log("KAIKU_GPS: Attempting High Accuracy (10s timeout)...");
     const pos = await getPos({
       enableHighAccuracy: true,
-      timeout: 10000, // 10s timeout as requested
+      timeout: 10000, // 10s timeout
       maximumAge: 0   // Force fresh reading
     });
 
@@ -41,9 +46,9 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
 
   } catch (err: any) {
     // Check if permission was explicitly denied
-    if (err.code === 1) {
+    if (err.code === 1) { // PERMISSION_DENIED
         console.error("KAIKU_GPS: Permission Denied.");
-        throw new Error("Location permission denied");
+        throw new Error("Permission Denied");
     }
 
     console.warn(`KAIKU_GPS: High Accuracy Failed (Code: ${err.code}). Error: ${err.message}`);
@@ -68,6 +73,11 @@ export const getPreciseLocation = async (): Promise<LocationResult> => {
       };
     } catch (fallbackErr: any) {
       console.error("KAIKU_GPS: All hardware/network methods failed.", fallbackErr);
+      
+      if (fallbackErr.code === 1) throw new Error("Permission Denied");
+      if (fallbackErr.code === 2) throw new Error("Position Unavailable"); // POSITION_UNAVAILABLE
+      if (fallbackErr.code === 3) throw new Error("Connection Timeout"); // TIMEOUT
+      
       throw new Error("Could not determine location.");
     }
   }
