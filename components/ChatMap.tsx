@@ -208,6 +208,7 @@ const MapController: React.FC<{
 
 const ChatMap: React.FC<ChatMapProps> = (props) => {
   const { messages, signals, onViewportChange, onMapClick, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, hiddenIds, userLocation, scannerStatus, scannerCity, onTeleport, isTeleporting } = props;
+  const { t } = useTranslation();
   
   const [zoom, setZoom] = useState(3);
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null);
@@ -381,7 +382,7 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
                                 <Satellite size={20} />
                             </div>
                             <span className="text-[9px] font-black tracking-widest uppercase bg-black/60 px-2 rounded">
-                                {isTeleporting ? props.t?.('map.teleport_active') || "UPLINK ACTIVE" : props.t?.('map.teleport') || "RELOCATE"}
+                                {isTeleporting ? t('map.teleport_active') : t('map.teleport')}
                             </span>
                         </button>
                     </motion.div>
