@@ -134,18 +134,6 @@
     "badges_title": "BADGE COLLECTION",
     "badges_max": "MAX 3 SELECTED",
     "badge_unlocked": "BADGE UNLOCKED",
-    "badge_prime": "Operator Prime",
-    "badge_prime_desc": "Elite Status",
-    "badge_veteran": "Veteran",
-    "badge_veteran_desc": "Service > 1 Year (or 500+ Posts)",
-    "badge_influencer": "Influencer",
-    "badge_influencer_desc": "Signal Impact > 1000",
-    "badge_scout": "Scout",
-    "badge_scout_desc": "100+ Sector Scans",
-    "badge_bug_hunter": "Architect",
-    "badge_bug_hunter_desc": "Found a glitch in the matrix",
-    "badge_founder": "First Wave",
-    "badge_founder_desc": "Joined during Beta",
     "ranks": {
         "1": "OBSERVER",
         "2": "SIGNALER",
@@ -169,5 +157,17 @@
   "notifications": {
       "reply_title": "INCOMING TRANSMISSION",
       "reply_body": "Someone responded to your signal."
-  }
+  },
+  "badge_prime": "Operator Prime",
+  "badge_prime_desc": "Elite Status",
+  "badge_veteran": "Veteran",
+  "badge_veteran_desc": "Service > 1 Year (or 500+ Posts)",
+  "badge_influencer": "Influencer",
+  "badge_influencer_desc": "Signal Impact > 1000",
+  "badge_scout": "Scout",
+  "badge_scout_desc": "100+ Sector Scans",
+  "badge_bug_hunter": "Architect",
+  "badge_bug_hunter_desc": "Found a glitch in the matrix",
+  "badge_founder": "First Wave",
+  "badge_founder_desc": "Joined during Beta"
 }

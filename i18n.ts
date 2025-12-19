@@ -47,7 +47,8 @@ const resources = {
         "mask_coordinates": "MASK COORDINATES",
         "mask_description": "Randomizes location by ~1km for privacy.",
         "status_masked": "> ENCRYPTION: ACTIVE [LOCATION SCRAMBLED]",
-        "status_precise": "> TARGETING: PRECISE [EXACT LOCATION VISIBLE]"
+        "status_precise": "> TARGETING: PRECISE [EXACT LOCATION VISIBLE]",
+        "privacy_active": "SIGNAL ENCRYPTION ACTIVE"
       },
       "thread": {
         "title": "THREAD",
@@ -70,7 +71,9 @@ const resources = {
         "search_placeholder": "Search coordinates...",
         "search_not_found": "TARGET NOT FOUND",
         "search_this_area": "SEARCH THIS AREA",
-        "search_context": "Search news: {{location}}"
+        "search_context": "Search news: {{location}}",
+        "teleport": "RELOCATE UPLINK",
+        "teleport_active": "REMOTE UPLINK ACTIVE"
       },
       "welcome": {
         "subtitle": "Hyperlocal Signal Grid",
@@ -89,6 +92,9 @@ const resources = {
         "error_signal_lost": "SIGNAL LOST. CHECK GPS/NETWORK.",
         "error_permission": "LOCATION PERMISSION REQUIRED",
         "btn_initialize": "INITIALIZE UPLINK",
+        "btn_restore": "RESTORE IDENTITY",
+        "restore_placeholder": "ENTER TRANSFER KEY",
+        "restore_submit": "ESTABLISH LINK",
         "footer_version": "v2.0 • ENCRYPTED CONNECTION"
       },
       "boot": {
@@ -99,7 +105,79 @@ const resources = {
       },
       "news": {
         "read_original": "Read original ({{source}}) →"
-      }
+      },
+      "dossier": {
+        "title": "IDENTITY",
+        "edit_identity": "EDIT IDENTITY",
+        "configure_visuals": "Configure visual signature",
+        "clearance": "ACCESS LEVEL",
+        "transmissions": "TRANSMISSIONS",
+        "impact": "SIGNAL IMPACT",
+        "replies": "REPLIES RECD",
+        "sectors": "ACTIVE SECTORS",
+        "scans": "NEWS SCANNED",
+        "footer": "DATA ENCRYPTED • EYES ONLY",
+        "callsign": "CALLSIGN",
+        "anonymous": "UNKNOWN",
+        "icon": "ICON",
+        "color": "COLOR",
+        "save_identity": "SAVE IDENTITY",
+        "hide_level": "HIDE LEVEL PUBLICLY",
+        "transfer_title": "DEVICE TRANSFER & BACKUP",
+        "generate_key": "GENERATE TRANSFER KEY",
+        "key_warning": "WRITE THIS DOWN. KEY CANNOT BE RECOVERED.",
+        "key_generated": "KEY GENERATED",
+        "notifications": "NOTIFICATIONS",
+        "notifications_desc": "Alert on replies & activity spikes",
+        "streak": "UPLINK STREAK",
+        "days": "DAYS",
+        "prime_status": "OPERATOR PRIME",
+        "btn_get_prime": "GET OPERATOR PRIME",
+        "xp_info": "XP RULES",
+        "xp_post": "Broadcast: +10",
+        "xp_reply": "Reply: +15",
+        "xp_scan": "Sector Scan: +20",
+        "xp_vote": "Upvote Received: +5",
+        "edit_badges": "EDIT BADGES",
+        "badges_title": "BADGE COLLECTION",
+        "badges_max": "MAX 3 SELECTED",
+        "badge_unlocked": "BADGE UNLOCKED",
+        "ranks": {
+            "1": "OBSERVER",
+            "2": "SIGNALER",
+            "3": "OPERATOR",
+            "4": "BEACON"
+        }
+      },
+      "prime": {
+        "title": "OPERATOR PRIME",
+        "subtitle": "ELITE CLEARANCE LEVEL",
+        "feature_teleport": "SATELLITE UPLINK (TELEPORT)",
+        "feature_teleport_desc": "Transmit & Receive from any global sector.",
+        "feature_gold": "GOLD PRIORITY SIGNAL",
+        "feature_gold_desc": "Stand out with elite visual signature.",
+        "feature_alert": "PRIORITY ALERTS",
+        "feature_alert_desc": "Instant notification on relevant traffic.",
+        "price": "4.99€ / MONTH",
+        "btn_activate": "INITIALIZE PRIME STATUS",
+        "active": "STATUS ACTIVE"
+      },
+      "notifications": {
+          "reply_title": "INCOMING TRANSMISSION",
+          "reply_body": "Someone responded to your signal."
+      },
+      "badge_prime": "Operator Prime",
+      "badge_prime_desc": "Elite Status",
+      "badge_veteran": "Veteran",
+      "badge_veteran_desc": "Service > 1 Year (or 500+ Posts)",
+      "badge_influencer": "Influencer",
+      "badge_influencer_desc": "Signal Impact > 1000",
+      "badge_scout": "Scout",
+      "badge_scout_desc": "100+ Sector Scans",
+      "badge_bug_hunter": "Architect",
+      "badge_bug_hunter_desc": "Found a glitch in the matrix",
+      "badge_founder": "First Wave",
+      "badge_founder_desc": "Joined during Beta"
     }
   },
   fi: {
@@ -144,7 +222,8 @@ const resources = {
         "mask_coordinates": "NAAMIOI SIJAINTI",
         "mask_description": "Satunnaistaa sijainnin n. 1km yksityisyyden vuoksi.",
         "status_masked": "> SALAUS: AKTIIVINEN [SIJAINTI HÄIRITTY]",
-        "status_precise": "> KOHDISTUS: TARKKA [TARKKA SIJAINTI NÄKYY]"
+        "status_precise": "> KOHDISTUS: TARKKA [TARKKA SIJAINTI NÄKYY]",
+        "privacy_active": "SIJAINTI HAJAUTETTU"
       },
       "thread": {
         "title": "KETJU",
@@ -167,7 +246,9 @@ const resources = {
         "search_placeholder": "Etsi koordinaatteja...",
         "search_not_found": "KOHDETTA EI LÖYDY",
         "search_this_area": "HAE TÄLTÄ ALUEELTA",
-        "search_context": "Hae uutisia: {{location}}"
+        "search_context": "Hae uutisia: {{location}}",
+        "teleport": "SIIRRÄ UPLINK",
+        "teleport_active": "ETÄ-UPLINK AKTIIVINEN"
       },
       "welcome": {
         "subtitle": "Hyperlokaali Signaaliverkko",
@@ -186,6 +267,9 @@ const resources = {
         "error_signal_lost": "SIGNAALI KATKESI. TARKISTA GPS/VERKKO.",
         "error_permission": "SIJAINTILUPA VAADITAAN",
         "btn_initialize": "ALUSTA YHTEYS",
+        "btn_restore": "PALAUTA IDENTITEETTI",
+        "restore_placeholder": "SYÖTÄ SIIRTOAVAIN",
+        "restore_submit": "MUODOSTA LINKKI",
         "footer_version": "v2.0 • SALATTU YHTEYS"
       },
       "boot": {
@@ -196,7 +280,79 @@ const resources = {
       },
       "news": {
         "read_original": "Lue alkuperäinen ({{source}}) →"
-      }
+      },
+      "dossier": {
+        "title": "IDENTITEETTI",
+        "edit_identity": "MUOKKAA IDENTITEETTIÄ",
+        "configure_visuals": "Määritä visuaalinen allekirjoitus",
+        "clearance": "TURVALUOKITUS",
+        "transmissions": "LÄHETYKSET",
+        "impact": "SIGNAALIVAIKUTUS",
+        "replies": "VASTAUKSET",
+        "sectors": "AKTIIVISET SEKTORIT",
+        "scans": "UUTISIA SKANNATTU",
+        "footer": "TIEDOT SALATTU • VAIN SINULLE",
+        "callsign": "NIMIMERKKI",
+        "anonymous": "TUNTEMATON",
+        "icon": "IKONI",
+        "color": "VÄRI",
+        "save_identity": "TALLENNA IDENTITEETTI",
+        "hide_level": "PIILOTA TASO MUILTA",
+        "transfer_title": "LAITTEENVAIHTO & VARMUUSKOPIO",
+        "generate_key": "LUO SIIRTOAVAIN",
+        "key_warning": "KIRJOITA TÄMÄ YLÖS. TÄTÄ KOODIA EI VOI PALAUTTAA JOS SE HUKKUU.",
+        "key_generated": "AVAIN LUOTU",
+        "notifications": "ILMOITUKSET",
+        "notifications_desc": "Hälytys vastauksista ja piikeistä",
+        "streak": "UPLINK-PUTKI",
+        "days": "PV",
+        "prime_status": "OPERATOR PRIME",
+        "btn_get_prime": "HANKI OPERATOR PRIME",
+        "xp_info": "XP SÄÄNNÖT",
+        "xp_post": "Lähetys: +10",
+        "xp_reply": "Vastaus: +15",
+        "xp_scan": "Sektoriscan: +20",
+        "xp_vote": "Saatu ääni: +5",
+        "edit_badges": "MUOKKAA TUNNISTEITA",
+        "badges_title": "KOKOELMA",
+        "badges_max": "MAX 3 VALITTU",
+        "badge_unlocked": "TUNNISTE AVATTU",
+        "ranks": {
+            "1": "TARKKAILIJA",
+            "2": "VIESTITTÄJÄ",
+            "3": "OPERAATTORI",
+            "4": "MAJAKKA"
+        }
+      },
+      "prime": {
+        "title": "OPERATOR PRIME",
+        "subtitle": "ELITE CLEARANCE LEVEL",
+        "feature_teleport": "SATELLITE UPLINK (TELEPORT)",
+        "feature_teleport_desc": "Lähetä ja vastaanota mistä tahansa sektorista.",
+        "feature_gold": "KULTAINEN SIGNAALI",
+        "feature_gold_desc": "Erotu joukosta eliittistatuksella.",
+        "feature_alert": "PRIORITEETTIHÄLYTYKSET",
+        "feature_alert_desc": "Välitön tieto liikenteestä.",
+        "price": "4.99€ / KK",
+        "btn_activate": "AKTIVOI PRIME-STATUS",
+        "active": "STATUS AKTIIVINEN"
+      },
+      "notifications": {
+          "reply_title": "SAAPUVA LÄHETYS",
+          "reply_body": "Joku vastasi signaaliisi."
+      },
+      "badge_prime": "Operator Prime",
+      "badge_prime_desc": "Eliittistatus",
+      "badge_veteran": "Veteraani",
+      "badge_veteran_desc": "Palvelus > 1 Vuosi (tai 500+ viestiä)",
+      "badge_influencer": "Vaikuttaja",
+      "badge_influencer_desc": "Signaalivaikutus > 1000",
+      "badge_scout": "Tiedustelija",
+      "badge_scout_desc": "100+ Sektoria Skannattu",
+      "badge_bug_hunter": "Arkkitehti",
+      "badge_bug_hunter_desc": "Löysi virheen matriisista",
+      "badge_founder": "Ensimmäinen Aalto",
+      "badge_founder_desc": "Liittyi Beta-vaiheessa"
     }
   },
   es: {

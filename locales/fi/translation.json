@@ -134,18 +134,6 @@
     "badges_title": "KOKOELMA",
     "badges_max": "MAX 3 VALITTU",
     "badge_unlocked": "TUNNISTE AVATTU",
-    "badge_prime": "Operator Prime",
-    "badge_prime_desc": "Eliittistatus",
-    "badge_veteran": "Veteraani",
-    "badge_veteran_desc": "Palvelus > 1 Vuosi (tai 500+ viestiä)",
-    "badge_influencer": "Vaikuttaja",
-    "badge_influencer_desc": "Signaalivaikutus > 1000",
-    "badge_scout": "Tiedustelija",
-    "badge_scout_desc": "100+ Sektoria Skannattu",
-    "badge_bug_hunter": "Arkkitehti",
-    "badge_bug_hunter_desc": "Löysi virheen matriisista",
-    "badge_founder": "Ensimmäinen Aalto",
-    "badge_founder_desc": "Liittyi Beta-vaiheessa",
     "ranks": {
         "1": "TARKKAILIJA",
         "2": "VIESTITTÄJÄ",
@@ -169,5 +157,17 @@
   "notifications": {
       "reply_title": "SAAPUVA LÄHETYS",
       "reply_body": "Joku vastasi signaaliisi."
-  }
+  },
+  "badge_prime": "Operator Prime",
+  "badge_prime_desc": "Eliittistatus",
+  "badge_veteran": "Veteraani",
+  "badge_veteran_desc": "Palvelus > 1 Vuosi (tai 500+ viestiä)",
+  "badge_influencer": "Vaikuttaja",
+  "badge_influencer_desc": "Signaalivaikutus > 1000",
+  "badge_scout": "Tiedustelija",
+  "badge_scout_desc": "100+ Sektoria Skannattu",
+  "badge_bug_hunter": "Arkkitehti",
+  "badge_bug_hunter_desc": "Löysi virheen matriisista",
+  "badge_founder": "Ensimmäinen Aalto",
+  "badge_founder_desc": "Liittyi Beta-vaiheessa"
 }
