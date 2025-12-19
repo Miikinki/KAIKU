@@ -88,7 +88,7 @@ const checkApiCache = async (key: string): Promise<ChatMessage[] | null> => {
             .select('*')
             .eq('location_key', key)
             .gt('expires_at', new Date().toISOString()) 
-            .maybeSingle(); // Fix: Use maybeSingle() to avoid 406/JSON errors on empty results
+            .maybeSingle(); 
 
         if (error || !data) return null;
         return data.data as ChatMessage[];
@@ -289,26 +289,90 @@ const rehydrateEvents = (events: any[]): ChatMessage[] => {
 };
 
 const saveToDatabase = async (messages: ChatMessage[]) => {
-    const rows = messages.map(msg => ({
-        id: msg.id, 
-        text: msg.text, 
-        latitude: msg.location.lat, 
-        longitude: msg.location.lng,
-        city_name: msg.city, 
-        target_country: msg.country, 
-        session_id: msg.sessionId,
-        score: msg.score, 
-        expires_at: new Date(msg.expiresAt).toISOString(),
-        origin_country: msg.originCountry, 
-        is_remote: msg.isRemote, 
-        tags: [...(msg.tags || []), `lang:${msg.language}`], 
-        post_type: 'GLOBAL_EVENT', 
-        event_metadata: msg.eventMetadata
-    }));
-    
+    // DEDUPLICATION LOGIC
     try {
-        await supabase.from('kaiku_posts').insert(rows);
-        console.log(`KAIKU DB: Persisted ${messages.length} global events.`);
+        const now = new Date();
+        const lookbackWindow = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(); // 24 hours ago
+
+        // 1. Fetch recent GLOBAL_EVENTs to compare against
+        const { data: existingPosts } = await supabase
+            .from('kaiku_posts')
+            .select('text, event_metadata')
+            .eq('post_type', 'GLOBAL_EVENT')
+            .gt('created_at', lookbackWindow);
+
+        const existingUrls = new Set<string>();
+        const existingHeadlines = new Set<string>();
+
+        existingPosts?.forEach((p: any) => {
+            // Track URL
+            if (p.event_metadata?.source_url) {
+                existingUrls.add(p.event_metadata.source_url);
+            }
+            // Track Headline (approximate comparison using first line)
+            if (p.text) {
+                const headline = p.text.split('\n')[0].trim().toLowerCase();
+                if (headline.length > 5) {
+                    existingHeadlines.add(headline);
+                }
+            }
+        });
+
+        // 2. Filter out duplicates from the new batch
+        const uniqueMessages = messages.filter(msg => {
+            const url = msg.eventMetadata?.source_url;
+            const headline = msg.text.split('\n')[0].trim().toLowerCase();
+
+            // Check URL
+            if (url && existingUrls.has(url)) {
+                // console.log("Skipping duplicate URL:", url);
+                return false;
+            }
+
+            // Check Headline
+            if (existingHeadlines.has(headline)) {
+                // console.log("Skipping duplicate Headline:", headline);
+                return false;
+            }
+
+            // Mark as unique for this batch so we don't insert self-duplicates
+            if (url) existingUrls.add(url);
+            if (headline) existingHeadlines.add(headline);
+            
+            return true;
+        });
+
+        if (uniqueMessages.length === 0) {
+            console.log("KAIKU DB: No new unique news items to save.");
+            return;
+        }
+
+        // 3. Insert only unique messages
+        const rows = uniqueMessages.map(msg => ({
+            id: msg.id, 
+            text: msg.text, 
+            latitude: msg.location.lat, 
+            longitude: msg.location.lng,
+            city_name: msg.city, 
+            target_country: msg.country, 
+            session_id: msg.sessionId,
+            score: msg.score, 
+            expires_at: new Date(msg.expiresAt).toISOString(),
+            origin_country: msg.originCountry, 
+            is_remote: msg.isRemote, 
+            tags: [...(msg.tags || []), `lang:${msg.language}`], 
+            post_type: 'GLOBAL_EVENT', 
+            event_metadata: msg.eventMetadata
+        }));
+        
+        const { error } = await supabase.from('kaiku_posts').insert(rows);
+        
+        if (error) {
+            console.error("Supabase Insert Error:", error);
+        } else {
+            console.log(`KAIKU DB: Persisted ${uniqueMessages.length} unique global events.`);
+        }
+
     } catch (e) {
         console.error("KAIKU: Failed to persist radar events to DB", e);
     }

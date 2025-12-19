@@ -10,15 +10,21 @@ export const moderateContent = (text: string): boolean => {
 };
 
 // Helper: Timeout wrapper for fetch
-const fetchWithTimeout = async (resource: string, options: RequestInit = {}, timeout = 2000) => {
+// Increased default timeout to 10s to avoid aggressive aborts
+const fetchWithTimeout = async (resource: string, options: RequestInit = {}, timeout = 10000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
-    const response = await fetch(resource, {
-        ...options,
-        signal: controller.signal
-    });
-    clearTimeout(id);
-    return response;
+    try {
+        const response = await fetch(resource, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(id);
+        return response;
+    } catch (error) {
+        clearTimeout(id);
+        throw error;
+    }
 };
 
 // CACHE for Reverse Geocoding
@@ -35,10 +41,11 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
 
   try {
     // Using Photon (OpenStreetMap data) instead of BigDataCloud
+    // Increased timeout to 8s
     const response = await fetchWithTimeout(
       `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`,
       {},
-      3000
+      8000
     );
     
     if (!response.ok) throw new Error('Geocoding failed');
@@ -92,10 +99,11 @@ export interface SearchResult {
 // 3. Forward Geocoding (Search) - Photon (Komoot)
 export const searchLocations = async (query: string): Promise<SearchResult | null> => {
     try {
+        // Increased timeout to 12s for search robustness
         const response = await fetchWithTimeout(
             `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`,
             {}, 
-            3000
+            12000
         );
         if (!response.ok) throw new Error("Search failed");
         
@@ -137,7 +145,7 @@ export const getIpLocation = async (): Promise<{ lat: number; lng: number } | nu
     // Fallback chain for IP location
     try {
         // Try ipapi.co first (more reliable JSON)
-        const response = await fetchWithTimeout('https://ipapi.co/json/', {}, 2000);
+        const response = await fetchWithTimeout('https://ipapi.co/json/', {}, 5000);
         if (response.ok) {
             const data = await response.json();
             if (data.latitude && data.longitude) {
@@ -152,7 +160,7 @@ export const getIpLocation = async (): Promise<{ lat: number; lng: number } | nu
         // Try BigDataCloud as secondary (might fail with 400 but worth a shot for IP based)
         const response = await fetchWithTimeout(
             `https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en`,
-            {}, 2000
+            {}, 5000
         );
         if (response.ok) {
             const data = await response.json();

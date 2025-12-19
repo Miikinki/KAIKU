@@ -393,6 +393,37 @@ const mapRowToMessage = (d: any): ChatMessage => {
     };
 };
 
+// DEDUPLICATION HELPER FOR FETCHED MESSAGES
+// Filters out duplicates based on Headline/URL (for news) or ID (for all).
+const deduplicateMessages = (messages: ChatMessage[]): ChatMessage[] => {
+    const seenIds = new Set<string>();
+    const seenHeadlines = new Set<string>();
+    const seenUrls = new Set<string>();
+    
+    const unique: ChatMessage[] = [];
+
+    messages.forEach(msg => {
+        if (seenIds.has(msg.id)) return;
+
+        // Strict Deduplication for GLOBAL_EVENTs (News)
+        if (msg.postType === 'GLOBAL_EVENT') {
+            const url = msg.eventMetadata?.source_url;
+            const headline = msg.text.split('\n')[0].trim().toLowerCase();
+
+            if (url && seenUrls.has(url)) return;
+            if (headline.length > 5 && seenHeadlines.has(headline)) return;
+
+            if (url) seenUrls.add(url);
+            if (headline.length > 5) seenHeadlines.add(headline);
+        }
+
+        seenIds.add(msg.id);
+        unique.push(msg);
+    });
+
+    return unique;
+};
+
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
   const nowISO = new Date().toISOString();
   const deleted = getDeletedIds();
@@ -425,12 +456,17 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
       console.warn("Network error during fetch (using local only)");
   }
   
+  // Combine local and remote
+  // Note: Local messages (optomistic UI) should take precedence or merge
   const remoteIdSet = new Set(remoteMessages.map(m => m.id));
   const uniqueLocals = localMessages.filter(m => !remoteIdSet.has(m.id));
   
-  const combined = [...remoteMessages, ...uniqueLocals].sort((a, b) => b.timestamp - a.timestamp);
+  let combined = [...remoteMessages, ...uniqueLocals];
+
+  // APPLY DEDUPLICATION (Fixes double news issues visually)
+  combined = deduplicateMessages(combined);
   
-  return combined;
+  return combined.sort((a, b) => b.timestamp - a.timestamp);
 };
 
 export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => {
