@@ -123,15 +123,38 @@ const GlowLayer = L.Layer.extend({
         let baseRadius = 40 * dpr; // Increased radius for "Fog" effect
         let baseIntensity = 0.1;   // Lower intensity per point for smoother blend
 
-        // Adjust based on zoom to keep density consistent
-        if (zoom < 13) {
-            // Should be handled by clusters, but fallback just in case
-            baseRadius = 20 * dpr; 
-            baseIntensity = 0.05;
+        // Adjust based on zoom to keep density consistent across levels
+        // Now supporting LOW zoom levels too
+        if (zoom < 6) {
+             // World View: Very faint, large blobs
+             baseRadius = 3 * dpr; // Small pixel radius relative to world, but high density
+             baseIntensity = 0.15;
+        }
+        else if (zoom < 10) {
+             // Region View
+             baseRadius = 15 * dpr; 
+             baseIntensity = 0.1;
         } 
-        else if (zoom < 15) { baseRadius = 60 * dpr; baseIntensity = 0.15; }
-        else if (zoom < 17) { baseRadius = 100 * dpr; baseIntensity = 0.12; }
-        else { baseRadius = 150 * dpr; baseIntensity = 0.1; }
+        else if (zoom < 13) {
+            // City View (Zoomed out)
+            baseRadius = 25 * dpr;
+            baseIntensity = 0.08;
+        }
+        else if (zoom < 15) { 
+            // City View (Zoomed in)
+            baseRadius = 60 * dpr; 
+            baseIntensity = 0.15; 
+        }
+        else if (zoom < 17) { 
+            // Street View
+            baseRadius = 100 * dpr; 
+            baseIntensity = 0.12; 
+        }
+        else { 
+            // Max Zoom
+            baseRadius = 150 * dpr; 
+            baseIntensity = 0.1; 
+        }
 
         ctx.globalCompositeOperation = 'screen'; 
 

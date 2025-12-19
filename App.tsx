@@ -93,7 +93,7 @@ function App() {
   });
 
   const [nearbyTypingCount, setNearbyTypingCount] = useState(0);
-
+  
   // EFFECT: Check Daily Streak on App Start
   useEffect(() => {
       const result = processDailyLogin();
@@ -131,7 +131,7 @@ function App() {
       setIsFallbackLocation(isFallback);
       localStorage.setItem('kaiku_last_loc', JSON.stringify(startLoc));
       
-      // Init City Name & Country
+      // Init City Name & Country (One time only on startup)
       getCityName(startLoc.lat, startLoc.lng).then(data => {
           setCurrentCityName(data.city);
           if (data.countryCode) setCurrentCountry(data.countryCode);
@@ -211,8 +211,13 @@ function App() {
                   scanCoord = { lat: res.lat, lng: res.lng };
               }
           } else if (scanCoord) {
-              const cityData = await getCityName(scanCoord.lat, scanCoord.lng);
-              const cityName = cityData.city || "Sector X";
+              // OPTIMIZATION: Do NOT geocode here if we have a name in scanLocationName already
+              // If it's a coordinate string, we leave it as generic "Sector"
+              let cityName = scanLocationName;
+              if (!cityName || cityName.includes("SECTOR")) {
+                   // Fallback for visual status only, okay to skip or be generic
+                   cityName = "Sector " + scanCoord.lat.toFixed(1);
+              }
               effectiveCityName = cityName;
               setScannerCity(cityName);
               setScannerStatus(t('welcome.status_target', { city: cityName }));
@@ -274,14 +279,8 @@ function App() {
                     setCurrentUserLocation(newLoc);
                     setGpsAccuracy(accuracy);
                     
-                    // Update City Name & Country occasionally
-                    // Only update city name if NOT teleporting (teleport handles its own name)
-                    if (!virtualLocation) {
-                        getCityName(latitude, longitude).then(d => {
-                             if (d.city && d.city !== currentCityName) setCurrentCityName(d.city);
-                             if (d.countryCode) setCurrentCountry(d.countryCode);
-                        });
-                    }
+                    // Note: We intentionally DO NOT geocode on every move here.
+                    // We only do it once on start or explicit locate.
 
                     localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
                     if (isFallbackLocation) {
@@ -300,7 +299,7 @@ function App() {
     return () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
-  }, [isRunning, isFallbackLocation, currentCityName, virtualLocation]);
+  }, [isRunning, isFallbackLocation, virtualLocation]);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -408,19 +407,44 @@ function App() {
     }
   }, [mapMessages, currentBounds, lastScannedCenter, isScanningGlobal, viewMode, effectiveLocation]); 
 
-  // EFFECT: Fetch Contextual Name for Scanner Button when map moves
+  // EFFECT: Zero-API Context Label Update
+  // Calculates the location name based on visible messages OR raw coordinates.
   useEffect(() => {
       if (viewMode !== 'map' || !currentBounds) return;
+      
       const { lat, lng } = currentBounds.center;
       
-      getCityName(lat, lng).then(data => {
-          if (currentBounds.zoom <= 6) {
-              setScanLocationName(data.countryName || data.countryCode);
-          } else {
-              setScanLocationName(data.city);
+      // 1. If we have messages, assume the most common city name is the context
+      if (visibleMessages.length > 0) {
+          const counts: Record<string, number> = {};
+          visibleMessages.forEach(m => {
+              if (m.city && m.city !== "Unknown Sector") {
+                  counts[m.city] = (counts[m.city] || 0) + 1;
+              }
+          });
+          
+          let topCity = "";
+          let maxCount = 0;
+          Object.entries(counts).forEach(([city, count]) => {
+              if (count > maxCount) {
+                  maxCount = count;
+                  topCity = city;
+              }
+          });
+          
+          if (topCity) {
+              setScanLocationName(topCity.toUpperCase());
+              return;
           }
-      });
-  }, [currentBounds, viewMode]);
+      }
+
+      // 2. If no data, use "Sci-Fi" Coordinate Sector format (No API call needed)
+      // Format: "SECTOR 60.1 / 24.9"
+      const latStr = lat.toFixed(1);
+      const lngStr = lng.toFixed(1);
+      setScanLocationName(`SECTOR ${latStr} / ${lngStr}`);
+
+  }, [currentBounds, viewMode, visibleMessages]); // Removed expensive dependencies
 
   const handleViewportChange = useCallback((bounds: ViewportBounds) => setCurrentBounds(bounds), []);
   const handleMapClick = useCallback(() => {
@@ -460,6 +484,13 @@ function App() {
           const loc = { lat: res.lat, lng: res.lng };
           locationCache.current = loc;
           setCurrentUserLocation(loc);
+          
+          // Here we DO fetch the name because it's a specific user action
+          getCityName(loc.lat, loc.lng).then(d => {
+              if (d.city) setCurrentCityName(d.city);
+              if (d.countryCode) setCurrentCountry(d.countryCode);
+          });
+
           setFlyToLocation({ lat: loc.lat, lng: loc.lng, timestamp: Date.now() }); 
       } catch (e: any) {
           console.warn("Locate failed", e);
@@ -475,7 +506,7 @@ function App() {
       const newLoc = { lat, lng };
       setVirtualLocation(newLoc);
       
-      // Update Name Context
+      // Update Name Context (Specific action = API Call allowed)
       getCityName(lat, lng).then(d => {
           setCurrentCityName(d.city);
           if (d.countryCode) setCurrentCountry(d.countryCode);
@@ -497,9 +528,10 @@ function App() {
       setIsFeedOpen(false);
   };
 
-  // Updated Input Opening logic to respect Virtual Location
+  // Updated Input Opening logic
   useEffect(() => {
     if (isInputOpen && !targetLocation) {
+        // Explicitly fetch location name ONLY when opening the input modal
         
         // 0. VIRTUAL LOCATION (Priority 1)
         if (virtualLocation) {
@@ -734,7 +766,7 @@ function App() {
                                         exit={{ opacity: 0, y: -5 }}
                                         className="whitespace-nowrap"
                                     >
-                                        {scanLocationName 
+                                        {scanLocationName && !scanLocationName.includes('SECTOR')
                                             ? t('map.search_context', { location: scanLocationName }) 
                                             : t('map.search_this_area')}
                                     </motion.span>

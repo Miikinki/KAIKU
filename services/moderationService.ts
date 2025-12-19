@@ -21,8 +21,18 @@ const fetchWithTimeout = async (resource: string, options: RequestInit = {}, tim
     return response;
 };
 
+// CACHE for Reverse Geocoding
+// Key: "lat_fixed2,lng_fixed2" (approx 1km precision)
+const cityCache = new Map<string, { city: string; countryCode: string; countryName: string }>();
+
 // 2. Reverse Geocoding (BigDataCloud Free API - CORS Friendly)
 export const getCityName = async (lat: number, lng: number): Promise<{ city: string; countryCode: string; countryName: string }> => {
+  const cacheKey = `${lat.toFixed(2)},${lng.toFixed(2)}`;
+  
+  if (cityCache.has(cacheKey)) {
+      return cityCache.get(cacheKey)!;
+  }
+
   try {
     // Timeout set to 2000ms (2 seconds) to prevent hanging the UI
     const response = await fetchWithTimeout(
@@ -45,7 +55,17 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
     const countryCode = data.countryCode || "";
     const countryName = data.countryName || data.countryCode || "Unknown Territory";
 
-    return { city, countryCode, countryName };
+    const result = { city, countryCode, countryName };
+    
+    // Save to Cache
+    cityCache.set(cacheKey, result);
+    // Limit cache size
+    if (cityCache.size > 100) {
+        const firstKey = cityCache.keys().next().value;
+        if (firstKey) cityCache.delete(firstKey);
+    }
+
+    return result;
            
   } catch (error) {
     // Fail silently and quickly to coordinates

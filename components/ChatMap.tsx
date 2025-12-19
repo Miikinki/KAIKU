@@ -41,46 +41,23 @@ const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
 const isNewsPost = (msg: ChatMessage) => msg.postType === 'GLOBAL_EVENT' || msg.postType === 'SCAN_RESULT';
 
 const getMarkerIcon = (msg: ChatMessage) => {
-    const isMasked = msg.isMasked || false;
     const isNews = isNewsPost(msg);
-    // User signals are smaller, abstract dots to blend with the "Fog" concept
+    // News are larger pins, Users are hidden (handled by heatmap) but if rendered, fallback logic exists
     const containerSize = isNews ? 50 : 30; 
 
-    // DEFAULT COLORS (Fallback)
-    let color = isNews ? '#ef4444' : '#22d3ee';
+    // SYSTEM / NEWS COLOR
+    let color = '#ef4444';
     
-    // OVERRIDE WITH USER COLOR IF SET
-    if (msg.userColor) {
-        color = msg.userColor;
-    }
-    
-    // PRIME GLOW
-    const isPrime = msg.isPrime;
-    const glow = isPrime 
-        ? 'rgba(234, 179, 8, 0.9)' // GOLD for Prime
-        : (isNews ? 'rgba(239,68,68,0.8)' : `${color}E6`);
-
-    // ICON SELECTION
-    let svgPath = ``;
+    // ICON SELECTION (System Alert Triangle)
+    let svgPath = `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`;
     let viewBox = "0 0 24 24";
+    let fill = "none";
     let strokeWidth = "2";
-    let fill = 'currentColor';
-
-    if (isNews) {
-        // Alert Triangle for System/News (Keep specific icon for global events)
-        svgPath = `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`;
-        fill = "none";
-    } else {
-        // GENERIC SIGNAL DOT for Users (The "Fog" aesthetic)
-        svgPath = `<circle cx="12" cy="12" r="5" />`;
-        fill = "currentColor";
-        strokeWidth = "0";
-    }
 
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
-            <div class="absolute inset-0 rounded-full animate-ping opacity-20" style="background-color: ${isPrime ? '#eab308' : color}"></div>
-            <div class="relative z-10 transition-all duration-300 flex items-center justify-center" style="color: ${isPrime ? '#eab308' : color}; filter: drop-shadow(0 0 8px ${glow})">
+            <div class="absolute inset-0 rounded-full animate-ping opacity-20" style="background-color: ${color}"></div>
+            <div class="relative z-10 transition-all duration-300 flex items-center justify-center" style="color: ${color}; filter: drop-shadow(0 0 8px ${color}E6)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="${viewBox}" fill="${fill}" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
                     ${svgPath}
                 </svg>
@@ -98,9 +75,10 @@ const getMarkerIcon = (msg: ChatMessage) => {
 };
 
 const getClusterIcon = (count: number) => {
+    // Only used for News clusters now
     const size = 35 + Math.min(count / 10, 25);
     return L.divIcon({
-        html: `<div class="kaiku-cluster" style="width: ${size}px; height: ${size}px; line-height: ${size}px;">${count}</div>`,
+        html: `<div class="kaiku-cluster" style="width: ${size}px; height: ${size}px; line-height: ${size}px; border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.15);">${count}</div>`,
         className: '', 
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2]
@@ -118,21 +96,19 @@ interface MessageMarkerProps {
 const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, onOpenThread, mapInstance }) => {
     const { t } = useTranslation();
     const isNews = isNewsPost(msg);
-    // Include userAvatar/Color in dependency array to refresh markers on profile update
-    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, msg.isMasked, msg.postType, msg.userAvatar, msg.userColor, msg.isPrime]);
+    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, isNews]);
 
-    const displayName = msg.userDisplayName || (isNews ? 'SYSTEM' : t('dossier.anonymous'));
+    const displayName = isNews ? 'SYSTEM' : t('dossier.anonymous');
 
     return (
-        <Marker position={position} icon={icon} zIndexOffset={isNews ? 2000 : 0}>
+        <Marker position={position} icon={icon} zIndexOffset={2000}>
             <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}>
                 <div className="p-3">
                     <div className="flex justify-between items-center mb-2">
                          <span 
-                            className="text-[10px] font-mono font-bold uppercase tracking-wider" 
-                            style={{ color: isNews ? '#ef4444' : (msg.isPrime ? '#eab308' : (msg.userColor || '#22d3ee')) }}
+                            className="text-[10px] font-mono font-bold uppercase tracking-wider text-red-500"
                         >
-                            {isNews ? 'SYSTEM ALERT' : displayName}
+                            SYSTEM ALERT
                         </span>
                     </div>
                     <p className="text-xs text-gray-200 mb-3 line-clamp-3 leading-relaxed">
@@ -140,8 +116,7 @@ const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, 
                     </p>
                     <button 
                         onClick={(e) => { e.stopPropagation(); onOpenThread(msg); mapInstance?.closePopup(); }}
-                        className={`w-full py-2 rounded text-[10px] font-black tracking-widest text-black`}
-                        style={{ backgroundColor: isNews ? '#ef4444' : (msg.userColor || '#06b6d4') }}
+                        className={`w-full py-2 rounded text-[10px] font-black tracking-widest text-black bg-red-500`}
                     >
                         {t('map.open_channel')}
                     </button>
@@ -215,15 +190,15 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
   const mapRef = useRef<L.Map | null>(null);
   const profile = getUserProfile();
   
-  // SPLIT LOGIC: News (Pins) vs Chats (Heatmap/Clusters)
+  // SPLIT LOGIC: News (Pins) vs Chats (Heatmap Only)
   const newsMessages = useMemo(() => messages.filter(m => isNewsPost(m)), [messages]);
   const chatMessages = useMemo(() => messages.filter(m => !isNewsPost(m)), [messages]);
 
-  // Points for Supercluster
+  // Points for Supercluster - ONLY NEWS
   const points = useMemo(() => {
       const p: any[] = [];
       
-      // 1. News always included in cluster logic (so they form clusters at low zoom)
+      // Only News generate clickable markers now.
       newsMessages.forEach(msg => {
           p.push({
               type: 'Feature', 
@@ -232,32 +207,19 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
           });
       });
 
-      // 2. Chats only included if Zoom < 13 (Cluster View)
-      // At Zoom 13+, they become "Fog" via HeatmapLayer
-      if (zoom < 13) {
-          chatMessages.forEach(msg => {
-              p.push({
-                  type: 'Feature', 
-                  properties: { cluster: false, messageId: msg.id, message: msg, isNews: false },
-                  geometry: { type: 'Point', coordinates: [msg.location.lng, msg.location.lat] }
-              });
-          });
-      }
-
       return p;
-  }, [newsMessages, chatMessages, zoom]);
+  }, [newsMessages]);
 
   const { clusters, supercluster } = useSupercluster({
     points, bounds: bounds || [-180, -90, 180, 90], zoom, options: { radius: 60, maxZoom: 20 } 
   });
 
-  // Heatmap Data: Chats only, and only when zoomed in (Zoom >= 13)
-  const heatmapMessages = zoom >= 13 ? chatMessages : [];
+  // Heatmap Data: Chats ALWAYS, at ALL ZOOM LEVELS
+  const heatmapMessages = chatMessages;
 
   const isMaxZoom = zoom >= 17;
   const radarScale = isMaxZoom ? 1.0 : (zoom <= 7 ? 0.4 : 0.4 + ((zoom - 7) / (13 - 7)) * 0.6);
 
-  // Teleport Handler (Click on Center)
   const handleTeleport = () => {
       if (onTeleport && mapRef.current) {
           const center = mapRef.current.getCenter();
@@ -292,7 +254,7 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
             focusedMessage={focusedMessage}
         />
         
-        {/* Render Clusters & Markers */}
+        {/* Render Clusters & Markers (NEWS ONLY) */}
         {clusters.map((cluster: any) => {
             const [longitude, latitude] = cluster.geometry.coordinates;
             const { cluster: isCluster, point_count: pointCount } = cluster.properties;
@@ -311,9 +273,8 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
                 );
             }
 
-            // Single Marker (Leaf)
+            // Single Marker (Leaf) - News Only
             const msg = cluster.properties.message;
-            // Check visibility again just in case, though point array logic handles it mostly
             return <MessageMarker key={msg.id} msg={msg} position={[latitude, longitude]} isHidden={hiddenIds.has(msg.id)} onOpenThread={onOpenThread} mapInstance={mapRef.current} />;
         })}
 
@@ -330,7 +291,7 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
         
         <ArcLayer messages={signals} />
         
-        {/* HEATMAP LAYER (Signal Fog) - Only visible when Zoom >= 13 */}
+        {/* HEATMAP LAYER (Signal Fog) - Always Visible */}
         <HeatmapLayer messages={heatmapMessages} />
 
       </MapContainer>

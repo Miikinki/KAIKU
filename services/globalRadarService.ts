@@ -138,8 +138,6 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   const cacheKey = normalizeCacheKey(specificQuery);
   
   // 1. SHARED WORLD CHECK (Layer 1)
-  // Before calling AI, check if valid news posts already exist in the DB for this location.
-  // This ensures User B sees what User A scanned, without creating duplicates.
   if (specificQuery && !skipSave) {
       const existingSharedNews = await checkExistingActiveNews(specificQuery);
       if (existingSharedNews && existingSharedNews.length > 0) {
@@ -148,10 +146,8 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
   }
 
   // 2. API CACHE CHECK (Layer 2)
-  // If no public posts exist, check if we have raw JSON cached to save tokens.
   const cachedRawEvents = await checkApiCache(cacheKey);
   if (cachedRawEvents) {
-      // Re-hydrate these events as NEW posts (since we didn't find them in Layer 1)
       const freshPosts = rehydrateEvents(cachedRawEvents);
       if (!skipSave) await saveToDatabase(freshPosts);
       return freshPosts;
@@ -167,13 +163,19 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
 
   const ai = new GoogleGenAI({ apiKey });
   
+  // INJECT DATE TO PREVENT HALLUCINATIONS OF OLD NEWS
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  
   const prompt = specificQuery 
-    ? `Find 5 recent news stories or events related to: ${specificQuery}. Use Google Search. Return strictly JSON.`
-    : "Find 5 major global news stories happening right now. Use Google Search. Return strictly JSON.";
+    ? `Today is ${today}. Find 5 BREAKING news stories related to: ${specificQuery} from the last 24 hours. Use Google Search. Return strictly JSON.`
+    : `Today is ${today}. Find 5 major global BREAKING news stories happening RIGHT NOW (last 24 hours). Use Google Search. Return strictly JSON.`;
 
   const SYSTEM_PROMPT = `
-  You are KAIKU_SCANNER. 
+  You are KAIKU_SCANNER.
+  Current Date: ${today}.
+  
   Your task: Return a JSON array of 5 news objects.
+  CRITICAL: ONLY return news from the last 24-48 hours. Do not return old news from previous years.
   Format: JSON ONLY. No markdown.
   
   Schema per object: 
@@ -220,14 +222,14 @@ export const scanGlobalNetwork = async (specificQuery?: string, skipSave: boolea
     // Fallback: Internal Knowledge
     try {
         const fallbackPrompt = specificQuery 
-            ? `Generate 5 likely recent news headlines about: ${specificQuery}. Based on your internal knowledge.`
-            : "Generate 5 major global news headlines based on your internal knowledge.";
+            ? `Today is ${today}. Generate 5 likely recent news headlines about: ${specificQuery}. Based on your internal knowledge.`
+            : `Today is ${today}. Generate 5 major global news headlines based on your internal knowledge.`;
             
         const response = await ai.models.generateContent({
             model: RADAR_MODEL,
             contents: fallbackPrompt,
             config: {
-                systemInstruction: SYSTEM_PROMPT + "\nIMPORTANT: Do not use tools.",
+                systemInstruction: SYSTEM_PROMPT + "\nIMPORTANT: Do not use tools. Estimate plausible recent events if exact realtime data is unavailable.",
                 responseMimeType: "application/json"
             }
         });
