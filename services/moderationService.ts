@@ -25,7 +25,7 @@ const fetchWithTimeout = async (resource: string, options: RequestInit = {}, tim
 // Key: "lat_fixed2,lng_fixed2" (approx 1km precision)
 const cityCache = new Map<string, { city: string; countryCode: string; countryName: string }>();
 
-// 2. Reverse Geocoding (BigDataCloud Free API - CORS Friendly)
+// 2. Reverse Geocoding (Switched to Photon/Komoot to fix BigDataCloud 400 errors)
 export const getCityName = async (lat: number, lng: number): Promise<{ city: string; countryCode: string; countryName: string }> => {
   const cacheKey = `${lat.toFixed(2)},${lng.toFixed(2)}`;
   
@@ -34,26 +34,35 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
   }
 
   try {
-    // Timeout set to 2000ms (2 seconds) to prevent hanging the UI
+    // Using Photon (OpenStreetMap data) instead of BigDataCloud
     const response = await fetchWithTimeout(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`,
+      `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`,
       {},
-      2000
+      3000
     );
     
     if (!response.ok) throw new Error('Geocoding failed');
     
     const data = await response.json();
     
-    // Fallback logic for City Name
-    const city = data.city || 
-           data.locality || 
-           data.principalSubdivision || 
-           data.countryName || 
-           "Unknown Sector";
-    
-    const countryCode = data.countryCode || "";
-    const countryName = data.countryName || data.countryCode || "Unknown Territory";
+    let city = "Unknown Sector";
+    let countryCode = "";
+    let countryName = "Unknown Territory";
+
+    if (data.features && data.features.length > 0) {
+        const props = data.features[0].properties;
+        
+        // Try to find the most relevant city name
+        city = props.city || 
+               props.town || 
+               props.village || 
+               props.county || 
+               props.name || 
+               "Unknown Sector";
+               
+        countryCode = props.countrycode ? props.countrycode.toUpperCase() : "";
+        countryName = props.country || "Unknown Territory";
+    }
 
     const result = { city, countryCode, countryName };
     
@@ -69,7 +78,6 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
            
   } catch (error) {
     // Fail silently and quickly to coordinates
-    // console.warn("Geocoding failed/timeout, falling back to coordinates");
     return { city: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`, countryCode: "", countryName: "Unknown" };
   }
 };
@@ -81,7 +89,7 @@ export interface SearchResult {
   bounds?: [number, number, number, number]; // [south, north, west, east]
 }
 
-// 3. Forward Geocoding (Search) - Switched to Photon (Komoot) for CORS support
+// 3. Forward Geocoding (Search) - Photon (Komoot)
 export const searchLocations = async (query: string): Promise<SearchResult | null> => {
     try {
         const response = await fetchWithTimeout(
@@ -126,7 +134,22 @@ export const searchLocations = async (query: string): Promise<SearchResult | nul
 };
 
 export const getIpLocation = async (): Promise<{ lat: number; lng: number } | null> => {
+    // Fallback chain for IP location
     try {
+        // Try ipapi.co first (more reliable JSON)
+        const response = await fetchWithTimeout('https://ipapi.co/json/', {}, 2000);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.latitude && data.longitude) {
+                return { lat: data.latitude, lng: data.longitude };
+            }
+        }
+    } catch (e) {
+        // ignore
+    }
+
+    try {
+        // Try BigDataCloud as secondary (might fail with 400 but worth a shot for IP based)
         const response = await fetchWithTimeout(
             `https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=en`,
             {}, 2000
@@ -138,19 +161,7 @@ export const getIpLocation = async (): Promise<{ lat: number; lng: number } | nu
             }
         }
     } catch (e) {
-        // console.warn("Primary IP Location (BigDataCloud) failed");
-    }
-
-    try {
-        const response = await fetchWithTimeout('https://ipapi.co/json/', {}, 2000);
-        if (response.ok) {
-            const data = await response.json();
-            if (data.latitude && data.longitude) {
-                return { lat: data.latitude, lng: data.longitude };
-            }
-        }
-    } catch (e) {
-        // console.warn("Secondary IP Location (ipapi) failed");
+        // ignore
     }
 
     return null;
