@@ -2,7 +2,7 @@ import React, { useEffect, useRef, forwardRef } from 'react';
 import { useMap } from 'react-leaflet';
 import { ChatMessage } from '../types';
 import L from 'leaflet';
-import { HIGH_SIGNAL_THRESHOLD } from '../constants';
+import { HIGH_SIGNAL_THRESHOLD, LOW_SIGNAL_THRESHOLD } from '../constants';
 
 interface HeatmapLayerProps {
   messages: ChatMessage[];
@@ -118,49 +118,49 @@ const GlowLayer = L.Layer.extend({
         const bounds = this._map.getBounds();
 
         // SIGNAL FOG STYLE CONFIGURATION
-        // Monochromatic Cyan/Teal
+        // Heavily boosted for visibility
         
-        let baseRadius = 40 * dpr; // Increased radius for "Fog" effect
-        let baseIntensity = 0.1;   // Lower intensity per point for smoother blend
+        let baseRadius = 60 * dpr; 
+        let baseIntensity = 0.25;   
 
         // Adjust based on zoom to keep density consistent across levels
-        // Now supporting LOW zoom levels too
         if (zoom < 6) {
-             // World View: Very faint, large blobs
-             baseRadius = 3 * dpr; // Small pixel radius relative to world, but high density
-             baseIntensity = 0.15;
+             // World View: Make them large enough to see continents light up
+             baseRadius = 15 * dpr; 
+             baseIntensity = 0.4;
         }
         else if (zoom < 10) {
              // Region View
-             baseRadius = 15 * dpr; 
-             baseIntensity = 0.1;
+             baseRadius = 30 * dpr; 
+             baseIntensity = 0.3;
         } 
         else if (zoom < 13) {
             // City View (Zoomed out)
-            baseRadius = 25 * dpr;
-            baseIntensity = 0.08;
+            baseRadius = 50 * dpr;
+            baseIntensity = 0.25;
         }
         else if (zoom < 15) { 
             // City View (Zoomed in)
-            baseRadius = 60 * dpr; 
-            baseIntensity = 0.15; 
+            baseRadius = 80 * dpr; 
+            baseIntensity = 0.2; 
         }
         else if (zoom < 17) { 
             // Street View
-            baseRadius = 100 * dpr; 
-            baseIntensity = 0.12; 
+            baseRadius = 120 * dpr; 
+            baseIntensity = 0.15; 
         }
         else { 
             // Max Zoom
-            baseRadius = 150 * dpr; 
-            baseIntensity = 0.1; 
+            baseRadius = 180 * dpr; 
+            baseIntensity = 0.15; 
         }
 
-        ctx.globalCompositeOperation = 'screen'; 
+        // Additive blending for "Glowing" effect
+        ctx.globalCompositeOperation = 'lighter'; 
 
         this._data.forEach((msg: ChatMessage) => {
-            // FILTER: Only show signals with positive score
-            if (msg.score <= 0) return;
+            // FILTER: Show everything that isn't heavily downvoted
+            if (msg.score <= LOW_SIGNAL_THRESHOLD) return;
 
             const margin = 0.5; 
             if (msg.location.lat > bounds.getNorth() + margin || 
@@ -175,30 +175,31 @@ const GlowLayer = L.Layer.extend({
 
             if (x < -baseRadius || x > width + baseRadius || y < -baseRadius || y > height + baseRadius) return;
 
-            // MONOCHROMATIC CYAN FOG
-            // Cyan-400: 34, 211, 238
+            // COLOR: Cyan-400 (34, 211, 238)
             const r=34, g=211, b=238; 
 
             let radius = baseRadius;
             let intensity = baseIntensity;
             
-            // COLD START TUNING:
-            // Boost significantly at HIGH_SIGNAL_THRESHOLD (+5) so the map feels alive quickly.
-            if (msg.score >= HIGH_SIGNAL_THRESHOLD) { // +5
-                radius *= 1.5; 
+            // SCORE BOOST: Make high score messages significantly larger/brighter
+            if (msg.score >= HIGH_SIGNAL_THRESHOLD) { 
+                radius *= 1.8; 
                 intensity *= 1.5; 
-            } else if (msg.score >= 2) {
-                // Mild boost for just getting started
+            } else if (msg.score >= 1) {
                 radius *= 1.2;
                 intensity *= 1.2;
             }
 
-            // Cap intensity
-            intensity = Math.min(intensity, 0.6);
+            // Cap intensity to prevent blowing out the screen
+            intensity = Math.min(intensity, 0.8);
 
+            // Draw Gradient
             const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+            // Core (Bright)
             grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${intensity})`);
+            // Mid (Fade)
             grad.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${intensity * 0.4})`);
+            // Edge (Transparent)
             grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
 
             ctx.fillStyle = grad;

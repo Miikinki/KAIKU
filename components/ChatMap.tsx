@@ -278,16 +278,7 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
             return <MessageMarker key={msg.id} msg={msg} position={[latitude, longitude]} isHidden={hiddenIds.has(msg.id)} onOpenThread={onOpenThread} mapInstance={mapRef.current} />;
         })}
 
-        {userLocation && (
-            <Marker position={[userLocation.lat, userLocation.lng]} zIndexOffset={5000} icon={L.divIcon({
-                className: 'bg-transparent border-none',
-                html: isTeleporting 
-                    ? `<div class="w-6 h-6 rounded-full border-2 border-yellow-400 bg-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.8)] animate-pulse flex items-center justify-center"><div class="w-1.5 h-1.5 bg-yellow-400 rounded-full"></div></div>`
-                    : `<div class="w-4 h-4 bg-white rounded-full border-2 border-[#0a0a12] shadow-[0_0_10px_white] animate-pulse"></div>`,
-                iconSize: isTeleporting ? [24, 24] : [16, 16], 
-                iconAnchor: isTeleporting ? [12, 12] : [8, 8]
-            })} />
-        )}
+        {/* REMOVED: User Location Marker (The "Me" ball) */}
         
         <ArcLayer messages={signals} />
         

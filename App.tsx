@@ -25,7 +25,7 @@ import { triggerHaptic } from './services/hapticService';
 import { useTranslation } from 'react-i18next';
 
 const BASE_SCAN_RADIUS_PX = 128; 
-const SCAN_MOVE_THRESHOLD_KM = 20; 
+const SCAN_MOVE_THRESHOLD_KM = 5; // Reduced from 20km to 5km for better sensitivity
 const LIST_VIEW_RADIUS_KM = 20; 
 
 type AppState = 'welcome' | 'boot' | 'app';
