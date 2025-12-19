@@ -81,35 +81,40 @@ export interface SearchResult {
   bounds?: [number, number, number, number]; // [south, north, west, east]
 }
 
-// 3. Forward Geocoding (Search)
+// 3. Forward Geocoding (Search) - Switched to Photon (Komoot) for CORS support
 export const searchLocations = async (query: string): Promise<SearchResult | null> => {
     try {
         const response = await fetchWithTimeout(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
-            { headers: { 'User-Agent': 'KaikuApp/2.0' } },
+            `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`,
+            {}, 
             3000
         );
         if (!response.ok) throw new Error("Search failed");
         
         const data = await response.json();
-        if (data && data.length > 0) {
-            const result = data[0];
+        
+        if (data && data.features && data.features.length > 0) {
+            const feature = data.features[0];
+            const [lng, lat] = feature.geometry.coordinates;
+            const props = feature.properties;
+            
             let bounds: [number, number, number, number] | undefined = undefined;
             
-            if (result.boundingbox) {
-                // Nominatim returns [lat_min, lat_max, lon_min, lon_max]
+            if (props.extent) {
+                // Photon extent: [minLon (West), minLat (South), maxLon (East), maxLat (North)]
+                // App expects: [south, north, west, east]
                 bounds = [
-                    parseFloat(result.boundingbox[0]), 
-                    parseFloat(result.boundingbox[1]), 
-                    parseFloat(result.boundingbox[2]), 
-                    parseFloat(result.boundingbox[3])
+                    props.extent[1], // South
+                    props.extent[3], // North
+                    props.extent[0], // West
+                    props.extent[2]  // East
                 ];
             }
 
             return {
-                lat: parseFloat(result.lat),
-                lng: parseFloat(result.lon),
-                name: result.display_name.split(',')[0],
+                lat,
+                lng,
+                name: props.name || props.city || props.country || query,
                 bounds
             };
         }

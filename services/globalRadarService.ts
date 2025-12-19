@@ -88,7 +88,7 @@ const checkApiCache = async (key: string): Promise<ChatMessage[] | null> => {
             .select('*')
             .eq('location_key', key)
             .gt('expires_at', new Date().toISOString()) 
-            .single();
+            .maybeSingle(); // Fix: Use maybeSingle() to avoid 406/JSON errors on empty results
 
         if (error || !data) return null;
         return data.data as ChatMessage[];
