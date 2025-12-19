@@ -139,7 +139,13 @@ export const restoreSession = (sessionId: string, profile: UserProfile | null) =
 export const getUserProfile = (): UserProfile => {
     try {
         const stored = localStorage.getItem(USER_PROFILE_KEY);
-        if (stored) return JSON.parse(stored);
+        if (stored) {
+            const profile = JSON.parse(stored);
+            // Migration for existing users: Add badge arrays if missing
+            if (!profile.unlockedBadges) profile.unlockedBadges = ['founder'];
+            if (!profile.equippedBadges) profile.equippedBadges = [];
+            return profile;
+        }
     } catch (e) {}
     
     return {
@@ -150,7 +156,9 @@ export const getUserProfile = (): UserProfile => {
         isPrime: false,
         streak: 0,
         lastLogin: Date.now(),
-        notificationsEnabled: false
+        notificationsEnabled: false,
+        unlockedBadges: ['founder'], // Default unlock for everyone in Beta
+        equippedBadges: []
     };
 };
 
@@ -379,6 +387,7 @@ const mapRowToMessage = (d: any): ChatMessage => {
         userColor: d.user_color,
         // Map new fields from metadata
         userLevel: d.event_metadata?.user_level,
+        userBadges: d.event_metadata?.user_badges || [],
         hideLevel: d.event_metadata?.hide_level,
         isPrime: d.event_metadata?.is_prime
     };
@@ -482,7 +491,7 @@ export const saveMessage = async (
   try {
       // We do a quick fetch to get current stats. 
       // Note: This adds latency. In a real high-perf app we'd cache this or update optimistically.
-      const stats = await fetchAgentStats();
+      const { stats } = await fetchAgentStats();
       currentLevel = stats.rankLevel;
   } catch (e) {
       console.warn("Failed to fetch level for new post, using default 1");
@@ -533,6 +542,7 @@ export const saveMessage = async (
   // Construct Metadata with Level
   const eventMetadata = {
       user_level: currentLevel,
+      user_badges: profile.equippedBadges, // SNAPSHOT BADGES HERE
       hide_level: profile.hideLevel,
       is_prime: profile.isPrime // Inject Prime Status
   };
@@ -561,6 +571,7 @@ export const saveMessage = async (
     userColor: profile.color,
     eventMetadata: eventMetadata,
     userLevel: currentLevel,
+    userBadges: profile.equippedBadges,
     hideLevel: profile.hideLevel,
     isPrime: profile.isPrime
   };

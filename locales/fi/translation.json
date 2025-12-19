@@ -38,7 +38,9 @@
     "error_transmission": "Lähetys epäonnistui.",
     "privacy_active": "SIJAINTI HAJAUTETTU",
     "status_masked": "> SALAUS: AKTIIVINEN [SIJAINTI HÄIRITTY]",
-    "status_precise": "> KOHDISTUS: TARKKA [TARKKA SIJAINTI NÄKYY]"
+    "status_precise": "> KOHDISTUS: TARKKA [TARKKA SIJAINTI NÄKYY]",
+    "mask_coordinates": "NAAMIOI SIJAINTI",
+    "mask_description": "Satunnaistaa sijainnin n. 1km yksityisyyden vuoksi."
   },
   "thread": {
     "title": "KETJU",
@@ -61,7 +63,9 @@
     "search_placeholder": "Etsi koordinaatteja...",
     "search_not_found": "KOHDETTA EI LÖYDY",
     "search_this_area": "HAE TÄLTÄ ALUEELTA",
-    "search_context": "Hae uutisia: {{location}}"
+    "search_context": "Hae uutisia: {{location}}",
+    "teleport": "SIIRRÄ UPLINK",
+    "teleport_active": "ETÄ-UPLINK AKTIIVINEN"
   },
   "welcome": {
     "subtitle": "Hyperlokaali Signaaliverkko",
@@ -120,6 +124,28 @@
     "streak": "UPLINK-PUTKI",
     "days": "PV",
     "prime_status": "OPERATOR PRIME",
+    "btn_get_prime": "HANKI OPERATOR PRIME",
+    "xp_info": "XP SÄÄNNÖT",
+    "xp_post": "Lähetys: +10",
+    "xp_reply": "Vastaus: +15",
+    "xp_scan": "Sektoriscan: +20",
+    "xp_vote": "Saatu ääni: +5",
+    "edit_badges": "MUOKKAA TUNNISTEITA",
+    "badges_title": "KOKOELMA",
+    "badges_max": "MAX 3 VALITTU",
+    "badge_unlocked": "TUNNISTE AVATTU",
+    "badge_prime": "Operator Prime",
+    "badge_prime_desc": "Eliittistatus",
+    "badge_veteran": "Veteraani",
+    "badge_veteran_desc": "Palvelus > 1 Vuosi (tai 500+ viestiä)",
+    "badge_influencer": "Vaikuttaja",
+    "badge_influencer_desc": "Signaalivaikutus > 1000",
+    "badge_scout": "Tiedustelija",
+    "badge_scout_desc": "100+ Sektoria Skannattu",
+    "badge_bug_hunter": "Arkkitehti",
+    "badge_bug_hunter_desc": "Löysi virheen matriisista",
+    "badge_founder": "Ensimmäinen Aalto",
+    "badge_founder_desc": "Liittyi Beta-vaiheessa",
     "ranks": {
         "1": "TARKKAILIJA",
         "2": "VIESTITTÄJÄ",
@@ -139,5 +165,9 @@
     "price": "4.99€ / KK",
     "btn_activate": "AKTIVOI PRIME-STATUS",
     "active": "STATUS AKTIIVINEN"
+  },
+  "notifications": {
+      "reply_title": "SAAPUVA LÄHETYS",
+      "reply_body": "Joku vastasi signaaliisi."
   }
 }

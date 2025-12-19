@@ -28,6 +28,7 @@ export interface ChatMessage {
   userAvatar?: string;
   userColor?: string;
   userLevel?: number; // NEW: Level at time of posting
+  userBadges?: string[]; // NEW: Snapshot of equipped badges
   hideLevel?: boolean; // NEW: Privacy preference at time of posting
   isPrime?: boolean; // NEW: Prime status
 
@@ -82,4 +83,8 @@ export interface UserProfile {
   streak: number;
   lastLogin: number; // Timestamp
   notificationsEnabled: boolean;
+  
+  // COLLECTION
+  unlockedBadges: string[];
+  equippedBadges: string[];
 }

@@ -12,12 +12,13 @@ import AgentDossier from './components/AgentDossier';
 import DebugOverlay from './components/DebugOverlay';
 import { Toast } from './components/Toast'; 
 import { ChatMessage, ViewportBounds } from './types';
-import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, getHiddenIds, toggleHiddenMessage, getUserProfile } from './services/storageService';
+import { fetchMessages, saveMessage, subscribeToMessages, getRateLimitStatus, castVote, deleteMessage, getLocalMessages, calculateDistance, getHiddenIds, toggleHiddenMessage, getUserProfile, getAnonymousID } from './services/storageService';
 import { scanGlobalNetwork } from './services/globalRadarService';
 import { getCityName, searchLocations } from './services/moderationService';
 import { getPreciseLocation } from './services/locationService';
 import { SoundService } from './services/soundService';
-import { incrementScanCount, processDailyLogin } from './services/statsService';
+import { incrementScanCount, processDailyLogin, fetchAgentStats } from './services/statsService';
+import { NotificationService } from './services/notificationService';
 import { THEME_COLOR, SCORE_THRESHOLD_HIDE, MESSAGE_LIFESPAN_MS } from './constants';
 import { AnimatePresence, motion } from 'framer-motion';
 import { triggerHaptic } from './services/hapticService';
@@ -154,6 +155,21 @@ function App() {
           const data = await fetchMessages(true);
           setMessages(data);
           setRateLimit(await getRateLimitStatus());
+          
+          // Retroactive Badge Check on Load
+          const { newBadges } = await fetchAgentStats();
+          if (newBadges.length > 0) {
+              // Iterate and show a toast for each new badge
+              newBadges.forEach((badgeId, index) => {
+                  setTimeout(() => {
+                      const badgeName = t(`badge_${badgeId}`) || badgeId;
+                      setToastMessage(`${t('dossier.badge_unlocked', 'BADGE UNLOCKED')}: ${badgeName}`);
+                      SoundService.playSuccess();
+                      triggerHaptic('success');
+                  }, index * 4000); // Stagger toasts if multiple
+              });
+          }
+
       } catch (e: any) {
           setLastError(`Data Load: ${e.message}`);
       }
@@ -304,12 +320,33 @@ function App() {
                      setLastNewMessage(message); 
                  }
              }
+
+             // --- NOTIFICATION & SIGNALS LOGIC ---
+             if (type === 'INSERT') {
+                 setSignals(s => [...s, message]); // Trigger Arc Layer
+                 
+                 const myId = getAnonymousID();
+                 const profile = getUserProfile();
+                 
+                 if (profile.notificationsEnabled) {
+                     // Check for Reply
+                     if (message.parentId) {
+                         const parent = prev.find(p => p.id === message.parentId);
+                         if (parent && parent.sessionId === myId && message.sessionId !== myId) {
+                             NotificationService.sendNotification(
+                                 t('notifications.reply_title'), 
+                                 t('notifications.reply_body')
+                             );
+                         }
+                     }
+                 }
+             }
         }
         return next;
       });
     });
     return () => { if (subMessages) subMessages.unsubscribe(); };
-  }, [isRunning]);
+  }, [isRunning, t]);
 
   // Combined messages for map
   const mapMessages = useMemo(() => {

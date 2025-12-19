@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Shield, Activity, Radio, MapPin, Zap, MessageSquare, Radar, Edit2, Save, Check, User, Eye, EyeOff, Key, Copy, AlertTriangle, Loader2, Crown, Bell, BellOff, Calendar } from 'lucide-react';
+import { X, Shield, Activity, Radio, MapPin, Zap, MessageSquare, Radar, Edit2, Save, Check, User, Eye, EyeOff, Key, Copy, AlertTriangle, Loader2, Crown, Bell, BellOff, Calendar, Info, Medal, ChevronRight, Lock } from 'lucide-react';
 import { AgentStats } from '../types';
 import { fetchAgentStats } from '../services/statsService';
 import { getUserProfile, saveUserProfile } from '../services/storageService';
 import { generateTransferKey } from '../services/identityService';
 import { NotificationService } from '../services/notificationService';
-import { AVATAR_COLORS, AVATAR_ICONS } from '../constants';
+import { AVATAR_COLORS, AVATAR_ICONS, BADGES } from '../constants';
 import { useTranslation } from 'react-i18next';
 import { triggerHaptic } from '../services/hapticService';
 import PrimeModal from './PrimeModal';
@@ -16,12 +16,12 @@ interface AgentDossierProps {
     onClose: () => void;
 }
 
-const StatCard = ({ label, value, icon, delay }: { label: string, value: number, icon: any, delay: number }) => (
+const StatCard = ({ label, value, icon, delay, className = "" }: { label: string, value: number, icon: any, delay: number, className?: string }) => (
     <motion.div 
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay, type: "spring" }}
-        className="bg-[#0f0f18] border border-cyan-900/40 p-3 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group"
+        className={`bg-[#0f0f18] border border-cyan-900/40 p-3 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group ${className}`}
     >
         <div className="absolute inset-0 bg-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
         <div className="text-cyan-500 mb-1 opacity-80">{icon}</div>
@@ -277,12 +277,117 @@ const IdentityEditor = ({
     );
 };
 
+const BadgeSelector = ({ 
+    unlockedBadges, equippedBadges, onClose, onUpdate 
+}: { 
+    unlockedBadges: string[], 
+    equippedBadges: string[], 
+    onClose: () => void,
+    onUpdate: (badges: string[]) => void
+}) => {
+    const { t } = useTranslation();
+    const [selected, setSelected] = useState<string[]>(equippedBadges || []);
+
+    const toggleBadge = (badgeId: string) => {
+        if (!unlockedBadges.includes(badgeId)) {
+            triggerHaptic('error');
+            return;
+        }
+
+        if (selected.includes(badgeId)) {
+            setSelected(prev => prev.filter(b => b !== badgeId));
+            triggerHaptic('light');
+        } else {
+            if (selected.length >= 3) {
+                triggerHaptic('error');
+                return;
+            }
+            setSelected(prev => [...prev, badgeId]);
+            triggerHaptic('light');
+        }
+    };
+
+    const handleSave = () => {
+        onUpdate(selected);
+        onClose();
+    };
+
+    return (
+        <div className="absolute inset-0 bg-[#0a0a12] z-20 flex flex-col">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-black/40">
+                <h3 className="text-xs font-bold text-cyan-400 tracking-widest uppercase flex items-center gap-2">
+                    <Medal size={16} />
+                    {t('dossier.badges_title')}
+                </h3>
+                <button onClick={onClose} className="p-2 text-gray-500 hover:text-white">
+                    <X size={18} />
+                </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                <div className="mb-4 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500 font-mono">{selected.length}/3 {t('dossier.badges_max')}</span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                    {Object.values(BADGES).map((badge) => {
+                        const isUnlocked = unlockedBadges.includes(badge.id);
+                        const isSelected = selected.includes(badge.id);
+
+                        return (
+                            <div 
+                                key={badge.id}
+                                onClick={() => toggleBadge(badge.id)}
+                                className={`flex items-center gap-4 p-3 rounded-lg border transition-all relative overflow-hidden ${
+                                    isUnlocked 
+                                        ? (isSelected ? 'bg-cyan-950/40 border-cyan-500/50' : 'bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer') 
+                                        : 'bg-black/40 border-white/5 opacity-50 cursor-not-allowed'
+                                }`}
+                            >
+                                <div className={`text-2xl ${!isUnlocked && 'grayscale opacity-50'}`}>
+                                    {badge.icon}
+                                </div>
+                                <div className="flex-1">
+                                    <div className={`text-sm font-bold tracking-wide ${isUnlocked ? 'text-white' : 'text-gray-500'}`}>
+                                        {t(badge.translationKey)}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                                        {t(`${badge.translationKey}_desc`)}
+                                    </div>
+                                </div>
+                                {isSelected && (
+                                    <div className="w-5 h-5 bg-cyan-500 rounded-full flex items-center justify-center text-black">
+                                        <Check size={12} strokeWidth={4} />
+                                    </div>
+                                )}
+                                {!isUnlocked && <Lock size={14} className="text-gray-600" />}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            <div className="p-4 border-t border-white/10 bg-black/40">
+                <button 
+                    onClick={handleSave}
+                    className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold tracking-widest uppercase rounded-lg shadow-lg flex items-center justify-center gap-2 transition-colors"
+                >
+                    <Save size={16} />
+                    {t('dossier.save_identity')}
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const AgentDossier: React.FC<AgentDossierProps> = ({ isOpen, onClose }) => {
     const { t } = useTranslation();
     const [stats, setStats] = useState<AgentStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
     const [isPrimeModalOpen, setIsPrimeModalOpen] = useState(false);
+    const [showXpRules, setShowXpRules] = useState(false);
+    const [isBadgeSelectorOpen, setIsBadgeSelectorOpen] = useState(false);
     
     // Profile State
     const [profile, setProfile] = useState(getUserProfile());
@@ -291,8 +396,12 @@ const AgentDossier: React.FC<AgentDossierProps> = ({ isOpen, onClose }) => {
         if (isOpen) {
             setLoading(true);
             setIsEditing(false); // Reset to stats view on open
-            fetchAgentStats().then(data => {
-                setStats(data);
+            setShowXpRules(false);
+            setIsBadgeSelectorOpen(false);
+            
+            // Refactored call: destructure the stats object
+            fetchAgentStats().then(({ stats }) => {
+                setStats(stats);
                 setLoading(false);
             });
             setProfile(getUserProfile());
@@ -305,7 +414,13 @@ const AgentDossier: React.FC<AgentDossierProps> = ({ isOpen, onClose }) => {
         setProfile(newProfile);
         setIsEditing(false);
         // Refresh stats to ensure sync
-        fetchAgentStats().then(data => setStats(data));
+        fetchAgentStats().then(({ stats }) => setStats(stats));
+    };
+
+    const handleBadgesUpdate = (badges: string[]) => {
+        const newProfile = { ...profile, equippedBadges: badges };
+        saveUserProfile(newProfile);
+        setProfile(newProfile);
     };
 
     return (
@@ -403,21 +518,43 @@ const AgentDossier: React.FC<AgentDossierProps> = ({ isOpen, onClose }) => {
                                             </div>
                                         </div>
                                     </div>
-                                    {profile.isPrime && (
-                                        <div className="relative z-10 bg-yellow-500/20 border border-yellow-500/30 px-2 py-1 rounded text-[8px] font-bold text-yellow-400 tracking-widest uppercase">
-                                            PRIME
-                                        </div>
-                                    )}
+                                    <div className="flex items-center gap-1">
+                                        {profile.equippedBadges?.map(bid => (
+                                            <span key={bid} className="text-lg" title={BADGES[bid]?.id}>{BADGES[bid]?.icon}</span>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
 
                             {/* PROGRESS BAR (Only in Stat Mode) */}
                             {!isEditing && stats && (
                                 <div className="mt-4">
-                                    <div className="flex justify-between text-[9px] font-mono text-cyan-700 mb-1">
-                                        <span>XP {Math.floor(stats.xp)}</span>
-                                        <span>{stats.nextLevelXp} XP</span>
+                                    <div className="flex justify-between items-center text-[9px] font-mono text-cyan-700 mb-1">
+                                        <div className="flex gap-2">
+                                            <span>XP {Math.floor(stats.xp)} / {stats.nextLevelXp}</span>
+                                        </div>
+                                        <button 
+                                            onClick={() => setShowXpRules(!showXpRules)} 
+                                            className={`flex items-center gap-1 hover:text-cyan-400 transition-colors ${showXpRules ? 'text-cyan-400' : ''}`}
+                                        >
+                                            <Info size={10} />
+                                            <span>{t('dossier.xp_info')}</span>
+                                        </button>
                                     </div>
+                                    
+                                    {showXpRules && (
+                                        <motion.div 
+                                            initial={{ height: 0, opacity: 0 }} 
+                                            animate={{ height: 'auto', opacity: 1 }} 
+                                            className="bg-black/30 rounded p-3 mb-2 text-[9px] font-mono text-gray-400 grid grid-cols-2 gap-2 border border-white/5 shadow-inner"
+                                        >
+                                            <div className="flex items-center gap-1.5"><Radio size={10} className="text-cyan-500"/> {t('dossier.xp_post')}</div>
+                                            <div className="flex items-center gap-1.5"><MessageSquare size={10} className="text-cyan-500"/> {t('dossier.xp_reply')}</div>
+                                            <div className="flex items-center gap-1.5"><Radar size={10} className="text-cyan-500"/> {t('dossier.xp_scan')}</div>
+                                            <div className="flex items-center gap-1.5"><Zap size={10} className="text-cyan-500"/> {t('dossier.xp_vote')}</div>
+                                        </motion.div>
+                                    )}
+
                                     <div className="h-2 bg-black/50 rounded-full overflow-hidden flex relative border border-white/5">
                                         <motion.div 
                                             className={`h-full bg-gradient-to-r ${profile.isPrime ? 'from-yellow-600 to-yellow-400 shadow-[0_0_10px_gold]' : 'from-cyan-600 to-cyan-400 shadow-[0_0_10px_cyan]'}`}
@@ -496,6 +633,28 @@ const AgentDossier: React.FC<AgentDossierProps> = ({ isOpen, onClose }) => {
                                             icon={<MapPin size={18} />} 
                                             delay={0.4} 
                                         />
+                                        {/* Restored News Scanned Card */}
+                                        <StatCard 
+                                            label={t('dossier.scans', 'NEWS SCANNED')} 
+                                            value={stats?.newsScanned || 0} 
+                                            icon={<Radar size={18} />} 
+                                            delay={0.5} 
+                                            className="col-span-2"
+                                        />
+                                        
+                                        {/* BADGE BUTTON */}
+                                        <button 
+                                            onClick={() => { triggerHaptic('light'); setIsBadgeSelectorOpen(true); }}
+                                            className="col-span-2 py-3 bg-white/5 border border-white/10 hover:bg-white/10 rounded-lg flex items-center justify-between px-4 group transition-colors"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-1.5 bg-cyan-900/30 rounded text-cyan-400">
+                                                    <Medal size={16} />
+                                                </div>
+                                                <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest group-hover:text-white">{t('dossier.edit_badges')}</span>
+                                            </div>
+                                            <ChevronRight size={16} className="text-gray-600 group-hover:text-white" />
+                                        </button>
                                         
                                         {!profile.isPrime && (
                                             <button 
@@ -503,7 +662,7 @@ const AgentDossier: React.FC<AgentDossierProps> = ({ isOpen, onClose }) => {
                                                 className="col-span-2 mt-2 py-3 bg-gradient-to-r from-yellow-900/40 to-yellow-600/20 border border-yellow-500/30 rounded-lg text-yellow-400 font-bold tracking-widest uppercase flex items-center justify-center gap-2 hover:bg-yellow-900/60 transition-colors"
                                             >
                                                 <Crown size={16} />
-                                                {t('dossier.prime_status')}
+                                                {t('dossier.btn_get_prime')}
                                             </button>
                                         )}
                                     </>
@@ -518,6 +677,16 @@ const AgentDossier: React.FC<AgentDossierProps> = ({ isOpen, onClose }) => {
                                 </p>
                             </div>
                         )}
+                        
+                        {/* BADGE SELECTOR OVERLAY */}
+                        {isBadgeSelectorOpen && (
+                            <BadgeSelector 
+                                unlockedBadges={profile.unlockedBadges || []}
+                                equippedBadges={profile.equippedBadges || []}
+                                onClose={() => setIsBadgeSelectorOpen(false)}
+                                onUpdate={handleBadgesUpdate}
+                            />
+                        )}
                     </motion.div>
                 </div>
             )}
@@ -527,7 +696,7 @@ const AgentDossier: React.FC<AgentDossierProps> = ({ isOpen, onClose }) => {
                 onClose={() => setIsPrimeModalOpen(false)}
                 onActivate={() => {
                     setProfile(getUserProfile()); // Refresh local profile
-                    fetchAgentStats().then(data => setStats(data));
+                    fetchAgentStats().then(({ stats }) => setStats(stats));
                 }}
             />
         </AnimatePresence>

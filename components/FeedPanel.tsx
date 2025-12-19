@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock, Newspaper, ExternalLink, Sparkles, Languages, Loader2, RefreshCw } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock, Newspaper, ExternalLink, Sparkles, Languages, Loader2, RefreshCw, Crown } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
 import { translateText } from '../services/translationService';
@@ -8,7 +8,7 @@ import { triggerHaptic } from '../services/hapticService';
 import { useTranslation } from 'react-i18next';
 import ImageAttachment from './ImageAttachment';
 import { getHumanizedDistance } from '../services/locationService';
-import { AVATAR_ICONS, HIGH_SIGNAL_THRESHOLD, LOW_SIGNAL_THRESHOLD } from '../constants';
+import { AVATAR_ICONS, HIGH_SIGNAL_THRESHOLD, LOW_SIGNAL_THRESHOLD, BADGES } from '../constants';
 
 interface FeedPanelProps {
   visibleMessages: ChatMessage[];
@@ -602,6 +602,17 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             {!isNews && msg.userLevel && !msg.hideLevel && (
                                 <div className="px-1.5 py-0.5 rounded border border-white/10 bg-cyan-900/30 text-cyan-400 text-[9px] font-mono font-black">
                                     LVL {msg.userLevel}
+                                </div>
+                            )}
+
+                            {/* BADGES */}
+                            {!isNews && msg.userBadges && msg.userBadges.length > 0 && (
+                                <div className="flex items-center gap-0.5 ml-1">
+                                    {msg.userBadges.map(bid => BADGES[bid] ? (
+                                        <span key={bid} title={t(BADGES[bid].translationKey)} className="text-xs filter drop-shadow-md">
+                                            {BADGES[bid].icon}
+                                        </span>
+                                    ) : null)}
                                 </div>
                             )}
                             

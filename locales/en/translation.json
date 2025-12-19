@@ -38,7 +38,9 @@
     "error_transmission": "Transmission failed.",
     "privacy_active": "SIGNAL ENCRYPTION ACTIVE",
     "status_masked": "> ENCRYPTION: ACTIVE [LOCATION SCRAMBLED]",
-    "status_precise": "> TARGETING: PRECISE [EXACT LOCATION VISIBLE]"
+    "status_precise": "> TARGETING: PRECISE [EXACT LOCATION VISIBLE]",
+    "mask_coordinates": "MASK COORDINATES",
+    "mask_description": "Randomizes location by ~1km for privacy."
   },
   "thread": {
     "title": "THREAD",
@@ -122,6 +124,28 @@
     "streak": "UPLINK STREAK",
     "days": "DAYS",
     "prime_status": "OPERATOR PRIME",
+    "btn_get_prime": "GET OPERATOR PRIME",
+    "xp_info": "XP RULES",
+    "xp_post": "Broadcast: +10",
+    "xp_reply": "Reply: +15",
+    "xp_scan": "Sector Scan: +20",
+    "xp_vote": "Upvote Received: +5",
+    "edit_badges": "EDIT BADGES",
+    "badges_title": "BADGE COLLECTION",
+    "badges_max": "MAX 3 SELECTED",
+    "badge_unlocked": "BADGE UNLOCKED",
+    "badge_prime": "Operator Prime",
+    "badge_prime_desc": "Elite Status",
+    "badge_veteran": "Veteran",
+    "badge_veteran_desc": "Service > 1 Year (or 500+ Posts)",
+    "badge_influencer": "Influencer",
+    "badge_influencer_desc": "Signal Impact > 1000",
+    "badge_scout": "Scout",
+    "badge_scout_desc": "100+ Sector Scans",
+    "badge_bug_hunter": "Architect",
+    "badge_bug_hunter_desc": "Found a glitch in the matrix",
+    "badge_founder": "First Wave",
+    "badge_founder_desc": "Joined during Beta",
     "ranks": {
         "1": "OBSERVER",
         "2": "SIGNALER",
@@ -141,5 +165,9 @@
     "price": "4.99€ / MONTH",
     "btn_activate": "INITIALIZE PRIME STATUS",
     "active": "STATUS ACTIVE"
+  },
+  "notifications": {
+      "reply_title": "INCOMING TRANSMISSION",
+      "reply_body": "Someone responded to your signal."
   }
 }

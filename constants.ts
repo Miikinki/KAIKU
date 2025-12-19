@@ -1,3 +1,4 @@
+
 export const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 export const MAP_ATTRIBUTION = ''; // Hidden as per request
 
@@ -53,22 +54,35 @@ export const AVATAR_ICONS: Record<string, string> = {
   'flame': 'M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.6-3z' // Flame
 };
 
-// Approximate POPULATION centers for arc generation (Not geographic centers)
-// This ensures arcs look like they come from where people actually are.
+// BADGE SYSTEM DEFINITIONS
+export interface BadgeDefinition {
+    id: string;
+    icon: string;
+    translationKey: string;
+}
+
+export const BADGES: Record<string, BadgeDefinition> = {
+    'prime': { id: 'prime', icon: '👑', translationKey: 'badge_prime' },
+    'veteran': { id: 'veteran', icon: '🎖️', translationKey: 'badge_veteran' },
+    'influencer': { id: 'influencer', icon: '📢', translationKey: 'badge_influencer' },
+    'scout': { id: 'scout', icon: '🔭', translationKey: 'badge_scout' },
+    'bug_hunter': { id: 'bug_hunter', icon: '🐞', translationKey: 'badge_bug_hunter' },
+    'founder': { id: 'founder', icon: '🚀', translationKey: 'badge_founder' }
+};
+
+// Approximate POPULATION centers for arc generation
+// ... (rest of the file remains same)
 export const COUNTRY_COORDINATES: Record<string, [number, number]> = {
-  // Nordics & Baltics
-  'FI': [60.1, 24.9], // Helsinki Region (Fixing the 'Central Finland' confusion)
-  'SE': [59.3, 18.0], // Stockholm region
-  'NO': [59.9, 10.7], // Oslo region
+  'FI': [60.1, 24.9],
+  'SE': [59.3, 18.0],
+  'NO': [59.9, 10.7],
   'DK': [56.2, 9.5],
   'EE': [58.8, 25.5],
   'LV': [56.9, 24.1],
   'LT': [55.1, 23.8],
-  
-  // Europe
-  'GB': [51.5, -0.1], // London centric
+  'GB': [51.5, -0.1],
   'DE': [51.1, 10.4],
-  'FR': [46.6, 2.2], // Central France
+  'FR': [46.6, 2.2],
   'ES': [40.4, -3.7],
   'IT': [41.9, 12.6],
   'NL': [52.1, 5.2],
@@ -83,36 +97,30 @@ export const COUNTRY_COORDINATES: Record<string, [number, number]> = {
   'UA': [48.3, 31.1],
   'HU': [47.1, 19.0],
   'IE': [53.1, -7.6],
-  
-  // Americas
-  'US': [39.8, -98.5], // Geographic center, works best for wide coverage
+  'US': [39.8, -98.5],
   'CA': [56.1, -106.3],
-  'BR': [-23.5, -46.6], // Sao Paulo centric (Population)
-  'MX': [19.4, -99.1], // Mexico City
-  'AR': [-34.6, -58.3], // Buenos Aires
-  'CL': [-33.4, -70.6], // Santiago
-  'CO': [4.7, -74.0], // Bogota
-  'PE': [-12.0, -77.0], // Lima
-
-  // Asia / Pacific
-  'JP': [35.6, 139.6], // Tokyo centric
-  'CN': [31.2, 121.4], // Shanghai/East coast centric
-  'KR': [37.5, 126.9], // Seoul
+  'BR': [-23.5, -46.6],
+  'MX': [19.4, -99.1],
+  'AR': [-34.6, -58.3],
+  'CL': [-33.4, -70.6],
+  'CO': [4.7, -74.0],
+  'PE': [-12.0, -77.0],
+  'JP': [35.6, 139.6],
+  'CN': [31.2, 121.4],
+  'KR': [37.5, 126.9],
   'TW': [23.6, 120.9],
   'IN': [20.5, 78.9],
   'TH': [13.7, 100.5],
   'VN': [21.0, 105.8],
-  'ID': [-6.2, 106.8], // Jakarta
-  'MY': [3.1, 101.6], // KL
+  'ID': [-6.2, 106.8],
+  'MY': [3.1, 101.6],
   'PH': [12.8, 121.7],
-  'AU': [-33.8, 151.2], // Sydney/East coast
+  'AU': [-33.8, 151.2],
   'NZ': [-40.9, 174.8],
-
-  // Others
-  'RU': [55.7, 37.6], // Moscow centric
+  'RU': [55.7, 37.6],
   'TR': [39.9, 32.8],
-  'ZA': [-26.2, 28.0], // Johannesburg
-  'EG': [30.0, 31.2], // Cairo
+  'ZA': [-26.2, 28.0],
+  'EG': [30.0, 31.2],
   'NG': [9.0, 7.4],
   'SA': [24.7, 46.6],
   'AE': [25.2, 55.3],

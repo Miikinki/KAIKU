@@ -1,10 +1,18 @@
 import { supabase } from './supabaseClient';
 import { getAnonymousID, getUserProfile, saveUserProfile } from './storageService';
-import { AgentStats } from '../types';
+import { AgentStats, UserProfile } from '../types';
 
 const SCANS_KEY = 'kaiku_stats_scans';
 const SCAN_HISTORY_KEY = 'kaiku_scan_history';
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 Hour
+
+// --- MANUAL ADMIN TOOL ---
+// usage: window.kaikuAdmin.grantBadge('bug_hunter')
+if (typeof window !== 'undefined') {
+    (window as any).kaikuAdmin = {
+        grantBadge: (badgeId: string) => grantBadge(badgeId)
+    };
+}
 
 export const incrementScanCount = (city: string = "Global"): boolean => {
     const now = Date.now();
@@ -84,7 +92,81 @@ export const calculateLevel = (xp: number) => {
     };
 };
 
-export const fetchAgentStats = async (): Promise<AgentStats> => {
+/**
+ * CORE LOGIC: checkAndUnlockBadges
+ * Runs automatically when stats are fetched.
+ * Returns array of NEWLY unlocked badge IDs.
+ */
+const checkAndUnlockBadges = (stats: AgentStats, profile: UserProfile): string[] => {
+    const unlockedSet = new Set(profile.unlockedBadges || []);
+    const newlyUnlocked: string[] = [];
+
+    const check = (badgeId: string, condition: boolean) => {
+        if (condition && !unlockedSet.has(badgeId)) {
+            unlockedSet.add(badgeId);
+            newlyUnlocked.push(badgeId);
+        }
+    };
+
+    // 1. STATS BASED AUTOMATION
+    
+    // 'founder': Everyone in Beta gets this
+    check('founder', true); 
+    
+    // 'prime': Based on subscription status
+    check('prime', profile.isPrime);
+    
+    // 'influencer': High Signal Impact (Upvotes)
+    check('influencer', stats.signalImpact >= 1000);
+    
+    // 'scout': Heavy usage of the Scanner
+    // Lowered slightly to 50 as per instructions, or stick to 100 depending on difficulty.
+    // Instruction said "IF user.newsScanned >= 50 -> Unlock 'scout'"
+    check('scout', stats.newsScanned >= 50);
+    
+    // 'veteran': Long service or high transmission count
+    // Using transmission count as proxy for service length in this version
+    check('veteran', stats.totalTransmissions >= 500);
+
+    // 2. LEVEL BASED (Implicit 'lvl10' equivalent)
+    // Since max level is currently 4 in constants, we map high level to a badge if needed.
+    // For now, no specific 'lvl10' badge exists in BADGES constant, but if we add one:
+    // check('lvl10', stats.rankLevel >= 10); 
+
+    // COMMIT UPDATES
+    if (newlyUnlocked.length > 0) {
+        const newProfile = { ...profile, unlockedBadges: Array.from(unlockedSet) };
+        saveUserProfile(newProfile);
+    }
+
+    return newlyUnlocked;
+};
+
+/**
+ * MANUAL TRIGGER (Admin/Event)
+ * Bypass checks and grant directly.
+ */
+export const grantBadge = (badgeId: string): boolean => {
+    const profile = getUserProfile();
+    const unlockedSet = new Set(profile.unlockedBadges || []);
+
+    if (unlockedSet.has(badgeId)) {
+        console.log(`User already has badge: ${badgeId}`);
+        return false;
+    }
+
+    unlockedSet.add(badgeId);
+    const newProfile = { ...profile, unlockedBadges: Array.from(unlockedSet) };
+    saveUserProfile(newProfile);
+    
+    console.log(`MANUAL GRANT: Unlocked ${badgeId} for user.`);
+    return true;
+};
+
+/**
+ * Fetch stats AND run retroactive badge checks.
+ */
+export const fetchAgentStats = async (): Promise<{ stats: AgentStats, newBadges: string[] }> => {
     const sessionId = getAnonymousID();
     const profile = getUserProfile();
 
@@ -96,7 +178,8 @@ export const fetchAgentStats = async (): Promise<AgentStats> => {
 
     if (error) {
         console.error("Stats fetch failed", error);
-        return {
+        // Return zero stats but empty badges
+        const zeroStats = {
             id: sessionId,
             rankTitle: 'OFFLINE',
             rankLevel: 0,
@@ -109,6 +192,7 @@ export const fetchAgentStats = async (): Promise<AgentStats> => {
             sectorsActive: 0,
             newsScanned: getLocalScanCount()
         };
+        return { stats: zeroStats, newBadges: [] };
     }
 
     // 1. Calculate Raw Counts
@@ -138,11 +222,6 @@ export const fetchAgentStats = async (): Promise<AgentStats> => {
 
     // 2. Calculate XP
     const scoreXp = Math.max(0, totalScore * XP_RULES.UPVOTE_RECEIVED); 
-    
-    // Streak XP: Simplistic calculation (persisted in profile, added here for total)
-    // NOTE: In a real backend, this would be a transaction log. Here we assume 'profile.streak' * constant roughly.
-    // Ideally, we'd store a separate "bonusXp" field in profile.
-    // For now, let's assume streak bonuses are stored in a local storage key to be safe.
     const bonusXp = parseInt(localStorage.getItem('kaiku_bonus_xp') || '0', 10);
 
     const xp = (postCount * XP_RULES.POST) + 
@@ -155,7 +234,7 @@ export const fetchAgentStats = async (): Promise<AgentStats> => {
     // 3. Determine Level
     const levelData = calculateLevel(xp);
 
-    return {
+    const calculatedStats: AgentStats = {
         id: sessionId,
         rankTitle: levelData.titleKey, 
         rankLevel: levelData.level,
@@ -168,6 +247,11 @@ export const fetchAgentStats = async (): Promise<AgentStats> => {
         sectorsActive: sectors.size,
         newsScanned: scanCount
     };
+
+    // 4. Check Badges & Return New Ones
+    const newBadges = checkAndUnlockBadges(calculatedStats, profile);
+
+    return { stats: calculatedStats, newBadges };
 };
 
 // --- DAILY SUPPLY DROP ---
