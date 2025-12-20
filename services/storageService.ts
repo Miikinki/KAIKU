@@ -392,7 +392,7 @@ export const saveMessage = async (
         user_avatar: profile.avatar,
         user_color: profile.color,
         user_level: userLevel,
-        user_badges: profile.equippedBadges,
+        user_badges: profile.equippedBadges, // RESTORED
         hide_level: profile.hideLevel,
         is_prime: profile.isPrime,
         
