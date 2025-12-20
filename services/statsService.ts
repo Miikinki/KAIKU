@@ -7,12 +7,46 @@ const SCAN_HISTORY_KEY = 'kaiku_scan_history';
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 Hour
 
 // --- MANUAL ADMIN TOOL ---
-// usage: window.kaikuAdmin.grantBadge('bug_hunter')
 if (typeof window !== 'undefined') {
     (window as any).kaikuAdmin = {
         grantBadge: (badgeId: string) => grantBadge(badgeId)
     };
 }
+
+// Helper to calculate level curve (Matches SQL function)
+export const calculateLevel = (xp: number) => {
+    // Formula: Level = FLOOR(SQRT(xp / 100)) + 1
+    const level = Math.floor(Math.sqrt(Math.max(xp, 0) / 100)) + 1;
+    
+    // Calculate progress to next level
+    // Next Level XP = (Level)^2 * 100
+    const currentLevelBaseXp = Math.pow(level - 1, 2) * 100;
+    const nextLevelBaseXp = Math.pow(level, 2) * 100;
+    const progress = (xp - currentLevelBaseXp) / (nextLevelBaseXp - currentLevelBaseXp);
+
+    return {
+        level,
+        titleKey: level.toString(), // Simplified title key for now
+        progress: Math.min(Math.max(progress, 0), 1),
+        nextLevelXp: nextLevelBaseXp
+    };
+};
+
+export const awardXp = async (amount: number, actionType: 'scan' | 'vote' | 'misc') => {
+    const sessionId = getAnonymousID();
+    
+    try {
+        const { error } = await supabase.rpc('award_xp', {
+            user_session_id: sessionId,
+            xp_amount: amount,
+            action_type: actionType
+        });
+        
+        if (error) console.error("XP Award Failed:", error);
+    } catch (e) {
+        console.error("XP Award Exception:", e);
+    }
+};
 
 export const incrementScanCount = (city: string = "Global"): boolean => {
     const now = Date.now();
@@ -34,68 +68,18 @@ export const incrementScanCount = (city: string = "Global"): boolean => {
     history[cityKey] = now;
     localStorage.setItem(SCAN_HISTORY_KEY, JSON.stringify(history));
 
+    // Update Local Counter
     const current = parseInt(localStorage.getItem(SCANS_KEY) || '0', 10);
     localStorage.setItem(SCANS_KEY, (current + 1).toString());
+    
+    // AWARD DB XP (+50 XP for Scan)
+    awardXp(50, 'scan');
     
     return true; 
 };
 
-const getLocalScanCount = () => {
-    return parseInt(localStorage.getItem(SCANS_KEY) || '0', 10);
-};
-
-// --- XP SYSTEM ---
-
-const XP_RULES = {
-    POST: 10,
-    REPLY: 15,
-    SCAN: 20,
-    UPVOTE_RECEIVED: 5,
-    REPLY_RECEIVED: 2,
-    DAILY_LOGIN: 10,
-    STREAK_BONUS_7: 100
-};
-
-const LEVELS = [
-    { level: 1, min: 0, titleKey: '1' },
-    { level: 2, min: 101, titleKey: '2' },
-    { level: 3, min: 501, titleKey: '3' },
-    { level: 4, min: 1501, titleKey: '4' }
-];
-
-export const calculateLevel = (xp: number) => {
-    let current = LEVELS[0];
-    let next = LEVELS[1];
-
-    for (let i = 0; i < LEVELS.length; i++) {
-        if (xp >= LEVELS[i].min) {
-            current = LEVELS[i];
-            next = LEVELS[i + 1] || null; 
-        } else {
-            break;
-        }
-    }
-
-    // Calculate progress (0.0 - 1.0)
-    let progress = 0;
-    if (next) {
-        progress = (xp - current.min) / (next.min - current.min);
-    } else {
-        progress = 1; // Max level
-    }
-
-    return {
-        level: current.level,
-        titleKey: current.titleKey,
-        progress,
-        nextLevelXp: next ? next.min : xp // Cap if max
-    };
-};
-
 /**
  * CORE LOGIC: checkAndUnlockBadges
- * Runs automatically when stats are fetched.
- * Returns array of NEWLY unlocked badge IDs.
  */
 const checkAndUnlockBadges = (stats: AgentStats, profile: UserProfile): string[] => {
     const unlockedSet = new Set(profile.unlockedBadges || []);
@@ -108,32 +92,12 @@ const checkAndUnlockBadges = (stats: AgentStats, profile: UserProfile): string[]
         }
     };
 
-    // 1. STATS BASED AUTOMATION
-    
-    // 'founder': Everyone in Beta gets this
     check('founder', true); 
-    
-    // 'prime': Based on subscription status
     check('prime', profile.isPrime);
-    
-    // 'influencer': High Signal Impact (Upvotes)
-    check('influencer', stats.signalImpact >= 1000);
-    
-    // 'scout': Heavy usage of the Scanner
-    // Lowered slightly to 50 as per instructions, or stick to 100 depending on difficulty.
-    // Instruction said "IF user.newsScanned >= 50 -> Unlock 'scout'"
+    check('influencer', stats.signalImpact >= 1000); // Need to decide if Impact tracks persisting votes or active
     check('scout', stats.newsScanned >= 50);
-    
-    // 'veteran': Long service or high transmission count
-    // Using transmission count as proxy for service length in this version
     check('veteran', stats.totalTransmissions >= 500);
 
-    // 2. LEVEL BASED (Implicit 'lvl10' equivalent)
-    // Since max level is currently 4 in constants, we map high level to a badge if needed.
-    // For now, no specific 'lvl10' badge exists in BADGES constant, but if we add one:
-    // check('lvl10', stats.rankLevel >= 10); 
-
-    // COMMIT UPDATES
     if (newlyUnlocked.length > 0) {
         const newProfile = { ...profile, unlockedBadges: Array.from(unlockedSet) };
         saveUserProfile(newProfile);
@@ -142,171 +106,106 @@ const checkAndUnlockBadges = (stats: AgentStats, profile: UserProfile): string[]
     return newlyUnlocked;
 };
 
-/**
- * MANUAL TRIGGER (Admin/Event)
- * Bypass checks and grant directly.
- */
 export const grantBadge = (badgeId: string): boolean => {
     const profile = getUserProfile();
     const unlockedSet = new Set(profile.unlockedBadges || []);
 
-    if (unlockedSet.has(badgeId)) {
-        console.log(`User already has badge: ${badgeId}`);
-        return false;
-    }
+    if (unlockedSet.has(badgeId)) return false;
 
     unlockedSet.add(badgeId);
     const newProfile = { ...profile, unlockedBadges: Array.from(unlockedSet) };
     saveUserProfile(newProfile);
-    
-    console.log(`MANUAL GRANT: Unlocked ${badgeId} for user.`);
     return true;
 };
 
 /**
- * Fetch stats AND run retroactive badge checks.
+ * Fetch stats from PERSISTENT DB COLUMNS.
  */
 export const fetchAgentStats = async (): Promise<{ stats: AgentStats, newBadges: string[] }> => {
     const sessionId = getAnonymousID();
     const profile = getUserProfile();
 
-    // Fetch user's posts to calculate stats
-    const { data: posts, error } = await supabase
+    // 1. Fetch Persistent Stats from Identity Table
+    const { data: identityData, error: identityError } = await supabase
+        .from('kaiku_identities')
+        .select('total_xp, stats_messages_sent, stats_news_scanned, stats_signals_boosted')
+        .eq('session_id', sessionId)
+        .single();
+
+    // 2. Fetch Active Impact (Sum of score of currently alive posts)
+    // NOTE: Impact is dynamic based on current reputation, so we still calculate this live.
+    const { data: activePosts } = await supabase
         .from('kaiku_posts')
-        .select('id, score, parent_post_id, city_name, replies:kaiku_posts!parent_post_id(count)')
+        .select('score')
         .eq('session_id', sessionId);
 
-    if (error) {
-        console.error("Stats fetch failed", error);
-        // Return zero stats but empty badges
-        const zeroStats = {
-            id: sessionId,
-            rankTitle: 'OFFLINE',
-            rankLevel: 0,
-            xp: 0,
-            nextLevelXp: 100,
-            progress: 0,
-            totalTransmissions: 0,
-            signalImpact: 0,
-            repliesReceived: 0,
-            sectorsActive: 0,
-            newsScanned: getLocalScanCount()
-        };
-        return { stats: zeroStats, newBadges: [] };
+    let currentImpact = 0;
+    if (activePosts) {
+        currentImpact = activePosts.reduce((sum, p) => sum + (p.score || 0), 0);
     }
 
-    // 1. Calculate Raw Counts
-    let postCount = 0;
-    let replyCount = 0;
-    let totalScore = 0;
-    let repliesReceived = 0;
-    const sectors = new Set<string>();
-
-    posts.forEach((p: any) => {
-        if (p.parent_post_id) {
-            replyCount++;
-        } else {
-            postCount++;
-        }
-        
-        totalScore += (p.score || 0);
-        
-        // Count replies received (Array of object due to Supabase join)
-        const rCount = p.replies?.[0]?.count || 0;
-        repliesReceived += rCount;
-
-        if (p.city_name) sectors.add(p.city_name);
-    });
-
-    const scanCount = getLocalScanCount();
-
-    // 2. Calculate XP
-    const scoreXp = Math.max(0, totalScore * XP_RULES.UPVOTE_RECEIVED); 
-    const bonusXp = parseInt(localStorage.getItem('kaiku_bonus_xp') || '0', 10);
-
-    const xp = (postCount * XP_RULES.POST) + 
-               (replyCount * XP_RULES.REPLY) + 
-               (scanCount * XP_RULES.SCAN) + 
-               scoreXp + 
-               (repliesReceived * XP_RULES.REPLY_RECEIVED) + 
-               bonusXp;
-
-    // 3. Determine Level
-    const levelData = calculateLevel(xp);
+    // Default values if no identity exists yet
+    const dbXp = identityData?.total_xp || 0;
+    const dbMessages = identityData?.stats_messages_sent || 0;
+    const dbScans = identityData?.stats_news_scanned || 0;
+    
+    // Calculate Level based on Persistent XP
+    const levelData = calculateLevel(dbXp);
 
     const calculatedStats: AgentStats = {
         id: sessionId,
         rankTitle: levelData.titleKey, 
         rankLevel: levelData.level,
-        xp,
+        xp: dbXp,
         nextLevelXp: levelData.nextLevelXp,
         progress: levelData.progress,
-        totalTransmissions: postCount + replyCount,
-        signalImpact: totalScore,
-        repliesReceived,
-        sectorsActive: sectors.size,
-        newsScanned: scanCount
+        totalTransmissions: dbMessages,
+        signalImpact: currentImpact, // Still dynamic
+        repliesReceived: 0, // Deprecated or needs new column
+        sectorsActive: 1, // Placeholder
+        newsScanned: dbScans
     };
 
-    // 4. Check Badges & Return New Ones
+    // 4. Check Badges
     const newBadges = checkAndUnlockBadges(calculatedStats, profile);
 
     return { stats: calculatedStats, newBadges };
 };
 
-// --- DAILY SUPPLY DROP ---
-
-export interface DailyLoginResult {
-    xpGained: number;
-    newStreak: number;
-    message?: string;
-}
-
-export const processDailyLogin = (): DailyLoginResult | null => {
+export const processDailyLogin = (): { xpGained: number, newStreak: number, message: string } | null => {
     const profile = getUserProfile();
     const now = new Date();
     const lastLogin = new Date(profile.lastLogin);
     
-    // Normalize to midnight for day comparison
     const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const lastLoginMidnight = new Date(lastLogin.getFullYear(), lastLogin.getMonth(), lastLogin.getDate()).getTime();
-    
     const oneDay = 24 * 60 * 60 * 1000;
     
-    // If logged in today, do nothing
-    if (todayMidnight === lastLoginMidnight) {
-        return null;
-    }
+    if (todayMidnight === lastLoginMidnight) return null;
 
     let newStreak = profile.streak;
     let xpGained = 0;
     let message = "Daily Uplink Established";
 
-    // If logged in yesterday (diff is 1 day), increment
     if (todayMidnight - lastLoginMidnight === oneDay) {
         newStreak += 1;
-        xpGained = XP_RULES.DAILY_LOGIN;
-        
-        // 7 Day Bonus
+        xpGained = 10;
         if (newStreak % 7 === 0) {
-            xpGained += XP_RULES.STREAK_BONUS_7;
+            xpGained += 100;
             message = "WEEKLY STREAK BONUS!";
         }
     } else {
-        // Streak broken
         newStreak = 1;
-        xpGained = XP_RULES.DAILY_LOGIN;
+        xpGained = 10;
         message = "Uplink Restored";
     }
 
-    // Update Profile
     profile.lastLogin = now.getTime();
     profile.streak = newStreak;
     saveUserProfile(profile);
 
-    // Persist Bonus XP (since we don't have a backend to store event logs)
-    const currentBonus = parseInt(localStorage.getItem('kaiku_bonus_xp') || '0', 10);
-    localStorage.setItem('kaiku_bonus_xp', (currentBonus + xpGained).toString());
+    // Award Persistent XP for Login
+    awardXp(xpGained, 'misc');
 
     return { xpGained, newStreak, message };
 };

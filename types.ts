@@ -75,7 +75,7 @@ export interface AgentStats {
   nextLevelXp: number; // XP needed for next level
   progress: number; // 0.0 to 1.0 for current level
   totalTransmissions: number;
-  signalImpact: number; // Total Score
+  signalImpact: number; // Total Score (calculated locally or fetched)
   repliesReceived: number;
   sectorsActive: number; // Unique cities
   newsScanned: number;

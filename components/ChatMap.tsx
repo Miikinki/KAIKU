@@ -66,14 +66,22 @@ const newsIcon = L.divIcon({
     iconAnchor: [20, 20]
 });
 
+// TIERED CLUSTER ICON LOGIC - FIXED SIZES VIA CSS
 const createClusterIcon = (count: number, isSystem: boolean) => {
-  const size = 30 + Math.min(count, 20); 
-  const cssClass = isSystem ? 'kaiku-cluster-system' : 'kaiku-cluster-user';
+  // Determine CSS class based on size
+  let cssClass = 'custom-cluster-small';
+  if (count >= 10) cssClass = 'custom-cluster-medium';
+  
+  // Append system override if applicable
+  if (isSystem) {
+      cssClass += ' system-cluster-override';
+  }
+
+  // We set iconSize to 0,0 because the CSS handles the dimensions and negative margins (centering).
   return L.divIcon({
-    html: `<div class="kaiku-cluster ${cssClass}" style="width: ${size}px; height: ${size}px;">${count}</div>`,
-    className: 'bg-transparent border-none', 
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
+    html: `<span>${count}</span>`,
+    className: cssClass,
+    iconSize: L.point(0, 0)
   });
 };
 
@@ -144,6 +152,13 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
       return Math.min(size, maxDim);
   }, [zoom]);
 
+  // Determine Map Visualization Tier
+  const mapClass = useMemo(() => {
+      if (zoom < 10) return 'map-macro-view'; // Tier 1: Micro-dots
+      if (zoom >= 15) return 'map-street-view'; // Tier 3: Heat Fog Only
+      return ''; // Tier 2: Standard Bubbles
+  }, [zoom]);
+
   useEffect(() => {
       fetchLootDrops().then(setLootDrops);
       const interval = setInterval(() => {
@@ -173,7 +188,7 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
   const points = useMemo(() => messages
     .filter(m => !hiddenIds.has(m.id))
     .map(msg => ({
-      type: 'Feature',
+      type: 'Feature' as const,
       properties: { 
           cluster: false, 
           msgId: msg.id, 
@@ -182,7 +197,7 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
           ...msg 
       },
       geometry: {
-        type: 'Point',
+        type: 'Point' as const,
         coordinates: [msg.location.lng, msg.location.lat]
       }
     })), 
@@ -192,11 +207,11 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
     points,
     bounds: bounds ? [bounds[0], bounds[1], bounds[2], bounds[3]] : undefined,
     zoom,
-    options: { radius: 75, maxZoom: 16 }
+    options: { radius: 30, maxZoom: 14 } // Strict 30px radius to prevent merging distant points
   });
 
   return (
-    <div className="fixed inset-0 w-full h-full bg-[#0a0a12] overflow-hidden">
+    <div className={`fixed inset-0 w-full h-full bg-[#0a0a12] overflow-hidden ${mapClass}`}>
       <MapContainer
         center={initialCenter ? [initialCenter.lat, initialCenter.lng] : [20.0, 0.0]} 
         zoom={3}

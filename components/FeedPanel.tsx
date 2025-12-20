@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock, Newspaper, ExternalLink, Sparkles, Languages, Loader2, RefreshCw, Crown, Wifi } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock, Newspaper, ExternalLink, Sparkles, Languages, Loader2, RefreshCw, Crown, Wifi, Layers, MessageCircle } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
 import { translateText } from '../services/translationService';
@@ -89,6 +89,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [showMyMessagesOnly, setShowMyMessagesOnly] = useState(false);
+  const [filterMode, setFilterMode] = useState<'all' | 'news' | 'chat'>('all');
   
   // Translation State
   const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({});
@@ -143,17 +144,29 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   const displayMessages = useMemo(() => {
     let msgs = visibleMessages;
+    
+    // 1. Tag Filter
     if (activeTag) {
         msgs = msgs.filter(msg => msg.tags?.includes(activeTag) || msg.text.includes(activeTag));
     }
+    
+    // 2. User Filter (My Messages)
     if (showMyMessagesOnly) {
         msgs = msgs.filter(msg => msg.sessionId === currentSessionId);
     }
+
+    // 3. Mode Filter (All / News / Chat)
+    if (filterMode === 'news') {
+        msgs = msgs.filter(msg => msg.postType === 'GLOBAL_EVENT' || msg.postType === 'SCAN_RESULT');
+    } else if (filterMode === 'chat') {
+        msgs = msgs.filter(msg => msg.postType === 'USER' || !msg.postType);
+    }
+
     return msgs;
-  }, [visibleMessages, activeTag, showMyMessagesOnly, currentSessionId]);
+  }, [visibleMessages, activeTag, showMyMessagesOnly, currentSessionId, filterMode]);
 
   const trendingTags = useMemo(() => {
-      if (activeTag || showMyMessagesOnly) return []; 
+      if (activeTag || showMyMessagesOnly || filterMode !== 'all') return []; 
       const timeWindow = 24 * 60 * 60 * 1000; 
       const counts: Record<string, number> = {};
       
@@ -180,7 +193,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
           .sort(([, a], [, b]) => b - a)
           .slice(0, 5) 
           .map(([tag, count]) => ({ tag, count }));
-  }, [visibleMessages, activeTag, showMyMessagesOnly, now, hiddenIds]);
+  }, [visibleMessages, activeTag, showMyMessagesOnly, now, hiddenIds, filterMode]);
 
 
   const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
@@ -304,15 +317,14 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
     : (zoomLevel && zoomLevel < 9) ? t('feed.regional_intercept') : t('feed.local_signals');
   const hasSignal = displayMessages.length > 0;
   
-  // Variants for Map Mode (Bottom Sheet)
+  // Variants for Map Mode (Bottom Sheet - 85vh)
   const mapVariants = {
       open: { y: 0 },
-      peek: { y: '55%' },
-      collapsed: { y: 'calc(100% - 76px)' } 
+      peek: { y: 'calc(100% - 90px)' }, // Peek height: 90px
+      collapsed: { y: '100%' } 
   };
 
   // Variants for List Mode (Full Screen)
-  // top: 0 ensures it covers the map completely.
   const listVariants = {
       open: { y: 0, top: 0 },
       peek: { y: 0, top: 0 },
@@ -321,134 +333,198 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   const currentState = (isOpen || isListMode) 
     ? 'open' 
-    : (displayMessages.length === 0 ? 'collapsed' : 'peek');
+    : 'peek';
 
   const containerClasses = isListMode 
-    ? "fixed inset-x-0 bottom-0 bg-[#0a0a12] z-[400] overflow-hidden flex flex-col" // Removed shadow/border for seamless look
-    : "fixed inset-x-0 bottom-0 top-0 bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden";
+    ? "fixed inset-0 bg-[#0a0a12] z-[9999] overflow-hidden flex flex-col pt-28" // List Mode: Full screen
+    : "fixed bottom-0 left-0 right-0 h-[85vh] bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[9999] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] flex flex-col rounded-t-3xl transition-transform duration-300 ease-out"; // Map Mode: Bottom Sheet
 
   return (
     <>
+      {/* BACKDROP for Map Mode (Click to Close) */}
+      <AnimatePresence>
+        {!isListMode && isOpen && (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={toggleOpen}
+                className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[9000]"
+            />
+        )}
+      </AnimatePresence>
+
       <motion.div
-        initial={isListMode ? "open" : "collapsed"}
+        initial={isListMode ? "open" : "peek"}
         animate={currentState}
         variants={isListMode ? listVariants : mapVariants}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         className={containerClasses}
-        // Force top padding when in "map open" mode to simulate sheet behavior but allow full height
-        // In LIST MODE, we add extra padding (pt-28) to clear the floating App Header buttons
-        style={(!isListMode && isOpen) ? { paddingTop: '60px' } : isListMode ? { paddingTop: '0px' } : {}}
       >
-        <div 
-            className={`p-4 border-b border-white/5 flex flex-col items-center cursor-pointer transition-colors shrink-0 ${isListMode ? 'bg-[#0a0a12] pt-28' : 'bg-white/5 hover:bg-white/10'}`}
-            onClick={() => { 
-                if (!isListMode) {
-                    triggerHaptic('light'); toggleOpen(); 
-                }
-            }}
-        >
-          {/* Only show Drag Handle in Map Mode */}
-          {!isListMode && isOpen && <div className="w-12 h-1.5 bg-white/20 rounded-full mb-4" />}
-          
-          <div className="w-full flex justify-between items-center px-2">
-            <div className="flex items-center gap-4">
-                {(!isOpen && !isListMode) ? (
-                    <div className="flex items-center gap-3">
-                         <div className={`p-1.5 rounded-full ${hasSignal ? 'bg-cyan-500/20 text-cyan-400' : 'bg-gray-800/50 text-gray-500'} ${isRefreshing ? 'animate-spin' : ''}`}>
-                             {hasSignal ? <Lock size={18} /> : <ScanLine size={18} />}
-                         </div>
-                         <div className="flex flex-col">
-                             <span className={`text-xs font-bold tracking-widest uppercase ${hasSignal ? 'text-cyan-400' : 'text-gray-400'}`}>
-                                {hasSignal ? t('feed.signal_locked') : t('feed.scanning')}
-                             </span>
-                             <div className="flex items-center gap-2">
-                                <span className={`text-[10px] font-mono ${displayMessages.length === 0 ? 'text-gray-500' : 'text-white/60'}`}>
-                                    {displayMessages.length} {t('feed.signals_detected')}
-                                </span>
-                             </div>
-                         </div>
-                    </div>
-                ) : (
-                    <div>
-                        <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-                            {isListMode ? <MapPin size={24} className="text-cyan-400" /> : <Radar size={24} className="text-cyan-400" />}
-                            {feedTitle}
-                        </h2>
-                    </div>
-                )}
-            </div>
-            
-            <div className="flex items-center gap-1">
-                <button
-                    onClick={handleComposeClick}
-                    className="p-2 rounded-full bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.1)] mr-1"
-                    title="Broadcast Signal"
+        
+        {/* --- FIXED HEADER SECTION (NO SCROLL) --- */}
+        <div className="shrink-0 w-full bg-[#0a0a12] z-20 pb-2 border-b border-white/5">
+            {/* DRAG HANDLE (Map Mode Only) */}
+            {!isListMode && (
+                <div 
+                    className="w-full flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing"
+                    onClick={toggleOpen}
                 >
-                    <Plus size={20} />
-                </button>
+                    <div className="w-12 h-1.5 bg-gray-600/50 rounded-full hover:bg-gray-500/70 transition-colors" />
+                </div>
+            )}
 
-                {(isOpen || isListMode) && (
-                    <>
-                        <button
-                            onClick={handleToggleFilter}
-                            className={`p-2 rounded-full transition-all ${showMyMessagesOnly ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-white/10 text-gray-400'}`}
-                            title="My Signals"
+            <div 
+                className="px-4 pb-2 flex flex-col items-center cursor-pointer transition-colors relative"
+                onClick={() => { 
+                    if (!isListMode && !isOpen) {
+                        triggerHaptic('light'); toggleOpen(); 
+                    }
+                }}
+            >
+              <div className="w-full flex justify-between items-center px-2 mt-1 relative">
+                <div className="flex items-center gap-4">
+                    {(!isOpen && !isListMode) ? (
+                        <div className="flex items-center gap-3">
+                             <div className={`p-1.5 rounded-full ${hasSignal ? 'bg-cyan-500/20 text-cyan-400' : 'bg-gray-800/50 text-gray-500'} ${isRefreshing ? 'animate-spin' : ''}`}>
+                                 {hasSignal ? <Lock size={18} /> : <ScanLine size={18} />}
+                             </div>
+                             <div className="flex flex-col">
+                                 <span className={`text-xs font-bold tracking-widest uppercase ${hasSignal ? 'text-cyan-400' : 'text-gray-400'}`}>
+                                    {hasSignal ? t('feed.signal_locked') : t('feed.scanning')}
+                                 </span>
+                                 <div className="flex items-center gap-2">
+                                    <span className={`text-[10px] font-mono ${displayMessages.length === 0 ? 'text-gray-500' : 'text-white/60'}`}>
+                                        {displayMessages.length} {t('feed.signals_detected')}
+                                    </span>
+                                 </div>
+                             </div>
+                        </div>
+                    ) : (
+                        <div>
+                            <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-3">
+                                {isListMode ? <MapPin size={24} className="text-cyan-400" /> : <Radar size={24} className="text-cyan-400" />}
+                                {feedTitle}
+                            </h2>
+                        </div>
+                    )}
+                </div>
+                
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); handleComposeClick(e); }}
+                        className="p-2 rounded-full bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.1)] mr-1"
+                        title="Broadcast Signal"
+                    >
+                        <Plus size={20} />
+                    </button>
+
+                    {(isOpen || isListMode) && (
+                        <>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleToggleFilter(e); }}
+                                className={`p-2 rounded-full transition-all ${showMyMessagesOnly ? 'bg-cyan-500/20 text-cyan-400' : 'hover:bg-white/10 text-gray-400'}`}
+                                title="My Signals"
+                            >
+                                <User size={18} />
+                            </button>
+                            
+                            {onRefresh && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleRefresh(e); }}
+                                    className={`p-2 hover:bg-white/10 rounded-full transition-all ${isRefreshing ? 'animate-spin' : ''} text-gray-400`}
+                                >
+                                    <RotateCcw size={18} />
+                                </button>
+                            )}
+
+                            {!isListMode && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); toggleOpen(); }}
+                                    className="p-2 bg-black/50 text-white rounded-full hover:bg-white/20 transition-colors ml-1 border border-white/10"
+                                >
+                                    <X size={20} />
+                                </button>
+                            )}
+                        </>
+                    )}
+                </div>
+              </div>
+            </div>
+
+            {/* SIGNAL FILTER TOGGLES (Sticky in Header) */}
+            {(isOpen || isListMode) && (
+                <div className="px-4 pb-1">
+                    <div className="flex w-full bg-black/40 p-1 rounded-lg border border-white/10 shadow-inner">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setFilterMode('all'); triggerHaptic('light'); }}
+                            className={`flex-1 py-2 text-[10px] font-black uppercase transition-all rounded-md text-center flex items-center justify-center gap-2 ${
+                                filterMode === 'all' 
+                                ? 'bg-slate-700 text-white shadow-lg' 
+                                : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                            }`}
                         >
-                            <User size={18} />
+                            <Layers size={14} />
+                            <span>KAIKKI</span>
                         </button>
                         
-                        {onRefresh && (
-                            <button 
-                                onClick={handleRefresh} 
-                                className={`p-2 hover:bg-white/10 rounded-full transition-all ${isRefreshing ? 'animate-spin' : ''} text-gray-400`}
-                            >
-                                <RotateCcw size={18} />
-                            </button>
-                        )}
-                    </>
-                )}
-                
-                {/* Hide chevron in List Mode */}
-                {!isListMode && (
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); triggerHaptic('light'); toggleOpen(); }} 
-                        className="p-2 hover:bg-white/10 rounded-full text-gray-400"
-                    >
-                    {isOpen ? <ChevronDown size={24} /> : <ChevronUp size={24} />}
-                    </button>
-                )}
-            </div>
-          </div>
-        </div>
-
-        <AnimatePresence>
-            {activeTag && (
-                <motion.div 
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="bg-cyan-900/30 border-b border-cyan-500/30 overflow-hidden shrink-0"
-                >
-                    <div className="flex items-center justify-between px-6 py-2">
-                        <div className="flex items-center gap-2 text-cyan-400 text-sm font-mono">
-                            <Hash size={14} />
-                            <span>{t('feed.filtering')}: <span className="font-bold">{activeTag}</span></span>
-                        </div>
                         <button 
-                            onClick={() => { triggerHaptic('light'); onClearTag(); }}
-                            className="p-1 hover:bg-white/10 rounded-full text-cyan-200 transition-colors"
+                            onClick={(e) => { e.stopPropagation(); setFilterMode('news'); triggerHaptic('light'); }}
+                            className={`flex-1 py-2 text-[10px] font-black uppercase transition-all rounded-md text-center flex items-center justify-center gap-2 ${
+                                filterMode === 'news' 
+                                ? 'bg-cyan-900/80 text-cyan-100 border border-cyan-500/50 shadow-[0_0_10px_rgba(6,182,212,0.3)]' 
+                                : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                            }`}
                         >
-                            <X size={16} />
+                            <Radio size={14} />
+                            <span>TIEDUSTELU</span>
+                        </button>
+
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setFilterMode('chat'); triggerHaptic('light'); }}
+                            className={`flex-1 py-2 text-[10px] font-black uppercase transition-all rounded-md text-center flex items-center justify-center gap-2 ${
+                                filterMode === 'chat' 
+                                ? 'bg-emerald-900/80 text-emerald-100 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.3)]' 
+                                : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                            }`}
+                        >
+                            <MessageCircle size={14} />
+                            <span>LIIKENNE</span>
                         </button>
                     </div>
-                </motion.div>
+                </div>
             )}
-        </AnimatePresence>
 
+            <AnimatePresence>
+                {activeTag && (
+                    <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="bg-cyan-900/30 border-b border-cyan-500/30 overflow-hidden px-4"
+                    >
+                        <div className="flex items-center justify-between py-2">
+                            <div className="flex items-center gap-2 text-cyan-400 text-sm font-mono">
+                                <Hash size={14} />
+                                <span>{t('feed.filtering')}: <span className="font-bold">{activeTag}</span></span>
+                            </div>
+                            <button 
+                                onClick={() => { triggerHaptic('light'); onClearTag(); }}
+                                className="p-1 hover:bg-white/10 rounded-full text-cyan-200 transition-colors"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+
+        {/* --- SCROLLABLE CONTENT AREA --- */}
         <div 
             ref={scrollRef}
             onScroll={handleScroll}
-            className={`relative flex-1 p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508] ${isOpen || isListMode ? 'overflow-y-auto' : 'overflow-hidden'}`}
+            className={`flex-1 p-4 space-y-3 custom-scrollbar bg-gradient-to-b from-[#0a0a12] to-[#050508] ${isOpen || isListMode ? 'overflow-y-auto' : 'overflow-hidden'}`}
         >
             <AnimatePresence>
                 {showNewMsgToast && (
@@ -457,7 +533,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         animate={{ opacity: 1, y: 0, x: "-50%" }}
                         exit={{ opacity: 0, y: -20, x: "-50%" }}
                         className="fixed left-1/2 z-[500] pointer-events-none"
-                        style={{ top: isListMode ? "140px" : "calc(15vh + 90px)" }}
+                        style={{ top: isListMode ? "140px" : "calc(15vh + 120px)" }}
                     >
                          <button
                             onClick={scrollToTop}
@@ -500,7 +576,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             )}
 
             {displayMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500 text-center pb-20">
+            <div className="flex flex-col items-center justify-center h-full text-gray-500 text-center pb-20 min-h-[300px]">
                 <Shield size={48} className="mb-4 opacity-20" />
                 <p>{t('feed.no_signals')}</p>
                 {activeTag ? (
@@ -588,10 +664,14 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                             {/* NEWS: Signal Boost/Dampen UI */}
                             <button 
                                 onClick={(e) => handleVoteClick(e, msg.id, 'up')}
-                                className={`p-1.5 rounded-full transition-colors active:scale-95 ${userVote === 'up' ? 'text-cyan-400 bg-cyan-950/50 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'text-gray-500 hover:text-cyan-400 hover:bg-cyan-950/30'}`}
+                                className={`p-1.5 rounded-full transition-colors active:scale-95 ${
+                                    userVote === 'up' 
+                                    ? 'text-cyan-400 bg-cyan-950/50 shadow-[0_0_10px_rgba(34,211,238,0.3)]' 
+                                    : 'text-gray-500 hover:text-cyan-400 hover:bg-cyan-950/30'
+                                }`}
                                 title={t('feed.signal_boost')}
                             >
-                                <Wifi size={20} strokeWidth={2.5} />
+                                <Wifi size={20} strokeWidth={2.5} className={userVote === 'up' ? 'drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : ''} />
                             </button>
                             
                             <div className="flex flex-col items-center my-1">
@@ -603,7 +683,11 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
                             <button 
                                 onClick={(e) => handleVoteClick(e, msg.id, 'down')}
-                                className={`p-1.5 rounded-full transition-colors active:scale-95 ${userVote === 'down' ? 'text-gray-400 bg-white/5' : 'text-gray-600 hover:text-gray-400 hover:bg-white/5'}`}
+                                className={`p-1.5 rounded-full transition-colors active:scale-95 ${
+                                    userVote === 'down' 
+                                    ? 'text-gray-700 bg-black/20' // "Dark Gray" active state for dampen
+                                    : 'text-gray-500 hover:text-gray-400 hover:bg-white/5'
+                                }`}
                                 title={t('feed.signal_dampen')}
                             >
                                 <Activity size={18} strokeWidth={2} />
@@ -850,7 +934,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
             <div className="h-20" /> 
             
-            {/* Show "Pull Up" chevron ONLY in Map Mode (when closed) */}
+            {/* "Pull Up" Chevron (Map Mode) - Kept but redundant with handle */}
             {!isOpen && !isListMode && displayMessages.length > 2 && (
                 <div 
                     onClick={(e) => {

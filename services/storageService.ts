@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { MAX_POSTS_PER_WINDOW, RATE_LIMIT_WINDOW_MS, BASE_LIFESPAN_MS, BOOST_EXTENSION_MS, SPAM_RATE_LIMIT_MS, THEME_COLOR } from '../constants';
 import { getCityName, moderateContent } from './moderationService';
 import { RealtimeChannel } from '@supabase/supabase-js';
-import { fetchAgentStats } from './statsService'; // Import needed for level calc
+import { fetchAgentStats, awardXp } from './statsService'; // Import awardXp
 
 export const STORAGE_KEY = 'kaiku_local_data'; 
 export const USER_ID_KEY = 'kaiku_session_id'; 
@@ -15,7 +15,7 @@ export const HIDDEN_IDS_KEY = 'kaiku_hidden_ids';
 
 // ... (Existing constants and seed data helpers remain unchanged) ...
 
-const SEED_MESSAGES: ChatMessage[] = []; // keeping placeholder to maintain file structure
+const SEED_MESSAGES: ChatMessage[] = []; 
 
 // --- UTILS ---
 
@@ -64,10 +64,9 @@ export const getUserProfile = (): UserProfile => {
         const stored = localStorage.getItem(USER_PROFILE_KEY);
         if (stored) {
             const profile = JSON.parse(stored);
-            // Migration for existing users: Add badge arrays if missing
             if (!profile.unlockedBadges) profile.unlockedBadges = ['founder'];
             if (!profile.equippedBadges) profile.equippedBadges = [];
-            if (profile.isAdmin === undefined) profile.isAdmin = false; // Default
+            if (profile.isAdmin === undefined) profile.isAdmin = false; 
             return profile;
         }
     } catch (e) {}
@@ -82,7 +81,7 @@ export const getUserProfile = (): UserProfile => {
         streak: 0,
         lastLogin: Date.now(),
         notificationsEnabled: false,
-        unlockedBadges: ['founder'], // Default unlock for everyone in Beta
+        unlockedBadges: ['founder'], 
         equippedBadges: []
     };
 };
@@ -97,7 +96,7 @@ export const fetchLootDrops = async (): Promise<LootDrop[]> => {
     const { data, error } = await supabase
         .from('kaiku_loot_drops')
         .select('*')
-        .is('claimed_by', null); // Only fetch unclaimed
+        .is('claimed_by', null); 
 
     if (error || !data) return [];
 
@@ -116,7 +115,7 @@ export const fetchLootDrops = async (): Promise<LootDrop[]> => {
             lat,
             lng,
             message: d.message,
-            rewardCode: undefined, // Hidden
+            rewardCode: undefined, 
             claimedBy: d.claimed_by,
             createdAt: new Date(d.created_at).getTime()
         };
@@ -177,8 +176,6 @@ export const claimLootDrop = async (dropId: string, userLat: number, userLng: nu
     
     return data.reward_code;
 };
-
-// ... (Utils like getFlagUrl, getFlagEmoji, calculateDistance remain unchanged) ...
 
 export const getFlagUrl = (countryCode?: string) => {
   if (!countryCode) return null;
@@ -267,29 +264,27 @@ export const uploadImage = async (file: File): Promise<string> => {
 // --- CORE MESSAGING LOGIC ---
 
 export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessage[]> => {
-    // UPDATED: Increased limit to 50 for broader global view
     let query = supabase
         .from('kaiku_posts')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50); 
+        .order('created_at', { ascending: false });
 
+    // FILTER: Only Root Messages (No Replies) - CRITICAL for Map Accuracy
     if (onlyRoot) {
         query = query.is('parent_post_id', null);
     }
     
-    // FILTER: Only fetch items not expired in the DB
-    // Specifically for NEWS (post_type = GLOBAL_EVENT), we filter out old stuff (> 48h)
-    // For standard posts, we rely on the client-side expiry or score
+    // FILTER: STRICT FRESHNESS (Last 48 Hours)
     const cutOffTime = new Date(Date.now() - (48 * 60 * 60 * 1000)).toISOString();
-    query = query.gt('expires_at', cutOffTime); // Assume DB expires_at is correctly set
+    query = query.gt('created_at', cutOffTime);
+    
+    // LIMIT: Apply limit AFTER filters to ensure we get a full set of root messages
+    query = query.limit(50);
 
     const { data, error } = await query;
     if (error) throw error;
     if (!data) return [];
 
-    const now = Date.now();
-    
     return data.map((row: any) => ({
         id: row.id,
         text: row.text,
@@ -317,7 +312,7 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
         hideLevel: row.hide_level,
         isPrime: row.is_prime,
         imageUrl: row.image_url,
-        replyCount: 0 // Will be populated if we did a join, but simpler to omit for root list
+        replyCount: 0 
     }));
 };
 
@@ -381,7 +376,6 @@ export const saveMessage = async (
         finalLng = lng + (Math.random() - 0.5) * 0.01;
     }
     
-    // Extract tags from text manually
     const hashtags = extractTags(text);
 
     const row = {
@@ -392,11 +386,10 @@ export const saveMessage = async (
         target_country: cityName.countryCode,
         session_id: sessionId,
         parent_post_id: parentId || null,
-        origin_country: cityName.countryCode, // Assumed same for local post
+        origin_country: cityName.countryCode, 
         is_remote: false,
         image_url: imageUrl,
         
-        // Identity Snapshot
         user_display_name: profile.displayName,
         user_avatar: profile.avatar,
         user_color: profile.color,
@@ -405,10 +398,9 @@ export const saveMessage = async (
         hide_level: profile.hideLevel,
         is_prime: profile.isPrime,
         
-        // Base props
         score: 0,
         post_type: 'USER',
-        tags: hashtags // Manually save extracted tags
+        tags: hashtags 
     };
 
     const { data, error } = await supabase
@@ -419,7 +411,6 @@ export const saveMessage = async (
 
     if (error) throw new Error(error.message);
     
-    // Update local stats immediately for UI responsiveness
     localStorage.setItem(LAST_POST_TIMESTAMP_KEY, Date.now().toString());
     
     return data;
@@ -427,42 +418,40 @@ export const saveMessage = async (
 
 export const deleteMessage = async (id: string, parentId?: string) => {
     const sessionId = getAnonymousID();
-    // Logic: Users can only delete their own posts. RLS policies on Supabase enforce this.
     const { error } = await supabase
         .from('kaiku_posts')
         .delete()
         .eq('id', id)
-        .eq('session_id', sessionId); // Safety double-check
+        .eq('session_id', sessionId);
 
     if (error) throw new Error("Delete failed");
     markAsDeleted(id);
 };
 
 export const castVote = async (id: string, dir: string) => {
-    const sessionId = getAnonymousID();
     const val = dir === 'up' ? 1 : -1;
     
-    // Store locally
+    // Store locally to prevent UI spam
     const votes = getUserVotes();
-    const currentVote = votes[id]; // 'up' | 'down' | undefined
+    const currentVote = votes[id]; 
     
-    // Prevent double voting locally (UI optimization)
     if (currentVote === dir) return;
     
     votes[id] = dir as 'up' | 'down';
     localStorage.setItem(USER_VOTES_KEY, JSON.stringify(votes));
 
-    // Send RPC to Supabase
-    // We assume a Postgres function `vote_post(post_id, increment)` exists
+    // 1. Update Post Score (Server)
     const { error } = await supabase.rpc('vote_post', { 
         post_id: id, 
         increment: val 
     });
     
-    // Fallback if RPC doesn't exist: manually update (race condition prone but works for proto)
-    if (error) {
-        console.warn("RPC vote_post failed, falling back to manual update", error);
-        // This part is skipped for now as we rely on RPC for atomic counters
+    if (error) console.warn("Vote RPC failed", error);
+
+    // 2. Award persistent XP for engagement (+5 XP)
+    // Only awarding for Upvotes to prevent spamming downvotes for XP
+    if (dir === 'up') {
+        awardXp(5, 'vote');
     }
 };
 
@@ -478,7 +467,6 @@ export const getRateLimitStatus = async (): Promise<RateLimitStatus> => {
 };
 
 export const getLocalMessages = (onlyRoot: boolean = true): ChatMessage[] => {
-    // Return empty initially, data comes from useEffect fetch
     return [];
 };
 
@@ -517,7 +505,6 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
             } else if (payload.eventType === 'DELETE') {
                 callback({ type: 'DELETE', id: payload.old.id });
             } else if (payload.eventType === 'UPDATE') {
-                // Handle score updates or content edits
                 const row = payload.new;
                 const msg: ChatMessage = {
                      id: row.id,
@@ -533,7 +520,7 @@ export const subscribeToMessages = (callback: (payload: { type: string, message?
                      tags: row.tags,
                      isRemote: row.is_remote,
                      originCountry: row.origin_country,
-                     userLevel: row.user_level, // Ensure level updates propagate
+                     userLevel: row.user_level, 
                      userBadges: row.user_badges,
                      imageUrl: row.image_url,
                      eventMetadata: row.event_metadata || {}

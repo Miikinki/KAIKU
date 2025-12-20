@@ -128,8 +128,8 @@ export const scanGlobalNetwork = async (
       prompt = `Today is ${today}. Find 5 BREAKING news stories related to "${specificQuery}". Return strictly JSON.`;
       contextInstruction = `Focus on query: "${specificQuery}".`;
   } else {
-      prompt = `Today is ${today}. Find 5 BREAKING local news stories happening RIGHT NOW near coordinates ${centerLat}, ${centerLng}. If no major local news, find major regional news. Return strictly JSON.`;
-      contextInstruction = `Focus on local events near Lat: ${centerLat}, Lng: ${centerLng}. Ignore old news (>24h).`;
+      prompt = `Today is ${today}. Find 5 BREAKING local news stories happening RIGHT NOW (or within last 24h) near coordinates ${centerLat}, ${centerLng}. If no major local news, find major regional news. Return strictly JSON.`;
+      contextInstruction = `Focus on local events near Lat: ${centerLat}, Lng: ${centerLng}. STRICTLY IGNORE news older than 24h.`;
   }
 
   const SYSTEM_PROMPT = `
@@ -137,9 +137,10 @@ export const scanGlobalNetwork = async (
   Current Date: ${today}.
   ${contextInstruction}
   
-  Your task: Return a JSON array of 3-5 news objects.
-  CRITICAL: ONLY return news from the last 24-48 hours.
-  Format: JSON ONLY. No markdown.
+  MANDATORY RULES:
+  1. ONLY return news published within the last 24 hours. 
+  2. If exact publication time is unknown, assume it is old and discard it unless "BREAKING" or "LIVE".
+  3. JSON ONLY. No markdown.
   
   Schema per object: 
   { 
