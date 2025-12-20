@@ -21,6 +21,9 @@
     "view_list": "FEED",
     "vote_boost": "BOOST SIGNAL (Important Intel)",
     "vote_noise": "MARK AS NOISE (Irrelevant)",
+    "signal_boost": "BOOST SIGNAL",
+    "signal_dampen": "DAMPEN SIGNAL",
+    "signal_label": "SIG",
     "signal_strength_high": "🔥 HIGH PRIORITY",
     "signal_strength_weak": "WEAK SIGNAL",
     "signal_db": "{{score}}dB"
@@ -70,7 +73,10 @@
     "search_this_area": "SEARCH THIS AREA",
     "search_context": "Search news: {{location}}",
     "teleport": "RELOCATE UPLINK",
-    "teleport_active": "REMOTE UPLINK ACTIVE"
+    "teleport_active": "REMOTE UPLINK ACTIVE",
+    "scan_button": "SCAN SECTOR",
+    "scan_cooldown": "SECTOR ALREADY SCANNED. INTEL IS FRESH.",
+    "scan_complete": "INTEL ACQUIRED"
   },
   "welcome": {
     "subtitle": "Hyperlocal Signal Grid",

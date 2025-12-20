@@ -1,16 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, useMapEvents, useMap, Marker, Popup } from 'react-leaflet';
-import { Crosshair, Lock, ShieldAlert, Satellite, Package } from 'lucide-react';
+import { MapContainer, TileLayer, useMapEvents, useMap, Marker, CircleMarker } from 'react-leaflet';
+import { Crosshair, Zap } from 'lucide-react';
 import { ChatMessage, ViewportBounds, LootDrop } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
 import ArcLayer from './ArcLayer';
 import HeatmapLayer from './HeatmapLayer';
-import { useTranslation } from 'react-i18next';
 import L from 'leaflet';
-import { motion, AnimatePresence } from 'framer-motion';
 // @ts-ignore
 import useSupercluster from 'use-supercluster';
-import { getUserProfile, fetchLootDrops } from '../services/storageService';
+import { fetchLootDrops } from '../services/storageService';
 import { DeployLootModal, ClaimLootModal } from './LootModals';
 
 interface ChatMapProps {
@@ -32,14 +30,12 @@ interface ChatMapProps {
   scannerCity?: string | null;
   onTeleport?: (lat: number, lng: number) => void;
   isTeleporting?: boolean;
-  
-  // NEW PROPS
   isGameMasterMode?: boolean;
 }
 
-// ... (Existing constants and Icon functions) ...
 const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
-const CLUSTER_ZOOM_THRESHOLD = 14; 
+
+// --- ICONS ---
 
 const getLootIcon = () => {
     return L.divIcon({
@@ -55,11 +51,23 @@ const getLootIcon = () => {
     });
 };
 
+const createClusterIcon = (count: number, isSystem: boolean) => {
+  const size = 30 + Math.min(count, 20); 
+  const cssClass = isSystem ? 'kaiku-cluster-system' : 'kaiku-cluster-user';
+  // FIX: Added 'kaiku-cluster' base class to ensure flex centering and border-radius works
+  return L.divIcon({
+    html: `<div class="kaiku-cluster ${cssClass}" style="width: ${size}px; height: ${size}px;">${count}</div>`,
+    className: 'bg-transparent border-none', 
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
 const MapController: React.FC<{ 
     onViewportChange: (b: ViewportBounds) => void, 
     setZoom: (z: number) => void,
     setBounds: (b: [number, number, number, number] | null) => void,
-    onMapClick: (e: L.LeafletMouseEvent) => void, // Changed signature
+    onMapClick: (e: L.LeafletMouseEvent) => void,
     flyToLocation: any,
     focusedMessage: any
 }> = ({ onViewportChange, setZoom, setBounds, onMapClick, flyToLocation, focusedMessage }) => {
@@ -86,27 +94,42 @@ const MapController: React.FC<{
     click: (e) => onMapClick(e) 
   });
 
-  // ... (Existing flyTo logic) ...
-  useEffect(() => { if (focusedMessage) map.flyTo([focusedMessage.location.lat, focusedMessage.location.lng], 16); }, [focusedMessage, map]);
+  useEffect(() => { 
+      if (flyToLocation) {
+          map.flyTo([flyToLocation.lat, flyToLocation.lng], 14, { duration: 2 });
+      }
+  }, [flyToLocation, map]);
+
+  useEffect(() => { 
+      if (focusedMessage) {
+          map.flyTo([focusedMessage.location.lat, focusedMessage.location.lng], 16); 
+      }
+  }, [focusedMessage, map]);
 
   return null;
 };
 
 const ChatMap: React.FC<ChatMapProps> = (props) => {
   const { messages, signals, onViewportChange, onMapClick, hasSignal, initialCenter, flyToLocation, focusedMessage, onOpenThread, hiddenIds, userLocation, scannerStatus, scannerCity, onTeleport, isTeleporting, isGameMasterMode } = props;
-  const { t } = useTranslation();
   
   const [zoom, setZoom] = useState(3);
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const profile = getUserProfile();
   
   // Loot State
   const [lootDrops, setLootDrops] = useState<LootDrop[]>([]);
   const [deployLocation, setDeployLocation] = useState<{lat: number, lng: number} | null>(null);
   const [selectedDrop, setSelectedDrop] = useState<LootDrop | null>(null);
 
-  // Fetch drops periodically or on load
+  // Dynamic Radar Size Logic
+  const radarSize = useMemo(() => {
+      const base = 40; 
+      const multiplier = 18;
+      const size = base + (zoom * multiplier);
+      const maxDim = typeof window !== 'undefined' ? Math.min(window.innerWidth, window.innerHeight) * 0.75 : 300;
+      return Math.min(size, maxDim);
+  }, [zoom]);
+
   useEffect(() => {
       fetchLootDrops().then(setLootDrops);
       const interval = setInterval(() => {
@@ -125,16 +148,38 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
 
   const handleDeployClose = () => {
       setDeployLocation(null);
-      fetchLootDrops().then(setLootDrops); // Refresh
+      fetchLootDrops().then(setLootDrops);
   };
 
   const handleDropClick = (drop: LootDrop) => {
       setSelectedDrop(drop);
   };
 
-  // ... (Existing Cluster logic with Loot integration) ...
-  // Note: For simplicity, I'm rendering Loot Drops as standard Markers OUTSIDE the Supercluster for now
-  // so they don't get swallowed by message clusters.
+  // --- SUPERCLUSTER LOGIC ---
+  const points = useMemo(() => messages
+    .filter(m => !hiddenIds.has(m.id))
+    .map(msg => ({
+      type: 'Feature',
+      properties: { 
+          cluster: false, 
+          msgId: msg.id, 
+          category: 'message', 
+          isSystem: msg.postType === 'GLOBAL_EVENT',
+          ...msg 
+      },
+      geometry: {
+        type: 'Point',
+        coordinates: [msg.location.lng, msg.location.lat]
+      }
+    })), 
+  [messages, hiddenIds]);
+
+  const { clusters, supercluster } = useSupercluster({
+    points,
+    bounds: bounds ? [bounds[0], bounds[1], bounds[2], bounds[3]] : undefined,
+    zoom,
+    options: { radius: 75, maxZoom: 16 }
+  });
 
   return (
     <div className="fixed inset-0 w-full h-full bg-[#0a0a12] overflow-hidden">
@@ -151,6 +196,10 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
       >
         <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} noWrap={true} bounds={WORLD_BOUNDS} />
         
+        {/* HEATMAP provides the visual "Fog" when zoomed in */}
+        <HeatmapLayer messages={messages} />
+        <ArcLayer messages={signals} />
+
         <MapController 
             onViewportChange={onViewportChange} 
             setZoom={setZoom} 
@@ -160,6 +209,57 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
             focusedMessage={focusedMessage}
         />
         
+        {/* RENDER CLUSTERS & MARKERS */}
+        {clusters.map((cluster: any) => {
+          const [longitude, latitude] = cluster.geometry.coordinates;
+          const { cluster: isCluster, point_count: pointCount, isSystem } = cluster.properties;
+
+          if (isCluster) {
+            return (
+              <Marker
+                key={`cluster-${cluster.id}`}
+                position={[latitude, longitude]}
+                icon={createClusterIcon(pointCount, isSystem)} 
+                eventHandlers={{
+                  click: (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    const expansionZoom = Math.min(
+                      supercluster.getClusterExpansionZoom(cluster.id),
+                      17
+                    );
+                    mapRef.current?.setView([latitude, longitude], expansionZoom, {
+                      animate: true,
+                    });
+                  },
+                }}
+              />
+            );
+          }
+
+          // INDIVIDUAL MESSAGE (The "Leaf")
+          // Use CircleMarker with 0 opacity to act as an invisible touch target
+          return (
+             <CircleMarker 
+               key={`msg-${cluster.properties.msgId}`}
+               center={[latitude, longitude]}
+               radius={15} // Large touch target
+               pathOptions={{ 
+                   fillColor: '#ffffff', 
+                   fillOpacity: 0, 
+                   color: 'transparent',
+                   opacity: 0,
+                   weight: 0 
+               }}
+               eventHandlers={{ 
+                   click: (e) => {
+                       L.DomEvent.stopPropagation(e);
+                       onOpenThread(cluster.properties);
+                   }
+               }}
+             />
+          );
+        })}
+
         {/* RENDER LOOT DROPS */}
         {lootDrops.map(drop => (
             <Marker 
@@ -172,10 +272,6 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
                 }}}
             />
         ))}
-
-        {/* ... (Existing Clusters/Layers) ... */}
-        {/* Simplified for response: assume standard markers here */}
-        
       </MapContainer>
 
       {/* LOOT UI OVERLAYS */}
@@ -191,9 +287,41 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
           userLocation={userLocation}
       />
 
-      {/* ... (Existing Radar HUD) ... */}
-      <div className="pointer-events-none absolute inset-0 z-[999] flex items-center justify-center">
-          {/* Visuals omitted for brevity */}
+      {/* --- RADAR HUD (THE SWEEPER) --- */}
+      <div className="pointer-events-none absolute inset-0 z-[400] flex items-center justify-center overflow-hidden">
+          
+          {/* DYNAMIC SIZED HUD RING */}
+          <div 
+            className="relative rounded-full border border-cyan-500/20 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.05)] transition-all duration-300 ease-out"
+            style={{ width: `${radarSize}px`, height: `${radarSize}px` }}
+          >
+              
+              {/* 1. THE SWEEPER (Radar Beam) */}
+              <div 
+                  className="absolute inset-0 rounded-full animate-[spin_4s_linear_infinite]"
+                  style={{ background: 'conic-gradient(from 0deg, transparent 0deg, transparent 270deg, rgba(6, 182, 212, 0.15) 360deg)' }}
+              />
+
+              {/* 2. Static Rings (Cleaner) */}
+              <div className="absolute inset-[35%] rounded-full border border-cyan-500/10" />
+
+              {/* 3. Crosshairs */}
+              <div className="absolute top-0 bottom-0 w-[1px] bg-gradient-to-b from-transparent via-cyan-500/20 to-transparent" />
+              <div className="absolute left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-500/20 to-transparent" />
+
+              {/* 4. Center Target */}
+              <div className="relative z-10 text-cyan-500/70">
+                  <Crosshair size={20} strokeWidth={1.5} />
+              </div>
+
+              {/* 5. Scanning Status Text */}
+              <div className="absolute -bottom-10 flex flex-col items-center gap-1">
+                  <div className="text-[10px] font-mono text-cyan-500/50 tracking-[0.2em] font-bold animate-pulse flex items-center gap-2">
+                      <Zap size={10} />
+                      SCANNING
+                  </div>
+              </div>
+          </div>
       </div>
     </div>
   );

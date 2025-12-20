@@ -1,16 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
 import { ChatMessage } from '../types';
-import { generateUUID } from './storageService';
+import { generateUUID, calculateDistance } from './storageService';
 import { supabase } from './supabaseClient';
 import { getEnvVar } from './env';
 
-// SHARED WORLD SETTINGS
-const NEWS_TTL_HOURS = 12;
+// CONFIG
+const NEWS_TTL_HOURS = 48; // Keep news alive for 48h
 const NEWS_TTL_MS = NEWS_TTL_HOURS * 60 * 60 * 1000;
 const RADAR_MODEL = 'gemini-3-flash-preview';
-
-// CACHE (API Cost Optimization)
-const API_CACHE_DURATION_MS = 60 * 60 * 1000; 
+const SECTOR_COOLDOWN_HOURS = 12; // Don't re-scan area if news exists from last 12h
+const SCAN_RADIUS_KM = 15; // Radius to check for existing news
 
 const cleanJsonString = (text: string): string => {
   let cleaned = text.replace(/```json\n?|```/g, '').trim();
@@ -24,41 +23,45 @@ const cleanJsonString = (text: string): string => {
 };
 
 const applyStrongJitter = (coord: number) => {
-    return coord + (Math.random() - 0.5) * 0.02;
+    return coord + (Math.random() - 0.5) * 0.03;
 };
 
-// --- DB HELPERS ---
+// --- SPAM PREVENTION: CHECK SECTOR ---
 
-const normalizeCacheKey = (query?: string, lat?: number, lng?: number): string => {
-    if (query) return `news:${query.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-    if (lat && lng) return `news:${lat.toFixed(1)}_${lng.toFixed(1)}`;
-    return 'news:global';
-};
-
-const checkApiCache = async (key: string): Promise<ChatMessage[] | null> => {
+const checkSectorCooldown = async (lat: number, lng: number): Promise<boolean> => {
     try {
+        const cooldownTime = new Date(Date.now() - (SECTOR_COOLDOWN_HOURS * 60 * 60 * 1000)).toISOString();
+        
+        // Bounding box approximation (~20km box) to avoid complex PostGIS
+        const minLat = lat - 0.2;
+        const maxLat = lat + 0.2;
+        const minLng = lng - 0.2;
+        const maxLng = lng + 0.2;
+
         const { data, error } = await supabase
-            .from('kaiku_news_cache')
-            .select('*')
-            .eq('location_key', key)
-            .gt('expires_at', new Date().toISOString()) 
-            .maybeSingle(); 
+            .from('kaiku_posts')
+            .select('latitude, longitude')
+            .eq('post_type', 'GLOBAL_EVENT')
+            .gt('created_at', cooldownTime)
+            .gte('latitude', minLat)
+            .lte('latitude', maxLat)
+            .gte('longitude', minLng)
+            .lte('longitude', maxLng)
+            .limit(20);
 
-        if (error || !data) return null;
-        return data.data as ChatMessage[];
-    } catch (e) {
-        return null;
-    }
-};
+        if (error || !data) return false;
 
-const saveToApiCache = async (key: string, messages: ChatMessage[]) => {
-    try {
-        const expiresAt = new Date(Date.now() + API_CACHE_DURATION_MS).toISOString();
-        await supabase
-            .from('kaiku_news_cache')
-            .upsert({ location_key: key, data: messages, expires_at: expiresAt });
+        // Precise check
+        for (const post of data) {
+            const dist = calculateDistance(lat, lng, post.latitude, post.longitude);
+            if (dist < SCAN_RADIUS_KM) {
+                return true; // Found recent news in this sector
+            }
+        }
+        
+        return false;
     } catch (e) {
-        console.warn("Cache save failed", e);
+        return false;
     }
 };
 
@@ -87,38 +90,46 @@ const generateMockEvents = (targetLat?: number, targetLng?: number): ChatMessage
     ];
 };
 
-export const scanGlobalNetwork = async (specificQuery?: string, isTargeted?: boolean, centerLat?: number, centerLng?: number): Promise<ChatMessage[]> => {
-  const cacheKey = normalizeCacheKey(specificQuery, centerLat, centerLng);
+export interface ScanResult {
+    status: 'NEW_INTEL' | 'COOLDOWN' | 'ERROR';
+    events: ChatMessage[];
+    locationName?: string;
+}
+
+export const scanGlobalNetwork = async (
+    specificQuery: string | undefined, 
+    isTargeted: boolean, 
+    centerLat: number, 
+    centerLng: number
+): Promise<ScanResult> => {
   
-  // 1. API CACHE CHECK
-  const cachedRawEvents = await checkApiCache(cacheKey);
-  if (cachedRawEvents) {
-      const freshPosts = rehydrateEvents(cachedRawEvents, centerLat, centerLng);
-      // We don't save to DB on cache hit to prevent spamming duplicates
-      return freshPosts;
+  // 1. SECTOR COOLDOWN CHECK (Skip if targeted search)
+  if (!specificQuery) {
+      const isCooldown = await checkSectorCooldown(centerLat, centerLng);
+      if (isCooldown) {
+          return { status: 'COOLDOWN', events: [] };
+      }
   }
 
-  // 2. GENERATE NEW CONTENT
+  // 2. PREPARE GENAI
   const apiKey = getEnvVar('GOOGLE_API_KEY');
   
   if (!apiKey || apiKey.length < 5 || apiKey.includes("REPLACE_WITH")) {
-      return generateMockEvents(centerLat, centerLng);
+      return { status: 'ERROR', events: generateMockEvents(centerLat, centerLng) };
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   
   let prompt = "";
   let contextInstruction = "";
 
   if (specificQuery) {
-      prompt = `Today is ${today}. Find 5 BREAKING news stories related to "${specificQuery}". If "${specificQuery}" is a place, find news near there. Return JSON.`;
-  } else if (centerLat && centerLng) {
-      prompt = `Today is ${today}. Find 5 BREAKING local news stories happening near coordinates ${centerLat}, ${centerLng}. Return strictly JSON.`;
-      contextInstruction = `Focus on local events near Lat: ${centerLat}, Lng: ${centerLng}.`;
+      prompt = `Today is ${today}. Find 5 BREAKING news stories related to "${specificQuery}". Return strictly JSON.`;
+      contextInstruction = `Focus on query: "${specificQuery}".`;
   } else {
-      prompt = `Today is ${today}. Find 5 major global BREAKING news stories happening RIGHT NOW. Return strictly JSON.`;
+      prompt = `Today is ${today}. Find 5 BREAKING local news stories happening RIGHT NOW near coordinates ${centerLat}, ${centerLng}. If no major local news, find major regional news. Return strictly JSON.`;
+      contextInstruction = `Focus on local events near Lat: ${centerLat}, Lng: ${centerLng}. Ignore old news (>24h).`;
   }
 
   const SYSTEM_PROMPT = `
@@ -126,16 +137,16 @@ export const scanGlobalNetwork = async (specificQuery?: string, isTargeted?: boo
   Current Date: ${today}.
   ${contextInstruction}
   
-  Your task: Return a JSON array of 5 news objects.
-  CRITICAL: ONLY return news from the last 48 hours.
+  Your task: Return a JSON array of 3-5 news objects.
+  CRITICAL: ONLY return news from the last 24-48 hours.
   Format: JSON ONLY. No markdown.
   
   Schema per object: 
   { 
-    "headline": "Short title", 
+    "headline": "Short title (Max 10 words)", 
     "content": "2-3 sentence summary", 
-    "lat": 0.0, 
-    "lng": 0.0, 
+    "lat": ${centerLat}, // Use approximate location if exact unknown
+    "lng": ${centerLng}, 
     "city_name": "City", 
     "country_code": "ISO 2-letter code", 
     "source_url": "URL if available",
@@ -160,19 +171,17 @@ export const scanGlobalNetwork = async (specificQuery?: string, isTargeted?: boo
         throw new Error("Grounded scan returned 0 events.");
     }
 
-    await saveToApiCache(cacheKey, rawEvents);
     await saveToDatabase(rawEvents);
     
-    return rawEvents;
+    return { status: 'NEW_INTEL', events: rawEvents, locationName: rawEvents[0]?.city };
 
   } catch (error: any) {
     console.warn("KAIKU: Grounded Scan failed.", error);
-    if (!specificQuery && !centerLat) return generateMockEvents(centerLat, centerLng);
-    return [];
+    return { status: 'ERROR', events: [] };
   }
 };
 
-const processResponse = (rawText: string | undefined, fallbackLat?: number, fallbackLng?: number): ChatMessage[] => {
+const processResponse = (rawText: string | undefined, fallbackLat: number, fallbackLng: number): ChatMessage[] => {
     if (!rawText) return [];
     const jsonText = cleanJsonString(rawText);
     let events = [];
@@ -182,21 +191,19 @@ const processResponse = (rawText: string | undefined, fallbackLat?: number, fall
     return rehydrateEvents(events, fallbackLat, fallbackLng);
 }
 
-const rehydrateEvents = (events: any[], fallbackLat?: number, fallbackLng?: number): ChatMessage[] => {
+const rehydrateEvents = (events: any[], fallbackLat: number, fallbackLng: number): ChatMessage[] => {
     const now = Date.now();
     const expiry = now + NEWS_TTL_MS; 
 
     return events.map((evt: any) => {
         // COORDINATE SAFETY LOGIC
-        // If AI returns 0,0 or undefined, FORCE the fallback location (map center)
         let lat = Number(evt.lat || evt.location?.lat);
         let lng = Number(evt.lng || evt.location?.lng);
 
+        // If AI returns 0,0 or undefined, OR coordinates are wildly far (placeholder), snap to sector center
         if (!lat || !lng || (lat === 0 && lng === 0)) {
-            if (fallbackLat && fallbackLng) {
-                lat = fallbackLat;
-                lng = fallbackLng;
-            }
+            lat = fallbackLat;
+            lng = fallbackLng;
         }
 
         return {

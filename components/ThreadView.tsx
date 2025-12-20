@@ -23,10 +23,18 @@ interface ThreadViewProps {
   userLocation?: { lat: number, lng: number } | null;
 }
 
+const getSafeUrl = (url?: string): string | undefined => {
+    if (!url) return undefined;
+    const clean = url.trim();
+    if (clean.startsWith('http://') || clean.startsWith('https://')) return clean;
+    return `https://${clean}`;
+};
+
 const getSourceName = (url?: string) => {
     if (!url) return 'SOURCE';
     try {
-        const domain = new URL(url).hostname.replace('www.', '');
+        const safeUrl = url.startsWith('http') ? url : `https://${url}`;
+        const domain = new URL(safeUrl).hostname.replace('www.', '');
         const parts = domain.split('.');
         return (parts[0] === 'google' ? parts[1] : parts[0]).toUpperCase();
     } catch (e) {
@@ -199,7 +207,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       const headline = isNews ? textParts[0] : null;
       const body = isNews ? textParts.slice(1).join('\n\n') : activeText;
       const sourceName = isNews ? getSourceName(msg.eventMetadata?.source_url) : null;
-      const sourceUrl = isNews ? msg.eventMetadata?.source_url : null;
+      const sourceUrl = isNews ? getSafeUrl(msg.eventMetadata?.source_url) : null;
       const needsTranslation = isNews && msg.language && msg.language !== i18n.language;
 
       return (
@@ -212,30 +220,60 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
             <div className="flex gap-4">
                 {/* VOTE COLUMN */}
                 <div className="flex flex-col items-center justify-start gap-1 min-w-[30px]">
-                    <button 
-                        onClick={(e) => handleVoteClick(e, msg.id, 'up')}
-                        className={`p-1 rounded transition-colors active:scale-95 ${userVote === 'up' ? 'text-cyan-400 bg-cyan-950/30' : 'text-gray-500 hover:text-cyan-400'}`}
-                        title={t('feed.vote_boost')}
-                    >
-                        <ChevronUp size={24} strokeWidth={3} className={userVote === 'up' ? 'drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : ''} />
-                    </button>
-                    
-                    <span className={`text-[12px] font-mono font-bold whitespace-nowrap ${
-                        userVote === 'up' ? 'text-cyan-400' : 
-                        userVote === 'down' ? 'text-red-500' : 
-                        isHighSignal ? 'text-cyan-200 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' :
-                        'text-gray-500'
-                    }`}>
-                        {msg.score}
-                    </span>
+                    {isNews ? (
+                        <>
+                            {/* NEWS: Signal Boost/Dampen UI */}
+                            <button 
+                                onClick={(e) => handleVoteClick(e, msg.id, 'up')}
+                                className={`p-1.5 rounded-full transition-colors active:scale-95 ${userVote === 'up' ? 'text-cyan-400 bg-cyan-950/50 shadow-[0_0_10px_rgba(34,211,238,0.3)]' : 'text-gray-500 hover:text-cyan-400 hover:bg-cyan-950/30'}`}
+                                title={t('feed.signal_boost')}
+                            >
+                                <Wifi size={20} strokeWidth={2.5} />
+                            </button>
+                            
+                            <div className="flex flex-col items-center my-1">
+                                <span className="text-[8px] font-mono text-cyan-500/50 tracking-tight">{t('feed.signal_label')}</span>
+                                <span className="text-[10px] font-mono font-bold text-cyan-400 whitespace-nowrap">
+                                    {msg.score}dB
+                                </span>
+                            </div>
 
-                    <button 
-                        onClick={(e) => handleVoteClick(e, msg.id, 'down')}
-                        className={`p-1 rounded transition-colors active:scale-95 ${userVote === 'down' ? 'text-red-500 bg-red-950/30' : 'text-gray-500 hover:text-red-500'}`}
-                        title={t('feed.vote_noise')}
-                    >
-                        <ChevronDown size={24} strokeWidth={3} />
-                    </button>
+                            <button 
+                                onClick={(e) => handleVoteClick(e, msg.id, 'down')}
+                                className={`p-1.5 rounded-full transition-colors active:scale-95 ${userVote === 'down' ? 'text-gray-400 bg-white/5' : 'text-gray-600 hover:text-gray-400 hover:bg-white/5'}`}
+                                title={t('feed.signal_dampen')}
+                            >
+                                <Activity size={18} strokeWidth={2} />
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <button 
+                                onClick={(e) => handleVoteClick(e, msg.id, 'up')}
+                                className={`p-1 rounded transition-colors active:scale-95 ${userVote === 'up' ? 'text-cyan-400 bg-cyan-950/30' : 'text-gray-500 hover:text-cyan-400'}`}
+                                title={t('feed.vote_boost')}
+                            >
+                                <ChevronUp size={24} strokeWidth={3} className={userVote === 'up' ? 'drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : ''} />
+                            </button>
+                            
+                            <span className={`text-[12px] font-mono font-bold whitespace-nowrap ${
+                                userVote === 'up' ? 'text-cyan-400' : 
+                                userVote === 'down' ? 'text-red-500' : 
+                                isHighSignal ? 'text-cyan-200 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' :
+                                'text-gray-500'
+                            }`}>
+                                {msg.score}
+                            </span>
+
+                            <button 
+                                onClick={(e) => handleVoteClick(e, msg.id, 'down')}
+                                className={`p-1 rounded transition-colors active:scale-95 ${userVote === 'down' ? 'text-red-500 bg-red-950/30' : 'text-gray-500 hover:text-red-500'}`}
+                                title={t('feed.vote_noise')}
+                            >
+                                <ChevronDown size={24} strokeWidth={3} />
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 {/* CONTENT COLUMN */}

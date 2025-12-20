@@ -1,4 +1,3 @@
-
 import i18nInstance from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
@@ -26,7 +25,12 @@ const resources = {
         "show_original": "Show Original",
         "translated_by_ai": "Translated by AI",
         "view_map": "MAP",
-        "view_list": "FEED"
+        "view_list": "FEED",
+        "vote_boost": "BOOST SIGNAL (Important Intel)",
+        "vote_noise": "MARK AS NOISE (Irrelevant)",
+        "signal_strength_high": "🔥 HIGH PRIORITY",
+        "signal_strength_weak": "WEAK SIGNAL",
+        "signal_db": "{{score}}dB"
       },
       "distance": {
         "here": "📍 Here",
@@ -71,9 +75,12 @@ const resources = {
         "search_placeholder": "Search coordinates...",
         "search_not_found": "TARGET NOT FOUND",
         "search_this_area": "SEARCH THIS AREA",
-        "search_context": "Search news: {{location}}",
+        "search_context": "SCAN SECTOR: {{location}}",
         "teleport": "RELOCATE UPLINK",
-        "teleport_active": "REMOTE UPLINK ACTIVE"
+        "teleport_active": "REMOTE UPLINK ACTIVE",
+        "scan_button": "SCAN SECTOR",
+        "scan_cooldown": "SECTOR ALREADY SCANNED. INTEL IS FRESH.",
+        "scan_complete": "INTEL ACQUIRED"
       },
       "welcome": {
         "subtitle": "Hyperlocal Signal Grid",
@@ -125,7 +132,7 @@ const resources = {
         "hide_level": "HIDE LEVEL PUBLICLY",
         "transfer_title": "DEVICE TRANSFER & BACKUP",
         "generate_key": "GENERATE TRANSFER KEY",
-        "key_warning": "WRITE THIS DOWN. KEY CANNOT BE RECOVERED.",
+        "key_warning": "WRITE THIS DOWN. THIS KEY CANNOT BE RECOVERED IF LOST.",
         "key_generated": "KEY GENERATED",
         "notifications": "NOTIFICATIONS",
         "notifications_desc": "Alert on replies & activity spikes",
@@ -201,7 +208,12 @@ const resources = {
         "show_original": "Näytä alkuperäinen",
         "translated_by_ai": "Tekoälyn kääntämä",
         "view_map": "KARTTA",
-        "view_list": "SYÖTE"
+        "view_list": "SYÖTE",
+        "vote_boost": "VAHVISTA SIGNAALIA (Tärkeä)",
+        "vote_noise": "MERKITSE KOHINAKSI (Turha)",
+        "signal_strength_high": "🔥 KORKEA PRIORITEETTI",
+        "signal_strength_weak": "HEIKKO SIGNAALI",
+        "signal_db": "{{score}}dB"
       },
       "distance": {
         "here": "📍 Täällä",
@@ -246,9 +258,12 @@ const resources = {
         "search_placeholder": "Etsi koordinaatteja...",
         "search_not_found": "KOHDETTA EI LÖYDY",
         "search_this_area": "HAE TÄLTÄ ALUEELTA",
-        "search_context": "Hae uutisia: {{location}}",
+        "search_context": "HAE UUTISIA: {{location}}",
         "teleport": "SIIRRÄ UPLINK",
-        "teleport_active": "ETÄ-UPLINK AKTIIVINEN"
+        "teleport_active": "ETÄ-UPLINK AKTIIVINEN",
+        "scan_button": "SKANNAA SEKTORI",
+        "scan_cooldown": "SEKTORI JO SKANNATTU. TIEDOT AJANTASAISIA.",
+        "scan_complete": "TIEDUSTELUTIETO PÄIVITETTY"
       },
       "welcome": {
         "subtitle": "Hyperlokaali Signaaliverkko",
@@ -353,320 +368,6 @@ const resources = {
       "badge_bug_hunter_desc": "Löysi virheen matriisista",
       "badge_founder": "Ensimmäinen Aalto",
       "badge_founder_desc": "Liittyi Beta-vaiheessa"
-    }
-  },
-  es: {
-    translation: {
-      "feed": {
-        "signals_detected": "Señales Detectadas",
-        "regional_intercept": "INTERCEPCIÓN REGIONAL",
-        "local_signals": "SEÑALES LOCALES",
-        "scanning": "ESCANEANDO SECTOR...",
-        "signal_locked": "SEÑAL BLOQUEADA"
-      },
-      "input": {
-        "broadcast_signal": "Transmitir Señal",
-        "to": "Para:",
-        "locating": "Localizando...",
-        "broadcast_btn": "TRANSMITIR",
-        "mask_coordinates": "ENMASCARAR COORDENADAS"
-      },
-      "welcome": {
-        "subtitle": "Red de Señal Hiperlocal",
-        "status_acquiring": "Adquiriendo señal...",
-        "status_target": "Objetivo: {{city}}",
-        "status_scanning_freq": "Escaneando frecuencias locales...",
-        "btn_initialize": "INICIALIZAR ENLACE"
-      },
-      "news": {
-        "read_original": "Leer original ({{source}}) →"
-      }
-    }
-  },
-  fr: {
-    translation: {
-      "feed": {
-        "signals_detected": "Signaux Détectés",
-        "regional_intercept": "INTERCEPTION RÉGIONALE",
-        "local_signals": "SIGNAUX LOCAUX",
-        "scanning": "BALAYAGE DU SECTEUR...",
-        "signal_locked": "SIGNAL VERROUILLÉ"
-      },
-      "input": {
-        "broadcast_signal": "Diffuser le Signal",
-        "broadcast_btn": "DIFFUSER",
-        "mask_coordinates": "MASQUER LES COORDONNÉES"
-      },
-      "welcome": {
-        "subtitle": "Grille de Signal Hyperlocale",
-        "status_acquiring": "Acquisition du signal...",
-        "status_target": "Cible: {{city}}",
-        "status_scanning_freq": "Balayage des fréquences locales...",
-        "btn_initialize": "INITIALISER LA LIAISON"
-      },
-      "news": {
-        "read_original": "Lire l'original ({{source}}) →"
-      }
-    }
-  },
-  de: {
-    translation: {
-      "feed": {
-        "signals_detected": "Signale Erkannt",
-        "regional_intercept": "REGIONALE ABFANGUNG",
-        "local_signals": "LOKALE SIGNALE",
-        "scanning": "SCANNE SEKTOR...",
-        "signal_locked": "SIGNAL FIXIERT"
-      },
-      "input": {
-        "broadcast_signal": "Signal Senden",
-        "broadcast_btn": "SENDEN",
-        "mask_coordinates": "KOORDINATEN MASKIERT"
-      },
-      "welcome": {
-        "subtitle": "Hyperlokales Signalnetz",
-        "status_acquiring": "Signal wird erfasst...",
-        "status_target": "Ziel: {{city}}",
-        "status_scanning_freq": "Scanne lokale Frequenzen...",
-        "btn_initialize": "UPLINK INITIALISIEREN"
-      },
-      "news": {
-        "read_original": "Original lesen ({{source}}) →"
-      }
-    }
-  },
-  pt: {
-    translation: {
-      "feed": {
-        "signals_detected": "Sinais Detectados",
-        "regional_intercept": "INTERCEPTAÇÃO REGIONAL",
-        "local_signals": "SINAIS LOCAIS",
-        "scanning": "ESCANEANDO SETOR...",
-        "signal_locked": "SINAL BLOQUEADO"
-      },
-      "input": {
-        "broadcast_signal": "Transmitir Sinal",
-        "broadcast_btn": "TRANSMITIR",
-        "mask_coordinates": "MASCARAR COORDENADAS"
-      },
-      "welcome": {
-        "subtitle": "Grade de Sinal Hiperlocal",
-        "status_acquiring": "Adquirindo sinal...",
-        "status_target": "Alvo: {{city}}",
-        "status_scanning_freq": "Escanear frequências locales...",
-        "btn_initialize": "INICIALIZAR UPLINK"
-      },
-      "news": {
-        "read_original": "Ler original ({{source}}) →"
-      }
-    }
-  },
-  it: {
-    translation: {
-      "feed": {
-        "signals_detected": "Segnali Rilevati",
-        "regional_intercept": "INTERCETTAZIONE REGIONALE",
-        "local_signals": "SEGNALI LOCALI",
-        "scanning": "SCANSIONE SETTORE...",
-        "signal_locked": "SEGNALE BLOCCATO"
-      },
-      "input": {
-        "broadcast_signal": "Trasmetti Segnale",
-        "broadcast_btn": "TRASMETTI",
-        "mask_coordinates": "MASCHERA COORDINATE"
-      },
-      "welcome": {
-        "subtitle": "Griglia di Segnale Iperlocale",
-        "status_acquiring": "Acquisizione segnale...",
-        "status_target": "Obiettivo: {{city}}",
-        "status_scanning_freq": "Scansione frequenze locali...",
-        "btn_initialize": "INIZIALIZZA UPLINK"
-      },
-      "news": {
-        "read_original": "Leggi originale ({{source}}) →"
-      }
-    }
-  },
-  ru: {
-    translation: {
-      "feed": {
-        "signals_detected": "Сигналы Обнаружены",
-        "regional_intercept": "РЕГИОНАЛЬНЫЙ ПЕРЕХВАТ",
-        "local_signals": "ЛОКАЛЬНЫЕ СИГНАЛЫ",
-        "scanning": "СКАНИРОВАНИЕ СЕКТОРА...",
-        "signal_locked": "СИГНАЛ ЗАБЛОКИРОВАН"
-      },
-      "input": {
-        "broadcast_signal": "Транслировать Сигнал",
-        "broadcast_btn": "ТРАНСЛЯЦИЯ",
-        "mask_coordinates": "МАСКИРОВКА КООРДИНАТ"
-      },
-      "welcome": {
-        "subtitle": "Гиперлокальная Сеть Сигналов",
-        "status_acquiring": "Получение сигнала...",
-        "status_target": "Цель: {{city}}",
-        "status_scanning_freq": "Сканирование местных частот...",
-        "btn_initialize": "ИНИЦИАЛИЗАЦИЯ СВЯЗИ"
-      },
-      "news": {
-        "read_original": "Читать оригинал ({{source}}) →"
-      }
-    }
-  },
-  zh: {
-    translation: {
-      "feed": {
-        "signals_detected": "检测到信号",
-        "regional_intercept": "区域拦截",
-        "local_signals": "本地信号",
-        "scanning": "正在扫描扇区...",
-        "signal_locked": "信号已锁定"
-      },
-      "input": {
-        "broadcast_signal": "广播信号",
-        "broadcast_btn": "广播",
-        "mask_coordinates": "掩盖坐标"
-      },
-      "welcome": {
-        "subtitle": "超本地信号网",
-        "status_acquiring": "正在获取信号...",
-        "status_target": "目标：{{city}}",
-        "status_scanning_freq": "正在扫描本地频率...",
-        "btn_initialize": "初始化上行链路"
-      },
-      "news": {
-        "read_original": "阅读原文 ({{source}}) →"
-      }
-    }
-  },
-  ja: {
-    translation: {
-      "feed": {
-        "signals_detected": "信号を検出",
-        "regional_intercept": "地域傍受",
-        "local_signals": "ローカル信号",
-        "scanning": "セクタースキャン中...",
-        "signal_locked": "信号ロック"
-      },
-      "input": {
-        "broadcast_signal": "信号を送信",
-        "broadcast_btn": "送信",
-        "mask_coordinates": "座標をマスク"
-      },
-      "welcome": {
-        "subtitle": "超地域限定信号グリッド",
-        "status_acquiring": "信号を取得中...",
-        "status_target": "ターゲット: {{city}}",
-        "status_scanning_freq": "ローカル周波数をスキャン中...",
-        "btn_initialize": "アップリンク初期化"
-      },
-      "news": {
-        "read_original": "原文を読む ({{source}}) →"
-      }
-    }
-  },
-  ko: {
-    translation: {
-      "feed": {
-        "signals_detected": "신호 감지됨",
-        "regional_intercept": "지역 차단",
-        "local_signals": "로컬 신호",
-        "scanning": "섹터 스캔 중...",
-        "signal_locked": "신호 고정"
-      },
-      "input": {
-        "broadcast_signal": "신호 브로드캐스트",
-        "broadcast_btn": "방송",
-        "mask_coordinates": "좌표 마스킹"
-      },
-      "welcome": {
-        "subtitle": "초현지 신호 그리드",
-        "status_acquiring": "신호 수신 중...",
-        "status_target": "목표: {{city}}",
-        "status_scanning_freq": "로컬 주파수 스캔 중...",
-        "btn_initialize": "업링크 초기화"
-      },
-      "news": {
-        "read_original": "원문 읽기 ({{source}}) →"
-      }
-    }
-  },
-  ar: {
-    translation: {
-      "feed": {
-        "signals_detected": "تم رصد إشارات",
-        "regional_intercept": "اعتراض إقليمي",
-        "local_signals": "إشارات محلية",
-        "scanning": "جاري مسح القطاع...",
-        "signal_locked": "تم قفل الإشارة"
-      },
-      "input": {
-        "broadcast_signal": "بث إشارة",
-        "broadcast_btn": "بث",
-        "mask_coordinates": "قناع الإحداثيات"
-      },
-      "welcome": {
-        "subtitle": "شبكة إشارات محلية للغاية",
-        "status_acquiring": "جاري التقاط الإشارة...",
-        "status_target": "الهدف: {{city}}",
-        "status_scanning_freq": "جاري مسح الترددات المحلية...",
-        "btn_initialize": "بدء الاتصال الصاعد"
-      },
-      "news": {
-        "read_original": "اقرأ المصدر ({{source}}) →"
-      }
-    }
-  },
-  hi: {
-    translation: {
-      "feed": {
-        "signals_detected": "सिग्नल मिले",
-        "regional_intercept": "क्षेत्रीय अवरोधन",
-        "local_signals": "स्थानीय सिग्नल",
-        "scanning": "सेक्टर स्कैन किया जा रहा है...",
-        "signal_locked": "सिग्नल लॉक"
-      },
-      "input": {
-        "broadcast_signal": "सिग्नल प्रसारित करें",
-        "broadcast_btn": "प्रसारण",
-        "mask_coordinates": "निर्देशांक छुपाएं"
-      },
-      "welcome": {
-        "subtitle": "हाइपरलोकल सिग्नल ग्रिड",
-        "status_acquiring": "सिग्नल प्राप्त किया जा रहा है...",
-        "status_target": "लक्षy: {{city}}",
-        "status_scanning_freq": "स्थानीय आवृत्तियों को स्कैन किया जा रहा है...",
-        "btn_initialize": "अपलिंक शुरू करें"
-      },
-      "news": {
-        "read_original": "मूल समाचार पढ़ें ({{source}}) →"
-      }
-    }
-  },
-  tr: {
-    translation: {
-      "feed": {
-        "signals_detected": "Sinyaller Tespit Edildi",
-        "regional_intercept": "BÖLGESEL MÜDAHALE",
-        "local_signals": "YEREL SİNYALLER",
-        "scanning": "SEKTÖR TARANIYOR...",
-        "signal_locked": "SİNYAL KİLİTLENDİ"
-      },
-      "input": {
-        "broadcast_signal": "Sinyal Yayınla",
-        "broadcast_btn": "YAYINLA",
-        "mask_coordinates": "KOORDİNATLARI MASKELE"
-      },
-      "welcome": {
-        "subtitle": "Hiper-yerel Sinyal Ağı",
-        "status_acquiring": "Sinyal alınıyor...",
-        "status_target": "Hedef: {{city}}",
-        "status_scanning_freq": "Yerel frekanslar taranıyor...",
-        "btn_initialize": "BAĞLANTIYI BAŞLAT"
-      },
-      "news": {
-        "read_original": "Orijinalini oku ({{source}}) →"
-      }
     }
   }
 };

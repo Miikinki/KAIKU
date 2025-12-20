@@ -21,6 +21,9 @@
     "view_list": "SYÖTE",
     "vote_boost": "VAHVISTA SIGNAALIA (Tärkeä)",
     "vote_noise": "MERKITSE KOHINAKSI (Turha)",
+    "signal_boost": "VAHVISTA SIGNAALIA",
+    "signal_dampen": "HÄIVYTÄ",
+    "signal_label": "SIG",
     "signal_strength_high": "🔥 KORKEA PRIORITEETTI",
     "signal_strength_weak": "HEIKKO SIGNAALI",
     "signal_db": "{{score}}dB"
@@ -70,7 +73,10 @@
     "search_this_area": "HAE TÄLTÄ ALUEELTA",
     "search_context": "Hae uutisia: {{location}}",
     "teleport": "SIIRRÄ UPLINK",
-    "teleport_active": "ETÄ-UPLINK AKTIIVINEN"
+    "teleport_active": "ETÄ-UPLINK AKTIIVINEN",
+    "scan_button": "SKANNAA SEKTORI",
+    "scan_cooldown": "SEKTORI JO SKANNATTU. TIEDOT AJANTASAISIA.",
+    "scan_complete": "TIEDUSTELUTIETO PÄIVITETTY"
   },
   "welcome": {
     "subtitle": "Hyperlokaali Signaaliverkko",

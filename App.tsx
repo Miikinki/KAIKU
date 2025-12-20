@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 // ... (Imports)
-import { Radio, Plus, Locate, Zap, Terminal, RefreshCw, Map as MapIcon, List as ListIcon, User, AlertTriangle } from 'lucide-react';
+import { Radio, Plus, Locate, Zap, Terminal, RefreshCw, Map as MapIcon, List as ListIcon, User, AlertTriangle, Radar } from 'lucide-react';
 import ChatMap from './components/ChatMap';
 import ChatInputModal from './components/ChatInputModal';
 import FeedPanel from './components/FeedPanel';
@@ -164,38 +164,73 @@ function App() {
   
   useEffect(() => {
       if (appState === 'app') {
-          performGlobalScan();
+          // Initial scan on app start
+          // setTimeout(() => performGlobalScan(undefined), 1000);
+          loadData();
       }
   }, [appState]);
 
   const performGlobalScan = async (specificQuery?: string) => {
       if (isScanningGlobal) return;
       setIsScanningGlobal(true);
+      triggerHaptic('heavy');
       
-      let searchLat = currentBounds?.center.lat || locationCache.current?.lat || 0;
-      let searchLng = currentBounds?.center.lng || locationCache.current?.lng || 0;
+      // TARGET LOCATION: Either search param or current map center
+      let searchLat = 0;
+      let searchLng = 0;
       
-      if (isSearchOpen) {
-          // ... (Targeted search logic omitted for brevity in replace, assume existing)
-      } else {
-          // ...
+      if (currentBounds) {
+          searchLat = currentBounds.center.lat;
+          searchLng = currentBounds.center.lng;
+      } else if (locationCache.current) {
+          searchLat = locationCache.current.lat;
+          searchLng = locationCache.current.lng;
       }
       
-      // MOCKING for brevity in XML output - original logic is preserved in real file due to "..."
-      // But we must call scanGlobalNetwork
-      try {
-          const events = await scanGlobalNetwork(specificQuery, !!specificQuery, searchLat, searchLng);
-          if (events.length > 0) {
-              loadData(); 
-              const earnedCredit = incrementScanCount(scannerCity || "Global");
-              if (earnedCredit) {
-                  setToastMessage(`INTEL ACQUIRED: ${(scannerCity || "AREA").toUpperCase()}`);
-                  triggerHaptic('success');
-              }
-          }
-      } catch(e) {}
+      // If we somehow have no location, abort
+      if (searchLat === 0 && searchLng === 0) {
+          setIsScanningGlobal(false);
+          setToastMessage(t('map.search_not_found'));
+          return;
+      }
       
-      setIsScanningGlobal(false);
+      // Visual feedback
+      if (!specificQuery) {
+          setToastMessage(t('feed.scanning'));
+      }
+      
+      try {
+          // CALL THE SERVICE
+          const result = await scanGlobalNetwork(specificQuery, !!specificQuery, searchLat, searchLng);
+          
+          if (result.status === 'COOLDOWN') {
+              setToastMessage(t('map.scan_cooldown'));
+              triggerHaptic('error');
+          } else if (result.status === 'NEW_INTEL') {
+              await loadData(); // Refresh UI with new data
+              
+              // Only increment scan stats if we actually got new data
+              const cityLabel = result.locationName || scannerCity || "Global";
+              const earnedCredit = incrementScanCount(cityLabel);
+              
+              setToastMessage(`${t('map.scan_complete')}: ${cityLabel.toUpperCase()}`);
+              SoundService.playSuccess();
+              triggerHaptic('success');
+              
+              // Mark map as "clean" (we just scanned this center)
+              setLastScannedCenter({ lat: searchLat, lng: searchLng });
+              setIsMapDirty(false);
+          } else {
+               // Error or no data
+               setToastMessage(t('map.search_not_found'));
+          }
+
+      } catch(e) {
+          console.error(e);
+          setToastMessage(t('welcome.status_failed'));
+      } finally {
+          setIsScanningGlobal(false);
+      }
   };
 
   useEffect(() => {
@@ -310,6 +345,7 @@ function App() {
     visible = visible.sort((a, b) => b.timestamp - a.timestamp);
     setVisibleMessages(visible);
     
+    // Check if we moved far enough to dirty the map (Show "Scan Sector" as prompt)
     if (viewMode === 'map' && lastScannedCenter && !isScanningGlobal) {
         const dist = calculateDistance(centerLat, centerLng, lastScannedCenter.lat, lastScannedCenter.lng);
         setIsMapDirty(dist > SCAN_MOVE_THRESHOLD_KM);
@@ -466,7 +502,11 @@ function App() {
             <div className="fixed inset-0 bg-[#0a0a12] overflow-hidden">
             
             {/* --- NEW SYSTEM TICKER --- */}
-            <SystemTicker latestMessage={lastNewMessage} totalMessages={messages.length} />
+            <SystemTicker 
+                latestMessage={lastNewMessage} 
+                totalMessages={messages.length}
+                userLocation={effectiveLocation}
+            />
 
             <div style={{ display: viewMode === 'map' ? 'block' : 'none', width: '100%', height: '100%' }}>
                 <ErrorBoundary fallbackTitle="MAP INTERFACE">
@@ -588,7 +628,7 @@ function App() {
                                 ${isMapDirty ? 'bg-cyan-600 border-cyan-400 animate-pulse' : 'bg-cyan-950/80 border-cyan-500/50 hover:bg-cyan-900'}
                                 `}
                             >
-                                <RefreshCw size={12} className={isMapDirty ? "animate-[spin_4s_linear_infinite]" : ""} />
+                                {isScanningGlobal ? <RefreshCw size={12} className="animate-spin" /> : <Radar size={12} />}
                                 <AnimatePresence mode="wait">
                                     <motion.span
                                         key={scanLocationName || "default"}
@@ -597,9 +637,11 @@ function App() {
                                         exit={{ opacity: 0, y: -5 }}
                                         className="whitespace-nowrap"
                                     >
+                                        {/* Dynamic Label Logic */}
                                         {scanLocationName 
                                             ? t('map.search_context', { location: scanLocationName }) 
-                                            : t('map.search_this_area')}
+                                            : t('map.scan_button')
+                                        }
                                     </motion.span>
                                 </AnimatePresence>
                             </button>

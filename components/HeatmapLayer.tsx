@@ -115,29 +115,25 @@ const GlowLayer = L.Layer.extend({
         ctx.clearRect(0, 0, width, height);
 
         const zoom = this._map.getZoom();
+        
+        // --- VISIBILITY FILTER ---
+        // Hide the fog effect when zoomed out to reduce clutter.
+        // It only appears when closer to "Ground Level" (Zoom 13+).
+        if (zoom < 13) {
+            return;
+        }
+
         const bounds = this._map.getBounds();
 
         // SIGNAL FOG STYLE CONFIGURATION
-        // Heavily boosted for visibility
-        
         let baseRadius = 60 * dpr; 
         let baseIntensity = 0.25;   
 
         // Adjust based on zoom to keep density consistent across levels
-        if (zoom < 6) {
-             // World View: Make them large enough to see continents light up
-             baseRadius = 15 * dpr; 
-             baseIntensity = 0.4;
-        }
-        else if (zoom < 10) {
-             // Region View
-             baseRadius = 30 * dpr; 
-             baseIntensity = 0.3;
-        } 
-        else if (zoom < 13) {
-            // City View (Zoomed out)
+        if (zoom < 13) {
+            // Should be caught by return above, but fallback safely
             baseRadius = 50 * dpr;
-            baseIntensity = 0.25;
+            baseIntensity = 0;
         }
         else if (zoom < 15) { 
             // City View (Zoomed in)

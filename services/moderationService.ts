@@ -31,7 +31,7 @@ const fetchWithTimeout = async (resource: string, options: RequestInit = {}, tim
 // Key: "lat_fixed2,lng_fixed2" (approx 1km precision)
 const cityCache = new Map<string, { city: string; countryCode: string; countryName: string }>();
 
-// 2. Reverse Geocoding (Switched to Photon/Komoot to fix BigDataCloud 400 errors)
+// 2. Reverse Geocoding (Robust Multi-Provider)
 export const getCityName = async (lat: number, lng: number): Promise<{ city: string; countryCode: string; countryName: string }> => {
   const cacheKey = `${lat.toFixed(2)},${lng.toFixed(2)}`;
   
@@ -39,54 +39,84 @@ export const getCityName = async (lat: number, lng: number): Promise<{ city: str
       return cityCache.get(cacheKey)!;
   }
 
+  // Default Fallback: Coordinates (looks cooler than "Unknown")
+  let result = { 
+      city: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`, 
+      countryCode: "", 
+      countryName: "Unknown Territory" 
+  };
+  
+  let found = false;
+
+  // STRATEGY 1: Photon (OpenStreetMap) - High Precision
   try {
-    // Using Photon (OpenStreetMap data) instead of BigDataCloud
-    // Increased timeout to 8s
     const response = await fetchWithTimeout(
       `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`,
       {},
-      8000
+      4000 // Short timeout to allow failover
     );
     
-    if (!response.ok) throw new Error('Geocoding failed');
-    
-    const data = await response.json();
-    
-    let city = "Unknown Sector";
-    let countryCode = "";
-    let countryName = "Unknown Territory";
-
-    if (data.features && data.features.length > 0) {
-        const props = data.features[0].properties;
-        
-        // Try to find the most relevant city name
-        city = props.city || 
-               props.town || 
-               props.village || 
-               props.county || 
-               props.name || 
-               "Unknown Sector";
-               
-        countryCode = props.countrycode ? props.countrycode.toUpperCase() : "";
-        countryName = props.country || "Unknown Territory";
+    if (response.ok) {
+        const data = await response.json();
+        if (data.features && data.features.length > 0) {
+            const props = data.features[0].properties;
+            
+            // Try to find the most relevant city name
+            const cityName = props.city || 
+                   props.town || 
+                   props.village || 
+                   props.county || 
+                   props.name;
+                   
+            if (cityName) {
+                result.city = cityName;
+                result.countryCode = props.countrycode ? props.countrycode.toUpperCase() : "";
+                result.countryName = props.country || "Unknown Territory";
+                found = true;
+            }
+        }
     }
-
-    const result = { city, countryCode, countryName };
-    
-    // Save to Cache
-    cityCache.set(cacheKey, result);
-    // Limit cache size
-    if (cityCache.size > 100) {
-        const firstKey = cityCache.keys().next().value;
-        if (firstKey) cityCache.delete(firstKey);
-    }
-
-    return result;
-           
   } catch (error) {
-    // Fail silently and quickly to coordinates
-    return { city: `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`, countryCode: "", countryName: "Unknown" };
+    // Photon failed, proceed to Strategy 2
   }
+
+  // STRATEGY 2: BigDataCloud (Client Side) - High Reliability for Admin Areas
+  if (!found) {
+      try {
+          // Note: BDC uses full words 'latitude' and 'longitude'
+          const response = await fetchWithTimeout(
+              `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`,
+              {},
+              4000
+          );
+
+          if (response.ok) {
+              const data = await response.json();
+              // BDC hierarchy
+              const cityName = data.city || data.locality || data.principalSubdivision;
+              
+              if (cityName) {
+                  result.city = cityName;
+                  result.countryCode = data.countryCode || "";
+                  result.countryName = data.countryName || "Unknown Territory";
+                  found = true;
+              }
+          }
+      } catch (e) {
+          // BDC failed, keep coordinate fallback
+      }
+  }
+
+  // Save to Cache
+  cityCache.set(cacheKey, result);
+  
+  // Limit cache size
+  if (cityCache.size > 100) {
+      const firstKey = cityCache.keys().next().value;
+      if (firstKey) cityCache.delete(firstKey);
+  }
+
+  return result;
 };
 
 export interface SearchResult {
@@ -99,7 +129,6 @@ export interface SearchResult {
 // 3. Forward Geocoding (Search) - Photon (Komoot)
 export const searchLocations = async (query: string): Promise<SearchResult | null> => {
     try {
-        // Increased timeout to 12s for search robustness
         const response = await fetchWithTimeout(
             `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`,
             {}, 
