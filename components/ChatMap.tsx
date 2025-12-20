@@ -38,6 +38,11 @@ interface ChatMapProps {
 // Määritellään maailman rajat estämään Leafletin "3x" maailman toisto ja tyhjät alueet
 const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
 
+// ZOOM THRESHOLD: 
+// Below this (e.g. 13), we show clusters for everything (User + News).
+// Above this (e.g. 14+), we show Heatmap for users and Pins for News.
+const CLUSTER_ZOOM_THRESHOLD = 14; 
+
 const isNewsPost = (msg: ChatMessage) => msg.postType === 'GLOBAL_EVENT' || msg.postType === 'SCAN_RESULT';
 
 const getMarkerIcon = (msg: ChatMessage) => {
@@ -74,11 +79,20 @@ const getMarkerIcon = (msg: ChatMessage) => {
     });
 };
 
-const getClusterIcon = (count: number) => {
-    // Only used for News clusters now
-    const size = 35 + Math.min(count / 10, 25);
+const getUserDotIcon = () => {
     return L.divIcon({
-        html: `<div class="kaiku-cluster" style="width: ${size}px; height: ${size}px; line-height: ${size}px; border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.15);">${count}</div>`,
+        html: `<div class="kaiku-user-dot" style="width: 8px; height: 8px;"></div>`,
+        className: 'bg-transparent',
+        iconSize: [8, 8],
+        iconAnchor: [4, 4]
+    });
+}
+
+const getClusterIcon = (count: number, isSystem: boolean) => {
+    const size = 35 + Math.min(count / 10, 25);
+    const className = isSystem ? 'kaiku-cluster kaiku-cluster-system' : 'kaiku-cluster kaiku-cluster-user';
+    return L.divIcon({
+        html: `<div class="${className}" style="width: ${size}px; height: ${size}px; line-height: ${size}px;">${count}</div>`,
         className: '', 
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2]
@@ -91,14 +105,20 @@ interface MessageMarkerProps {
     isHidden: boolean;
     onOpenThread: (msg: ChatMessage) => void;
     mapInstance: L.Map | null;
+    isSystem: boolean;
 }
 
-const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, onOpenThread, mapInstance }) => {
+const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, onOpenThread, mapInstance, isSystem }) => {
     const { t } = useTranslation();
-    const isNews = isNewsPost(msg);
-    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, isNews]);
+    
+    // If it's a regular user message but we are rendering it as a marker (zoomed out isolated leaf),
+    // we show a small dot and NO POPUP (to keep it clean).
+    if (!isSystem) {
+        return <Marker position={position} icon={getUserDotIcon()} interactive={false} />;
+    }
 
-    const displayName = isNews ? 'SYSTEM' : t('dossier.anonymous');
+    // System/News Messages get the full UI
+    const icon = useMemo(() => getMarkerIcon(msg), [msg.id, isSystem]);
 
     return (
         <Marker position={position} icon={icon} zIndexOffset={2000}>
@@ -190,32 +210,56 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
   const mapRef = useRef<L.Map | null>(null);
   const profile = getUserProfile();
   
-  // SPLIT LOGIC: News (Pins) vs Chats (Heatmap Only)
+  // LOGIC:
+  // If Zoom < 14: Supercluster handles ALL messages (News Red, Users Cyan). Heatmap OFF.
+  // If Zoom >= 14: Supercluster handles ONLY News. Heatmap handles Users (Fog).
+  const isZoomedIn = zoom >= CLUSTER_ZOOM_THRESHOLD;
+
   const newsMessages = useMemo(() => messages.filter(m => isNewsPost(m)), [messages]);
   const chatMessages = useMemo(() => messages.filter(m => !isNewsPost(m)), [messages]);
 
-  // Points for Supercluster - ONLY NEWS
+  // Messages passed to clustering engine
   const points = useMemo(() => {
       const p: any[] = [];
       
-      // Only News generate clickable markers now.
+      // News always clustered
       newsMessages.forEach(msg => {
           p.push({
               type: 'Feature', 
-              properties: { cluster: false, messageId: msg.id, message: msg, isNews: true },
+              properties: { cluster: false, messageId: msg.id, message: msg, isNews: 1 },
               geometry: { type: 'Point', coordinates: [msg.location.lng, msg.location.lat] }
           });
       });
 
+      // Chats clustered ONLY when zoomed out
+      if (!isZoomedIn) {
+          chatMessages.forEach(msg => {
+              p.push({
+                  type: 'Feature', 
+                  properties: { cluster: false, messageId: msg.id, message: msg, isNews: 0 },
+                  geometry: { type: 'Point', coordinates: [msg.location.lng, msg.location.lat] }
+              });
+          });
+      }
+
       return p;
-  }, [newsMessages]);
+  }, [newsMessages, chatMessages, isZoomedIn]);
 
   const { clusters, supercluster } = useSupercluster({
-    points, bounds: bounds || [-180, -90, 180, 90], zoom, options: { radius: 60, maxZoom: 20 } 
+    points, 
+    bounds: bounds || [-180, -90, 180, 90], 
+    zoom, 
+    options: { 
+        radius: 60, 
+        maxZoom: 16,
+        // Map/Reduce to count types within a cluster
+        map: (props: any) => ({ newsCount: props.isNews }),
+        reduce: (acc: any, props: any) => { acc.newsCount += props.newsCount; }
+    } 
   });
 
-  // Heatmap Data: Chats ALWAYS, at ALL ZOOM LEVELS
-  const heatmapMessages = chatMessages;
+  // Heatmap Data: Only Chat messages, and ONLY when zoomed in
+  const heatmapMessages = isZoomedIn ? chatMessages : [];
 
   const isMaxZoom = zoom >= 17;
   const radarScale = isMaxZoom ? 1.0 : (zoom <= 7 ? 0.4 : 0.4 + ((zoom - 7) / (13 - 7)) * 0.6);
@@ -254,17 +298,20 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
             focusedMessage={focusedMessage}
         />
         
-        {/* Render Clusters & Markers (NEWS ONLY) */}
+        {/* Render Clusters & Markers */}
         {clusters.map((cluster: any) => {
             const [longitude, latitude] = cluster.geometry.coordinates;
-            const { cluster: isCluster, point_count: pointCount } = cluster.properties;
+            const { cluster: isCluster, point_count: pointCount, newsCount } = cluster.properties;
             
             if (isCluster) {
+                // If the cluster has ANY news, it's a System Cluster (Red). Otherwise User (Cyan).
+                const isSystemCluster = newsCount > 0;
+
                 return (
                     <Marker 
                         key={`cluster-${cluster.id}`} 
                         position={[latitude, longitude]} 
-                        icon={getClusterIcon(pointCount)} 
+                        icon={getClusterIcon(pointCount, isSystemCluster)} 
                         eventHandlers={{ click: () => { 
                             const expansionZoom = supercluster.getClusterExpansionZoom(cluster.id);
                             mapRef.current?.setView([latitude, longitude], expansionZoom);
@@ -273,16 +320,24 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
                 );
             }
 
-            // Single Marker (Leaf) - News Only
+            // Single Marker (Leaf)
             const msg = cluster.properties.message;
-            return <MessageMarker key={msg.id} msg={msg} position={[latitude, longitude]} isHidden={hiddenIds.has(msg.id)} onOpenThread={onOpenThread} mapInstance={mapRef.current} />;
+            const isSystemLeaf = !!cluster.properties.isNews;
+
+            return <MessageMarker 
+                key={msg.id} 
+                msg={msg} 
+                position={[latitude, longitude]} 
+                isHidden={hiddenIds.has(msg.id)} 
+                onOpenThread={onOpenThread} 
+                mapInstance={mapRef.current}
+                isSystem={isSystemLeaf}
+            />;
         })}
 
-        {/* REMOVED: User Location Marker (The "Me" ball) */}
-        
         <ArcLayer messages={signals} />
         
-        {/* HEATMAP LAYER (Signal Fog) - Always Visible */}
+        {/* HEATMAP LAYER (Signal Fog) - Only when zoomed in */}
         <HeatmapLayer messages={heatmapMessages} />
 
       </MapContainer>

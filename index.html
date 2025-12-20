@@ -106,27 +106,42 @@
         border: none;
       }
 
-      /* --- KAIKU CLUSTER MARKER --- */
+      /* --- KAIKU CLUSTER MARKERS --- */
+      
+      /* Base Cluster Styles */
       .kaiku-cluster {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(6, 182, 212, 0.15); /* Cyan-500/15 */
-        border: 1px solid rgba(34, 211, 238, 0.6); /* Cyan-400 */
         border-radius: 50%;
-        color: #22d3ee; /* Cyan-400 */
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         font-weight: bold;
-        box-shadow: 0 0 15px rgba(6, 182, 212, 0.3), inset 0 0 10px rgba(6, 182, 212, 0.1);
         backdrop-filter: blur(4px);
         transition: all 0.2s ease-out;
       }
+
+      /* SYSTEM / NEWS CLUSTER (RED) */
+      .kaiku-cluster-system {
+        background: rgba(239, 68, 68, 0.15); /* Red-500/15 */
+        border: 1px solid rgba(239, 68, 68, 0.6); /* Red-500 */
+        color: #ef4444; 
+        box-shadow: 0 0 15px rgba(239, 68, 68, 0.3), inset 0 0 10px rgba(239, 68, 68, 0.1);
+      }
+
+      /* USER CLUSTER (CYAN) - NEW */
+      .kaiku-cluster-user {
+        background: rgba(6, 182, 212, 0.15); /* Cyan-500/15 */
+        border: 1px solid rgba(34, 211, 238, 0.6); /* Cyan-400 */
+        color: #22d3ee; 
+        box-shadow: 0 0 15px rgba(6, 182, 212, 0.3), inset 0 0 10px rgba(6, 182, 212, 0.1);
+      }
       
-      /* Pulse effect for large clusters */
-      .kaiku-cluster-large {
-        background: rgba(6, 182, 212, 0.25);
-        border-color: rgba(34, 211, 238, 0.8);
-        box-shadow: 0 0 20px rgba(6, 182, 212, 0.5);
+      /* Single User Dot (Zoomed out leaf) */
+      .kaiku-user-dot {
+        background: #22d3ee;
+        border-radius: 50%;
+        box-shadow: 0 0 8px #22d3ee;
+        opacity: 0.8;
       }
 
       /* --- KAIKU ARCS (Transient) --- */
