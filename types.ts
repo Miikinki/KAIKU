@@ -42,6 +42,16 @@ export interface ChatMessage {
   };
 }
 
+export interface LootDrop {
+  id: string;
+  lat: number;
+  lng: number;
+  message: string;
+  rewardCode?: string; // Only present if claimed by user
+  claimedBy: string | null;
+  createdAt: number;
+}
+
 export interface ViewportBounds {
   north: number;
   south: number;
@@ -76,6 +86,7 @@ export interface UserProfile {
   avatar: string;
   color: string;
   hideLevel: boolean;
+  isAdmin: boolean; // NEW: Admin flag
   
   // RETENTION & PRIME
   isPrime: boolean;
