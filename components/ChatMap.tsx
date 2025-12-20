@@ -29,41 +29,28 @@ interface ChatMapProps {
   userLocation: { lat: number, lng: number } | null;
   scannerStatus?: string | null;
   scannerCity?: string | null;
-  
-  // New Props for Prime Teleport
   onTeleport?: (lat: number, lng: number) => void;
   isTeleporting?: boolean;
 }
 
-// Määritellään maailman rajat estämään Leafletin "3x" maailman toisto ja tyhjät alueet
 const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
-
-// ZOOM THRESHOLD: 
-// Below this (e.g. 13), we show clusters for everything (User + News).
-// Above this (e.g. 14+), we show Heatmap for users and Pins for News.
 const CLUSTER_ZOOM_THRESHOLD = 14; 
 
 const isNewsPost = (msg: ChatMessage) => msg.postType === 'GLOBAL_EVENT' || msg.postType === 'SCAN_RESULT';
 
 const getMarkerIcon = (msg: ChatMessage) => {
     const isNews = isNewsPost(msg);
-    // News are larger pins, Users are hidden (handled by heatmap) but if rendered, fallback logic exists
     const containerSize = isNews ? 50 : 30; 
-
-    // SYSTEM / NEWS COLOR
     let color = '#ef4444';
     
-    // ICON SELECTION (System Alert Triangle)
     let svgPath = `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 9v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 17h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`;
     let viewBox = "0 0 24 24";
-    let fill = "none";
-    let strokeWidth = "2";
 
     const html = `
         <div class="relative w-full h-full flex items-center justify-center">
             <div class="absolute inset-0 rounded-full animate-ping opacity-20" style="background-color: ${color}"></div>
             <div class="relative z-10 transition-all duration-300 flex items-center justify-center" style="color: ${color}; filter: drop-shadow(0 0 8px ${color}E6)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="${viewBox}" fill="${fill}" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="${viewBox}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     ${svgPath}
                 </svg>
             </div>
@@ -108,16 +95,14 @@ interface MessageMarkerProps {
     isSystem: boolean;
 }
 
-const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, onOpenThread, mapInstance, isSystem }) => {
+// Memoize individual markers to prevent DOM thrashing
+const MessageMarker: React.FC<MessageMarkerProps> = React.memo(({ msg, position, isHidden, onOpenThread, mapInstance, isSystem }) => {
     const { t } = useTranslation();
     
-    // If it's a regular user message but we are rendering it as a marker (zoomed out isolated leaf),
-    // we show a small dot and NO POPUP (to keep it clean).
     if (!isSystem) {
         return <Marker position={position} icon={getUserDotIcon()} interactive={false} />;
     }
 
-    // System/News Messages get the full UI
     const icon = useMemo(() => getMarkerIcon(msg), [msg.id, isSystem]);
 
     return (
@@ -125,9 +110,7 @@ const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, 
             <Popup className="kaiku-custom-popup" closeButton={false} offset={[0, -10]}>
                 <div className="p-3">
                     <div className="flex justify-between items-center mb-2">
-                         <span 
-                            className="text-[10px] font-mono font-bold uppercase tracking-wider text-red-500"
-                        >
+                         <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-red-500">
                             SYSTEM ALERT
                         </span>
                     </div>
@@ -144,7 +127,7 @@ const MessageMarker: React.FC<MessageMarkerProps> = ({ msg, position, isHidden, 
             </Popup>
         </Marker>
     );
-};
+});
 
 const MapController: React.FC<{ 
     onViewportChange: (b: ViewportBounds) => void, 
@@ -157,11 +140,8 @@ const MapController: React.FC<{
   const map = useMap();
   
   useEffect(() => {
-    const fix = () => map.invalidateSize();
-    fix();
-    const t1 = setTimeout(fix, 100);
-    const t2 = setTimeout(fix, 500);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    // Only invalidate size ONCE on mount to fix mobile rendering
+    map.invalidateSize();
   }, [map]);
 
   const handleUpdate = useCallback(() => {
@@ -210,19 +190,14 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
   const mapRef = useRef<L.Map | null>(null);
   const profile = getUserProfile();
   
-  // LOGIC:
-  // If Zoom < 14: Supercluster handles ALL messages (News Red, Users Cyan). Heatmap OFF.
-  // If Zoom >= 14: Supercluster handles ONLY News. Heatmap handles Users (Fog).
   const isZoomedIn = zoom >= CLUSTER_ZOOM_THRESHOLD;
 
+  // Optimize filtering: Only re-run if messages array length or ID changes
   const newsMessages = useMemo(() => messages.filter(m => isNewsPost(m)), [messages]);
   const chatMessages = useMemo(() => messages.filter(m => !isNewsPost(m)), [messages]);
 
-  // Messages passed to clustering engine
   const points = useMemo(() => {
       const p: any[] = [];
-      
-      // News always clustered
       newsMessages.forEach(msg => {
           p.push({
               type: 'Feature', 
@@ -231,7 +206,6 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
           });
       });
 
-      // Chats clustered ONLY when zoomed out
       if (!isZoomedIn) {
           chatMessages.forEach(msg => {
               p.push({
@@ -241,7 +215,6 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
               });
           });
       }
-
       return p;
   }, [newsMessages, chatMessages, isZoomedIn]);
 
@@ -252,15 +225,12 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
     options: { 
         radius: 60, 
         maxZoom: 16,
-        // Map/Reduce to count types within a cluster
         map: (props: any) => ({ newsCount: props.isNews }),
         reduce: (acc: any, props: any) => { acc.newsCount += props.newsCount; }
     } 
   });
 
-  // Heatmap Data: Only Chat messages, and ONLY when zoomed in
   const heatmapMessages = isZoomedIn ? chatMessages : [];
-
   const isMaxZoom = zoom >= 17;
   const radarScale = isMaxZoom ? 1.0 : (zoom <= 7 ? 0.4 : 0.4 + ((zoom - 7) / (13 - 7)) * 0.6);
 
@@ -298,15 +268,12 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
             focusedMessage={focusedMessage}
         />
         
-        {/* Render Clusters & Markers */}
         {clusters.map((cluster: any) => {
             const [longitude, latitude] = cluster.geometry.coordinates;
             const { cluster: isCluster, point_count: pointCount, newsCount } = cluster.properties;
             
             if (isCluster) {
-                // If the cluster has ANY news, it's a System Cluster (Red). Otherwise User (Cyan).
                 const isSystemCluster = newsCount > 0;
-
                 return (
                     <Marker 
                         key={`cluster-${cluster.id}`} 
@@ -320,7 +287,6 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
                 );
             }
 
-            // Single Marker (Leaf)
             const msg = cluster.properties.message;
             const isSystemLeaf = !!cluster.properties.isNews;
 
@@ -336,13 +302,10 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
         })}
 
         <ArcLayer messages={signals} />
-        
-        {/* HEATMAP LAYER (Signal Fog) - Only when zoomed in */}
         <HeatmapLayer messages={heatmapMessages} />
 
       </MapContainer>
 
-      {/* SWEEP RADAR HUD */}
       <div className="pointer-events-none absolute inset-0 z-[9999] flex items-center justify-center">
           <div className="relative w-72 h-72 flex items-center justify-center">
               <div className="absolute inset-0 transition-transform duration-500 ease-out" style={{ transform: `scale(${radarScale})` }}>
@@ -365,7 +328,6 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
               </div>
               
               <AnimatePresence>
-                {/* Scanner Status */}
                 {scannerStatus && (
                     <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="absolute -bottom-16 flex flex-col items-center whitespace-nowrap">
                         <span className="font-mono text-[10px] font-bold tracking-[0.3em] uppercase text-white drop-shadow-lg bg-[#0a0a12]/80 px-4 py-1 rounded-full border border-white/10">
@@ -374,7 +336,6 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
                     </motion.div>
                 )}
 
-                {/* Prime Teleport Button */}
                 {profile.isPrime && !scannerStatus && (
                     <motion.div 
                         initial={{ opacity: 0, scale: 0.5 }} 
@@ -401,4 +362,5 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
   );
 };
 
-export default ChatMap;
+// CRITICAL FIX: Wrap component in React.memo to prevent re-renders when parent (App.tsx) updates state that doesn't affect map
+export default React.memo(ChatMap);

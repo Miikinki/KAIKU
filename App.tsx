@@ -27,7 +27,7 @@ import { useTranslation } from 'react-i18next';
 const BASE_SCAN_RADIUS_PX = 128; 
 const SCAN_MOVE_THRESHOLD_KM = 5; 
 const LIST_VIEW_RADIUS_KM = 20; 
-const GPS_UPDATE_THRESHOLD_KM = 0.02; // 20 meters throttle to prevent render thrashing
+const GPS_UPDATE_THRESHOLD_KM = 0.02; 
 
 type AppState = 'welcome' | 'boot' | 'app';
 type ViewMode = 'map' | 'list';
@@ -38,12 +38,8 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('map');
   const [isDesktop, setIsDesktop] = useState(false);
 
-  // UNIFIED MESSAGE STREAM
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
-  
-  // Signals for Arc Layer (Limited size to prevent OOM)
   const [signals, setSignals] = useState<ChatMessage[]>([]);
-  
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
   const [lastNewMessage, setLastNewMessage] = useState<ChatMessage | null>(null);
   
@@ -57,17 +53,14 @@ function App() {
   const [isMapDirty, setIsMapDirty] = useState(false);
   
   const [scanLocationName, setScanLocationName] = useState<string | null>(null);
-  const [isDossierOpen, setIsDossierOpen] = useState(false);
   
+  const [isDossierOpen, setIsDossierOpen] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [targetLocation, setTargetLocation] = useState<{lat: number, lng: number, name: string} | null>(null);
   
   const locationCache = useRef<{lat: number, lng: number} | null>(null);
   const [currentUserLocation, setCurrentUserLocation] = useState<{lat: number, lng: number} | null>(null);
-  
-  // PRIME TELEPORT: Virtual Location State
   const [virtualLocation, setVirtualLocation] = useState<{lat: number, lng: number} | null>(null);
-  
   const [currentCityName, setCurrentCityName] = useState<string | null>(null); 
   const [currentCountry, setCurrentCountry] = useState<string | null>(null); 
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null); 
@@ -81,25 +74,17 @@ function App() {
   const [scannerStatus, setScannerStatus] = useState<string | null>(null);
   const [scannerCity, setScannerCity] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  
-  // Debug / Status State
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
-
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => getHiddenIds());
-
-  const [rateLimit, setRateLimit] = useState<{ isLimited: boolean; cooldownUntil: number | null }>({
-    isLimited: false,
-    cooldownUntil: null
-  });
-
+  const [rateLimit, setRateLimit] = useState<{ isLimited: boolean; cooldownUntil: number | null }>({ isLimited: false, cooldownUntil: null });
   const [nearbyTypingCount, setNearbyTypingCount] = useState(0);
   
-  // EFFECT: Check Daily Streak on App Start
+  const moveTimeoutRef = useRef<any>(null);
+
   useEffect(() => {
       const result = processDailyLogin();
       if (result) {
-          // Add small delay so it appears after boot
           setTimeout(() => {
               setToastMessage(`${result.message} (+${result.xpGained} XP)`);
               SoundService.playSuccess();
@@ -113,14 +98,12 @@ function App() {
       const isSmallScreen = window.innerWidth < 1024;
       const searchParams = new URLSearchParams(window.location.search);
       const hasDevFlag = searchParams.has('dev') || searchParams.get('dev') === 'true';
-
       if (!isMobileUA && !isSmallScreen && !hasDevFlag) {
         setIsDesktop(true);
       } else {
         setIsDesktop(false);
       }
     };
-
     checkDevice();
     window.addEventListener('resize', checkDevice);
     return () => window.removeEventListener('resize', checkDevice);
@@ -131,13 +114,10 @@ function App() {
       setCurrentUserLocation(startLoc);
       setIsFallbackLocation(isFallback);
       localStorage.setItem('kaiku_last_loc', JSON.stringify(startLoc));
-      
-      // Init City Name & Country (One time only on startup)
       getCityName(startLoc.lat, startLoc.lng).then(data => {
           setCurrentCityName(data.city);
           if (data.countryCode) setCurrentCountry(data.countryCode);
       });
-
       triggerHaptic('light');
       setAppState('boot');
   };
@@ -151,31 +131,28 @@ function App() {
 
   const isRunning = appState !== 'welcome';
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
       try {
           const data = await fetchMessages(true);
           setMessages(data);
           setRateLimit(await getRateLimitStatus());
-          
-          // Retroactive Badge Check on Load
           const { newBadges } = await fetchAgentStats();
           if (newBadges.length > 0) {
-              // Iterate and show a toast for each new badge
               newBadges.forEach((badgeId, index) => {
                   setTimeout(() => {
-                      const badgeName = t(`badge_${badgeId}`) || badgeId;
-                      setToastMessage(`${t('dossier.badge_unlocked', 'BADGE UNLOCKED')}: ${badgeName}`);
+                      const badgeName = badgeId; // Use translation key in real component if needed
+                      setToastMessage(`BADGE UNLOCKED: ${badgeName}`);
                       SoundService.playSuccess();
                       triggerHaptic('success');
-                  }, index * 4000); // Stagger toasts if multiple
+                  }, index * 4000);
               });
           }
-
       } catch (e: any) {
           setLastError(`Data Load: ${e.message}`);
       }
-  };
+  }, []);
 
+  // INITIAL LOAD
   useEffect(() => {
       if (appState === 'app') {
           performGlobalScan();
@@ -185,79 +162,65 @@ function App() {
   const performGlobalScan = async (specificQuery?: string) => {
       if (isScanningGlobal) return;
       setIsScanningGlobal(true);
-      setScannerStatus(t('welcome.status_acquiring'));
-      setScannerCity(null);
-      setIsMapDirty(false); 
       
       const isTargeted = !!specificQuery;
-      if (isTargeted) {
-          triggerHaptic('heavy');
-      } else {
-          triggerHaptic('light');
-      }
       
-      let effectiveCityName = "Global";
-
-      try {
-          let scanCoord = currentBounds?.sectorCenter || currentBounds?.center || locationCache.current;
-          
-          if (isTargeted) {
+      // DETERMINE CENTER FOR SEARCH
+      // Ensure we have a valid coordinate. If bounds are null, fallback to cache, then user loc, then (0,0) as last resort but logic below handles that.
+      let searchLat = currentBounds?.center.lat || locationCache.current?.lat || 0;
+      let searchLng = currentBounds?.center.lng || locationCache.current?.lng || 0;
+      
+      if (isTargeted) {
+          setScannerStatus(t('welcome.status_acquiring'));
+          try {
               const res = await searchLocations(specificQuery);
               if (res) {
+                  searchLat = res.lat;
+                  searchLng = res.lng;
                   setScannerCity(res.name);
-                  effectiveCityName = res.name;
                   setScannerStatus(t('welcome.status_target', { city: res.name }));
-                  await new Promise(r => setTimeout(r, 1000));
                   setFlyToLocation({ lat: res.lat, lng: res.lng, timestamp: Date.now(), bounds: res.bounds });
-                  scanCoord = { lat: res.lat, lng: res.lng };
+                  await new Promise(r => setTimeout(r, 1500)); 
               }
-          } else if (scanCoord) {
-              let cityName = scanLocationName;
-              if (!cityName || cityName.includes("SECTOR")) {
-                   cityName = "Sector " + scanCoord.lat.toFixed(1);
-              }
-              effectiveCityName = cityName;
-              setScannerCity(cityName);
-              setScannerStatus(t('welcome.status_target', { city: cityName }));
-              await new Promise(r => setTimeout(r, 800));
+          } catch(e) {
+              console.warn("Target location not found");
           }
+      } else {
+          // General scan: Use current map center name
+          setScannerCity(scanLocationName || "Local Sector");
+          setScannerStatus(t('welcome.status_target', { city: scanLocationName || "Local Sector" }));
+      }
 
-          if (scanCoord) setLastScannedCenter(scanCoord);
-
-          setScannerStatus(t('welcome.status_scanning_freq'));
+      setScannerStatus(t('welcome.status_scanning_freq'));
+      
+      try {
+          // PASS COORDINATES TO SERVICE
+          const events = await scanGlobalNetwork(specificQuery, isTargeted, searchLat, searchLng);
           
-          const events = await scanGlobalNetwork(specificQuery, isTargeted);
           await new Promise(r => setTimeout(r, 600));
           
           if (events.length > 0) {
               if (events[0].tags?.includes('#DEMO')) {
                   setIsDemoMode(true);
               }
-              
               SoundService.playSuccess();
               loadData(); 
-              
-              const earnedCredit = incrementScanCount(effectiveCityName);
+              const earnedCredit = incrementScanCount(scannerCity || "Global");
               if (earnedCredit) {
-                  setToastMessage(`INTEL ACQUIRED: ${effectiveCityName.toUpperCase()}`);
+                  setToastMessage(`INTEL ACQUIRED: ${(scannerCity || "AREA").toUpperCase()}`);
                   triggerHaptic('success');
               } 
-
           } else {
-              if (isTargeted) {
-                  alert(`Signal intercept failed for: ${specificQuery}. No news found.`);
-              }
+              setToastMessage("NO NEW SIGNALS FOUND IN SECTOR");
           }
       } catch (e: any) {
-          console.error("Global scan failed", e);
           setLastError(`Scan: ${e.message}`);
-          if (isTargeted) {
-             alert(`Scanner Error: ${e.message || "Connection Failed"}`);
-          }
       } finally {
           setIsScanningGlobal(false);
           setScannerStatus(null);
           setScannerCity(null);
+          setIsMapDirty(false);
+          setLastScannedCenter({ lat: searchLat, lng: searchLng });
       }
   };
 
@@ -270,21 +233,14 @@ function App() {
                 const { latitude, longitude, accuracy } = pos.coords;
                 if (latitude !== 0 || longitude !== 0) {
                     const lastLoc = locationCache.current;
-                    
-                    // MEMORY OPTIMIZATION: Throttle location updates
-                    // Only update state if moved significantly (>20m)
                     if (lastLoc) {
                         const dist = calculateDistance(lastLoc.lat, lastLoc.lng, latitude, longitude);
-                        if (dist < GPS_UPDATE_THRESHOLD_KM) {
-                             return; // Skip re-render for micro-movements
-                        }
+                        if (dist < GPS_UPDATE_THRESHOLD_KM) return;
                     }
-
                     const newLoc = { lat: latitude, lng: longitude };
                     locationCache.current = newLoc;
                     setCurrentUserLocation(newLoc);
                     setGpsAccuracy(accuracy);
-                    
                     localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
                     if (isFallbackLocation) {
                         setFlyToLocation({ ...newLoc, timestamp: Date.now() }); 
@@ -294,7 +250,6 @@ function App() {
             },
             (err) => {
                 console.warn("GPS Watch Error:", err.code, err.message);
-                setLastError(`GPS: ${err.message}`);
             },
             { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
         );
@@ -304,9 +259,13 @@ function App() {
     };
   }, [isRunning, isFallbackLocation, virtualLocation]);
 
+  // CRITICAL FIX: Removed 't' from dependency array to prevent subscription loop
   useEffect(() => {
     if (!isRunning) return;
+    
+    // Initial fetch
     loadData();
+    
     const subMessages = subscribeToMessages(({ type, message, id }) => {
       setMessages(prev => {
         let next = [...prev];
@@ -322,34 +281,21 @@ function App() {
                      setLastNewMessage(message); 
                  }
              }
-
-             // --- NOTIFICATION & SIGNALS LOGIC ---
              if (type === 'INSERT') {
-                 // MEMORY FIX: Cap the signals array to prevent infinite growth
                  setSignals(s => {
                      const updated = [...s, message];
                      if (updated.length > 20) return updated.slice(-20);
                      return updated;
                  });
-                 
-                 // MEMORY FIX: Cap the main messages array for long sessions
-                 if (next.length > 100) {
-                     next = next.slice(0, 100);
-                 }
+                 // HARD CAP: Max 100 messages to prevent OOM
+                 if (next.length > 100) next = next.slice(0, 100);
                  
                  const myId = getAnonymousID();
                  const profile = getUserProfile();
-                 
-                 if (profile.notificationsEnabled) {
-                     // Check for Reply
-                     if (message.parentId) {
-                         const parent = prev.find(p => p.id === message.parentId);
-                         if (parent && parent.sessionId === myId && message.sessionId !== myId) {
-                             NotificationService.sendNotification(
-                                 t('notifications.reply_title'), 
-                                 t('notifications.reply_body')
-                             );
-                         }
+                 if (profile.notificationsEnabled && message.parentId) {
+                     const parent = prev.find(p => p.id === message.parentId);
+                     if (parent && parent.sessionId === myId && message.sessionId !== myId) {
+                         NotificationService.sendNotification("INCOMING TRANSMISSION", "Someone responded to your signal.");
                      }
                  }
              }
@@ -358,18 +304,18 @@ function App() {
       });
     });
     return () => { if (subMessages) subMessages.unsubscribe(); };
-  }, [isRunning, t]);
+  }, [isRunning, loadData]); // Only depends on isRunning and loadData (which is memoized)
 
-  // Combined messages for map
+  // Memoize mapMessages to prevent prop thrashing on ChatMap
   const mapMessages = useMemo(() => {
       const unique = new Map();
       messages.forEach(m => unique.set(m.id, m));
       return Array.from(unique.values());
   }, [messages]);
 
-  // Use Virtual Location if Active, else User GPS
   const effectiveLocation = virtualLocation || currentUserLocation;
 
+  // VISIBILITY FILTER LOGIC
   useEffect(() => {
     const now = Date.now();
     let centerLat: number;
@@ -377,33 +323,26 @@ function App() {
     let effectiveRadiusKm: number;
 
     if (viewMode === 'list') {
-        // List Mode: Use Effective Location (Virtual or GPS)
         if (!effectiveLocation) return;
         centerLat = effectiveLocation.lat;
         centerLng = effectiveLocation.lng;
         effectiveRadiusKm = LIST_VIEW_RADIUS_KM;
     } else {
-        // Map Mode: Use Viewport Bounds
         if (!currentBounds) return;
         centerLat = currentBounds.sectorCenter ? currentBounds.sectorCenter.lat : currentBounds.center.lat;
         centerLng = currentBounds.sectorCenter ? currentBounds.sectorCenter.lng : currentBounds.center.lng;
-
         const scale = currentBounds.zoom >= 13 ? 1.0 : (currentBounds.zoom <= 7 ? 0.4 : 0.4 + ((currentBounds.zoom - 7) / (13 - 7)) * (1.0 - 0.4));
         const effectiveRadiusPx = BASE_SCAN_RADIUS_PX * scale;
         const metersPerPx = 156543.03 * Math.cos(centerLat * Math.PI / 180) / Math.pow(2, currentBounds.zoom);
         effectiveRadiusKm = (metersPerPx * effectiveRadiusPx) / 1000;
     }
 
+    // Optimization: Filter in one pass
     let visible = mapMessages.filter(m => {
       const expiry = m.expiresAt || (m.timestamp + MESSAGE_LIFESPAN_MS);
       if (expiry <= now || m.score <= SCORE_THRESHOLD_HIDE) return false;
-      
       const dist = calculateDistance(centerLat, centerLng, m.location.lat, m.location.lng);
-      
-      const radiusToCheck = (m.postType === 'GLOBAL_EVENT' || m.postType === 'SCAN_RESULT') 
-          ? effectiveRadiusKm * 2.5 
-          : effectiveRadiusKm;
-          
+      const radiusToCheck = (m.postType === 'GLOBAL_EVENT' || m.postType === 'SCAN_RESULT') ? effectiveRadiusKm * 2.5 : effectiveRadiusKm;
       return dist <= radiusToCheck;
     });
 
@@ -420,42 +359,25 @@ function App() {
     }
   }, [mapMessages, currentBounds, lastScannedCenter, isScanningGlobal, viewMode, effectiveLocation]); 
 
-  // EFFECT: Zero-API Context Label Update
-  useEffect(() => {
-      if (viewMode !== 'map' || !currentBounds) return;
+  // Handle Viewport Change and UPDATE BUTTON TEXT
+  // Using useCallback to keep prop stable for ChatMap
+  const handleViewportChange = useCallback((bounds: ViewportBounds) => {
+      setCurrentBounds(bounds);
       
-      const { lat, lng } = currentBounds.center;
+      if (moveTimeoutRef.current) clearTimeout(moveTimeoutRef.current);
       
-      if (visibleMessages.length > 0) {
-          const counts: Record<string, number> = {};
-          visibleMessages.forEach(m => {
-              if (m.city && m.city !== "Unknown Sector") {
-                  counts[m.city] = (counts[m.city] || 0) + 1;
+      moveTimeoutRef.current = setTimeout(() => {
+          const { lat, lng } = bounds.center;
+          getCityName(lat, lng).then(data => {
+              if (data.city && data.city !== "Unknown Sector") {
+                  setScanLocationName(data.city.toUpperCase());
+              } else {
+                  setScanLocationName(`SECTOR ${lat.toFixed(1)}, ${lng.toFixed(1)}`);
               }
           });
-          
-          let topCity = "";
-          let maxCount = 0;
-          Object.entries(counts).forEach(([city, count]) => {
-              if (count > maxCount) {
-                  maxCount = count;
-                  topCity = city;
-              }
-          });
-          
-          if (topCity) {
-              setScanLocationName(topCity.toUpperCase());
-              return;
-          }
-      }
+      }, 500); 
+  }, []);
 
-      const latStr = lat.toFixed(1);
-      const lngStr = lng.toFixed(1);
-      setScanLocationName(`SECTOR ${latStr} / ${lngStr}`);
-
-  }, [currentBounds, viewMode, visibleMessages]); 
-
-  const handleViewportChange = useCallback((bounds: ViewportBounds) => setCurrentBounds(bounds), []);
   const handleMapClick = useCallback(() => {
     setFocusedMessage(null);
     if (isSearchOpen) setIsSearchOpen(false);
@@ -492,32 +414,28 @@ function App() {
           const loc = { lat: res.lat, lng: res.lng };
           locationCache.current = loc;
           setCurrentUserLocation(loc);
-          
           getCityName(loc.lat, loc.lng).then(d => {
               if (d.city) setCurrentCityName(d.city);
               if (d.countryCode) setCurrentCountry(d.countryCode);
           });
-
           setFlyToLocation({ lat: loc.lat, lng: loc.lng, timestamp: Date.now() }); 
       } catch (e: any) {
-          console.warn("Locate failed", e);
           setLastError(`Locate: ${e.message}`);
       } finally {
           setIsLocating(false);
       }
   };
 
-  const handleTeleport = (lat: number, lng: number) => {
+  const handleTeleport = useCallback((lat: number, lng: number) => {
       triggerHaptic('heavy');
       const newLoc = { lat, lng };
       setVirtualLocation(newLoc);
-      
       getCityName(lat, lng).then(d => {
           setCurrentCityName(d.city);
           if (d.countryCode) setCurrentCountry(d.countryCode);
           setToastMessage(`SATELLITE UPLINK ESTABLISHED: ${d.city.toUpperCase()}`);
       });
-  };
+  }, []);
 
   const handleOpenInput = () => {
       triggerHaptic('light');
@@ -533,6 +451,7 @@ function App() {
       setIsFeedOpen(false);
   };
 
+  // Input Location Acquisition
   useEffect(() => {
     if (isInputOpen && !targetLocation) {
         if (virtualLocation) {
@@ -541,34 +460,21 @@ function App() {
             });
             return;
         }
-
         if (locationCache.current) {
-            const cachedLat = locationCache.current.lat;
-            const cachedLng = locationCache.current.lng;
-            
-            getCityName(cachedLat, cachedLng).then(nameData => {
-                setTargetLocation({ lat: cachedLat, lng: cachedLng, name: nameData.city });
+            getCityName(locationCache.current.lat, locationCache.current.lng).then(nameData => {
+                setTargetLocation({ lat: locationCache.current!.lat, lng: locationCache.current!.lng, name: nameData.city });
             });
         }
-
         const acquireLocation = async () => {
             try {
                 const res = await getPreciseLocation();
                 const nameData = await getCityName(res.lat, res.lng);
-                
                 setTargetLocation({ lat: res.lat, lng: res.lng, name: nameData.city });
                 locationCache.current = { lat: res.lat, lng: res.lng };
-                
             } catch (e: any) {
-                console.warn("Input GPS failed, using fallback/cache logic...", e);
-                setLastError(`Input GPS: ${e.message}`);
-                
-                if (!locationCache.current) {
-                     setTargetLocation({ lat: 0, lng: 0, name: "Unknown Sector" });
-                }
+                if (!locationCache.current) setTargetLocation({ lat: 0, lng: 0, name: "Unknown Sector" });
             }
         };
-        
         acquireLocation();
     }
   }, [isInputOpen, virtualLocation]);
@@ -576,27 +482,19 @@ function App() {
   const handleSaveMessage = async (text: string, imageUrl?: string, isMasked: boolean = false) => {
     let finalLat = 0;
     let finalLng = 0;
-
     if (targetLocation) {
         finalLat = targetLocation.lat;
         finalLng = targetLocation.lng;
     } else if (effectiveLocation) {
         finalLat = effectiveLocation.lat;
         finalLng = effectiveLocation.lng;
-    } else {
-        console.warn("Forcing blind send (0,0)");
-        finalLat = 0;
-        finalLng = 0;
-        setLastError("Sent with 0,0 coords (GPS Lock Missing)");
     }
-
     await saveMessage(text, finalLat, finalLng, finalLat, finalLng, undefined, imageUrl, isMasked);
     await loadData();
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
       let userLoc = effectiveLocation || { lat: 0, lng: 0 };
-      
       await saveMessage(text, userLoc.lat, userLoc.lng, userLoc.lat, userLoc.lng, parentId);
       await loadData();
   };
@@ -619,6 +517,10 @@ function App() {
       triggerHaptic('light'); 
   }, []);
   
+  const getUserLocationStable = useCallback(async () => {
+      return effectiveLocation || {lat: 0, lng: 0};
+  }, [effectiveLocation]);
+
   if (isDesktop) return <DesktopLanding />;
 
   const shouldHideFAB = isInputOpen || selectedMessage || (viewMode === 'map' && (isFeedOpen || visibleMessages.length > 0));
@@ -655,7 +557,7 @@ function App() {
                     onOpenThread={handleOpenThread}
                     onClosePopup={() => setFocusedMessage(null)}
                     hiddenIds={hiddenIds}
-                    getUserLocation={async () => effectiveLocation || {lat: 0, lng: 0}}
+                    getUserLocation={getUserLocationStable}
                     userLocation={effectiveLocation} 
                     scannerStatus={scannerStatus}
                     scannerCity={scannerCity}
@@ -739,7 +641,7 @@ function App() {
                 </div>
 
                 <AnimatePresence>
-                    {viewMode === 'map' && isMapDirty && !isScanningGlobal && !isSearchOpen && !isInputOpen && (
+                    {viewMode === 'map' && !isScanningGlobal && !isSearchOpen && !isInputOpen && (
                         <motion.div 
                             initial={{ opacity: 0, y: -10 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -747,10 +649,12 @@ function App() {
                             className="mt-4 pointer-events-auto"
                         >
                             <button 
-                                onClick={() => performGlobalScan(scanLocationName || undefined)}
-                                className="px-5 py-2.5 bg-cyan-950/80 backdrop-blur-md border border-cyan-500/50 rounded-full text-cyan-100 text-[10px] font-black tracking-[0.2em] uppercase flex items-center gap-2 shadow-[0_10px_30px_rgba(0,0,0,0.5),0_0_15px_rgba(6,182,212,0.3)] hover:bg-cyan-900 transition-all active:scale-95 border-t-cyan-400"
+                                onClick={() => performGlobalScan(undefined)}
+                                className={`px-5 py-2.5 backdrop-blur-md border rounded-full text-cyan-100 text-[10px] font-black tracking-[0.2em] uppercase flex items-center gap-2 shadow-[0_10px_30px_rgba(0,0,0,0.5),0_0_15px_rgba(6,182,212,0.3)] transition-all active:scale-95 border-t-cyan-400
+                                ${isMapDirty ? 'bg-cyan-600 border-cyan-400 animate-pulse' : 'bg-cyan-950/80 border-cyan-500/50 hover:bg-cyan-900'}
+                                `}
                             >
-                                <RefreshCw size={12} className="animate-[spin_4s_linear_infinite]" />
+                                <RefreshCw size={12} className={isMapDirty ? "animate-[spin_4s_linear_infinite]" : ""} />
                                 <AnimatePresence mode="wait">
                                     <motion.span
                                         key={scanLocationName || "default"}
@@ -759,7 +663,7 @@ function App() {
                                         exit={{ opacity: 0, y: -5 }}
                                         className="whitespace-nowrap"
                                     >
-                                        {scanLocationName && !scanLocationName.includes('SECTOR')
+                                        {scanLocationName 
                                             ? t('map.search_context', { location: scanLocationName }) 
                                             : t('map.search_this_area')}
                                     </motion.span>
