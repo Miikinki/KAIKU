@@ -148,13 +148,19 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       if (activeTag || showMyMessagesOnly) return []; 
       const timeWindow = 24 * 60 * 60 * 1000; 
       const counts: Record<string, number> = {};
+      
       visibleMessages.forEach(msg => {
           if (now - msg.timestamp < timeWindow && msg.tags) {
               msg.tags.forEach(tag => {
-                  counts[tag] = (counts[tag] || 0) + 1;
+                  // FILTER: Only show real hashtags (starting with #)
+                  // Exclude system tags like __loc, __masked, lang: etc.
+                  if (tag.startsWith('#') && tag.length > 1) {
+                      counts[tag] = (counts[tag] || 0) + 1;
+                  }
               });
           }
       });
+      
       return Object.entries(counts)
           .sort(([, a], [, b]) => b - a)
           .slice(0, 5) 
