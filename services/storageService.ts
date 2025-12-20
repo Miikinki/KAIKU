@@ -437,7 +437,7 @@ export const fetchMessages = async (onlyRoot: boolean = true): Promise<ChatMessa
         .select('*, replies:kaiku_posts!parent_post_id(count)')
         .gt('expires_at', nowISO)
         .order('created_at', { ascending: false })
-        .limit(500); 
+        .limit(50); // LIMIT REDUCED TO 50 TO PREVENT OOM
 
       if (onlyRoot) {
           query = query.is('parent_post_id', null);
@@ -483,7 +483,8 @@ export const fetchReplies = async (parentId: string): Promise<ChatMessage[]> => 
             .select('*')
             .eq('parent_post_id', parentId)
             .gt('expires_at', nowISO) 
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true })
+            .limit(50); // Limit replies too
 
         if (!error && data) {
             remoteReplies = data

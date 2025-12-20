@@ -28,6 +28,11 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
   useEffect(() => {
     const newArcs: ActiveArc[] = [];
     const now = Date.now();
+    
+    // Memory Safety: If processed IDs grow too large, clear them to prevent leaks.
+    if (processedIds.current.size > 1000) {
+        processedIds.current.clear();
+    }
 
     // SERVER-DRIVEN FILTER LOGIC:
     // Any message passed into this prop (via App.tsx -> signals) is considered a valid signal.
@@ -47,13 +52,10 @@ const ArcLayer: React.FC<ArcLayerProps> = ({ messages }) => {
        let origin: [number, number] | undefined;
 
        // PRIORITY 1: Precise Origin (From Server Metadata)
-       // This comes from the hidden __loc tag saved with every message.
-       // It allows accurate lines for everyone, anywhere.
        if (msg.preciseOrigin) {
            origin = [msg.preciseOrigin.lat, msg.preciseOrigin.lng];
        }
        // PRIORITY 2: Country Fallback
-       // Used for older messages if precise data is stripped.
        else if (msg.originCountry && COUNTRY_COORDINATES[msg.originCountry]) {
            origin = COUNTRY_COORDINATES[msg.originCountry];
        }

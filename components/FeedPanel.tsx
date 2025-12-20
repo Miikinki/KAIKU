@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock, Newspaper, ExternalLink, Sparkles, Languages, Loader2, RefreshCw, Crown } from 'lucide-react';
+import { MessageSquare, Shield, MapPin, ChevronUp, ChevronDown, RotateCcw, Trash2, Clock, Satellite, Radar, ScanLine, X, Hash, TrendingUp, Zap, Flag, Activity, User, ArrowUp, Radio, Eye, EyeOff, Plus, Lock, Newspaper, ExternalLink, Sparkles, Languages, Loader2, RefreshCw, Crown, Wifi } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
 import { translateText } from '../services/translationService';
@@ -556,9 +556,8 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 const identityColor = isNews ? '#ef4444' : (msg.userColor || (isMe ? '#06b6d4' : '#9ca3af'));
 
                 return (
-                <motion.div
+                <div
                 key={msg.id}
-                layoutId={isListMode ? undefined : msg.id} // Disable layoutId in list mode to prevent transition issues
                 onClick={() => !isHidden && onMessageClick(msg)}
                 className={`group border rounded-xl p-4 cursor-pointer transition-all flex gap-4 ${borderClass} ${bgClass}`}
                 >
@@ -566,31 +565,40 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 <div className="flex flex-col items-center justify-start gap-1 min-w-[30px]">
                     <button 
                         onClick={(e) => handleVoteClick(e, msg.id, 'up')}
-                        className={`p-1 rounded transition-colors ${userVote === 'up' ? 'text-cyan-400' : 'text-gray-600 hover:text-cyan-400'}`}
+                        className={`p-1 rounded-full transition-colors active:scale-95 ${userVote === 'up' ? 'text-cyan-400 bg-cyan-950/30' : 'text-gray-600 hover:text-cyan-400'}`}
+                        title={t('feed.vote_boost')}
                     >
-                        <ChevronUp size={24} strokeWidth={3} />
+                        <Wifi size={18} strokeWidth={3} className={userVote === 'up' ? 'drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : ''} />
                     </button>
                     
-                    <span className={`text-sm font-mono font-bold ${
+                    <span className={`text-[10px] font-mono font-bold whitespace-nowrap ${
                         userVote === 'up' ? 'text-cyan-400' : 
                         userVote === 'down' ? 'text-red-500' : 
                         isHighSignal ? 'text-cyan-200 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' :
                         'text-gray-500'
                     }`}>
-                        {msg.score}
+                        {t('feed.signal_db', { score: msg.score })}
                     </span>
 
                     <button 
                         onClick={(e) => handleVoteClick(e, msg.id, 'down')}
-                        className={`p-1 rounded transition-colors ${userVote === 'down' ? 'text-red-500' : 'text-gray-600 hover:text-red-500'}`}
+                        className={`p-1 rounded-full transition-colors active:scale-95 ${userVote === 'down' ? 'text-red-500 bg-red-950/30' : 'text-gray-600 hover:text-red-500'}`}
+                        title={t('feed.vote_noise')}
                     >
-                        <ChevronDown size={24} strokeWidth={3} />
+                        <Activity size={18} strokeWidth={2} />
                     </button>
                 </div>
 
                 <div className={`flex-1 ${isBlurred && !isHidden ? 'blur-sm grayscale opacity-50 hover:blur-none hover:grayscale-0 hover:opacity-100 transition-all duration-300' : ''}`}>
                     <div className="flex justify-between items-start mb-1">
                         <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500 font-medium">
+                            {/* PRIORITY LABEL IN HEADER */}
+                            {isHighSignal && (
+                                <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 animate-pulse flex items-center gap-1 border border-amber-500/30 px-1.5 rounded bg-amber-950/30">
+                                    {t('feed.signal_strength_high')}
+                                </span>
+                            )}
+                            
                             {/* Avatar Mini Icon */}
                             {!isNews && msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && (
                                 <div className="w-4 h-4 rounded-full border border-white/10 flex items-center justify-center bg-black/30" style={{ color: identityColor }}>
@@ -753,7 +761,11 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                     {!isHidden && (
                         <div className="mt-4 flex justify-between items-center border-t border-white/5 pt-3">
                              <div className="flex items-center gap-2">
-                                {/* Removed old Impact button since voting is now main control */}
+                                {isLowSignal && (
+                                    <span className="text-[9px] font-mono font-bold text-gray-600 uppercase tracking-wide">
+                                        {t('feed.signal_strength_weak')}
+                                    </span>
+                                )}
                              </div>
                             
                             <div className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors">
@@ -763,7 +775,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         </div>
                     )}
                 </div>
-                </motion.div>
+                </div>
             )})
             )}
             

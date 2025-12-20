@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff, Image as ImageIcon, Newspaper, ExternalLink, Sparkles, Languages, Shield, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Send, Loader2, MessageSquare, MapPin, AlertCircle, Trash2, Satellite, Zap, Flag, Clock, Crown, Eye, EyeOff, Image as ImageIcon, Newspaper, ExternalLink, Sparkles, Languages, Shield, ChevronUp, ChevronDown, Wifi, Activity } from 'lucide-react';
 import { ChatMessage } from '../types';
 import { fetchReplies, getUserVotes, getAnonymousID, getFlagUrl, getFlagEmoji } from '../services/storageService';
 import { translateText } from '../services/translationService';
@@ -176,6 +176,8 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
       const userVote = userVotes[msg.id];
       const isTranslated = !!translatedMessages[msg.id];
       const activeText = translatedMessages[msg.id] || msg.text;
+      const isHighSignal = msg.score >= HIGH_SIGNAL_THRESHOLD;
+      const isLowSignal = msg.score <= LOW_SIGNAL_THRESHOLD;
       
       const { isCritical } = getSignalHealth(msg);
       
@@ -212,25 +214,27 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                 <div className="flex flex-col items-center justify-start gap-1 min-w-[30px]">
                     <button 
                         onClick={(e) => handleVoteClick(e, msg.id, 'up')}
-                        className={`p-1 rounded transition-colors ${userVote === 'up' ? 'text-cyan-400' : 'text-gray-600 hover:text-cyan-400'}`}
+                        className={`p-1 rounded-full transition-colors active:scale-95 ${userVote === 'up' ? 'text-cyan-400 bg-cyan-950/30' : 'text-gray-600 hover:text-cyan-400'}`}
+                        title={t('feed.vote_boost')}
                     >
-                        <ChevronUp size={24} strokeWidth={3} />
+                        <Wifi size={18} strokeWidth={3} className={userVote === 'up' ? 'drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : ''} />
                     </button>
                     
-                    <span className={`text-sm font-mono font-bold ${
+                    <span className={`text-[10px] font-mono font-bold whitespace-nowrap ${
                         userVote === 'up' ? 'text-cyan-400' : 
                         userVote === 'down' ? 'text-red-500' : 
-                        msg.score >= HIGH_SIGNAL_THRESHOLD ? 'text-cyan-200' :
+                        isHighSignal ? 'text-cyan-200 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' :
                         'text-gray-500'
                     }`}>
-                        {msg.score}
+                        {t('feed.signal_db', { score: msg.score })}
                     </span>
 
                     <button 
                         onClick={(e) => handleVoteClick(e, msg.id, 'down')}
-                        className={`p-1 rounded transition-colors ${userVote === 'down' ? 'text-red-500' : 'text-gray-600 hover:text-red-500'}`}
+                        className={`p-1 rounded-full transition-colors active:scale-95 ${userVote === 'down' ? 'text-red-500 bg-red-950/30' : 'text-gray-600 hover:text-red-500'}`}
+                        title={t('feed.vote_noise')}
                     >
-                        <ChevronDown size={24} strokeWidth={3} />
+                        <Activity size={18} strokeWidth={2} />
                     </button>
                 </div>
 
@@ -238,6 +242,13 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
                 <div className="flex-1">
                     <div className="flex justify-between items-start mb-1">
                         <div className="flex items-center flex-wrap gap-2 text-[12px] text-gray-500 font-medium">
+                            {/* PRIORITY LABEL */}
+                            {isHighSignal && (
+                                <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 animate-pulse flex items-center gap-1 border border-amber-500/30 px-1.5 rounded bg-amber-950/30">
+                                    {t('feed.signal_strength_high')}
+                                </span>
+                            )}
+
                             {!isNews && msg.userAvatar && AVATAR_ICONS[msg.userAvatar] && (
                                 <div className="w-4 h-4 rounded-full border border-white/10 flex items-center justify-center bg-black/30" style={{ color: identityColor }}>
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
@@ -359,6 +370,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ parentMessage, onClose, onReply
 
                     {!isHidden && msg.imageUrl && (
                         <ImageAttachment src={msg.imageUrl} />
+                    )}
+                    
+                    {isLowSignal && (
+                        <div className="mt-2">
+                            <span className="text-[9px] font-mono font-bold text-gray-600 uppercase tracking-wide">
+                                {t('feed.signal_strength_weak')}
+                            </span>
+                        </div>
                     )}
                 </div>
             </div>

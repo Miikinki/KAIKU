@@ -25,8 +25,9 @@ import { triggerHaptic } from './services/hapticService';
 import { useTranslation } from 'react-i18next';
 
 const BASE_SCAN_RADIUS_PX = 128; 
-const SCAN_MOVE_THRESHOLD_KM = 5; // Reduced from 20km to 5km for better sensitivity
+const SCAN_MOVE_THRESHOLD_KM = 5; 
 const LIST_VIEW_RADIUS_KM = 20; 
+const GPS_UPDATE_THRESHOLD_KM = 0.02; // 20 meters throttle to prevent render thrashing
 
 type AppState = 'welcome' | 'boot' | 'app';
 type ViewMode = 'map' | 'list';
@@ -40,7 +41,7 @@ function App() {
   // UNIFIED MESSAGE STREAM
   const [messages, setMessages] = useState<ChatMessage[]>(() => getLocalMessages(true));
   
-  // Signals for Arc Layer
+  // Signals for Arc Layer (Limited size to prevent OOM)
   const [signals, setSignals] = useState<ChatMessage[]>([]);
   
   const [visibleMessages, setVisibleMessages] = useState<ChatMessage[]>([]);
@@ -211,11 +212,8 @@ function App() {
                   scanCoord = { lat: res.lat, lng: res.lng };
               }
           } else if (scanCoord) {
-              // OPTIMIZATION: Do NOT geocode here if we have a name in scanLocationName already
-              // If it's a coordinate string, we leave it as generic "Sector"
               let cityName = scanLocationName;
               if (!cityName || cityName.includes("SECTOR")) {
-                   // Fallback for visual status only, okay to skip or be generic
                    cityName = "Sector " + scanCoord.lat.toFixed(1);
               }
               effectiveCityName = cityName;
@@ -228,18 +226,15 @@ function App() {
 
           setScannerStatus(t('welcome.status_scanning_freq'));
           
-          // SERVICE CALL:
           const events = await scanGlobalNetwork(specificQuery, isTargeted);
           await new Promise(r => setTimeout(r, 600));
           
           if (events.length > 0) {
-              // Check for Demo Mode Flag
               if (events[0].tags?.includes('#DEMO')) {
                   setIsDemoMode(true);
               }
               
               SoundService.playSuccess();
-              // Force a reload to see new pins immediately
               loadData(); 
               
               const earnedCredit = incrementScanCount(effectiveCityName);
@@ -274,14 +269,22 @@ function App() {
             (pos) => {
                 const { latitude, longitude, accuracy } = pos.coords;
                 if (latitude !== 0 || longitude !== 0) {
+                    const lastLoc = locationCache.current;
+                    
+                    // MEMORY OPTIMIZATION: Throttle location updates
+                    // Only update state if moved significantly (>20m)
+                    if (lastLoc) {
+                        const dist = calculateDistance(lastLoc.lat, lastLoc.lng, latitude, longitude);
+                        if (dist < GPS_UPDATE_THRESHOLD_KM) {
+                             return; // Skip re-render for micro-movements
+                        }
+                    }
+
                     const newLoc = { lat: latitude, lng: longitude };
                     locationCache.current = newLoc;
                     setCurrentUserLocation(newLoc);
                     setGpsAccuracy(accuracy);
                     
-                    // Note: We intentionally DO NOT geocode on every move here.
-                    // We only do it once on start or explicit locate.
-
                     localStorage.setItem('kaiku_last_loc', JSON.stringify(newLoc));
                     if (isFallbackLocation) {
                         setFlyToLocation({ ...newLoc, timestamp: Date.now() }); 
@@ -322,7 +325,17 @@ function App() {
 
              // --- NOTIFICATION & SIGNALS LOGIC ---
              if (type === 'INSERT') {
-                 setSignals(s => [...s, message]); // Trigger Arc Layer
+                 // MEMORY FIX: Cap the signals array to prevent infinite growth
+                 setSignals(s => {
+                     const updated = [...s, message];
+                     if (updated.length > 20) return updated.slice(-20);
+                     return updated;
+                 });
+                 
+                 // MEMORY FIX: Cap the main messages array for long sessions
+                 if (next.length > 100) {
+                     next = next.slice(0, 100);
+                 }
                  
                  const myId = getAnonymousID();
                  const profile = getUserProfile();
@@ -408,13 +421,11 @@ function App() {
   }, [mapMessages, currentBounds, lastScannedCenter, isScanningGlobal, viewMode, effectiveLocation]); 
 
   // EFFECT: Zero-API Context Label Update
-  // Calculates the location name based on visible messages OR raw coordinates.
   useEffect(() => {
       if (viewMode !== 'map' || !currentBounds) return;
       
       const { lat, lng } = currentBounds.center;
       
-      // 1. If we have messages, assume the most common city name is the context
       if (visibleMessages.length > 0) {
           const counts: Record<string, number> = {};
           visibleMessages.forEach(m => {
@@ -438,13 +449,11 @@ function App() {
           }
       }
 
-      // 2. If no data, use "Sci-Fi" Coordinate Sector format (No API call needed)
-      // Format: "SECTOR 60.1 / 24.9"
       const latStr = lat.toFixed(1);
       const lngStr = lng.toFixed(1);
       setScanLocationName(`SECTOR ${latStr} / ${lngStr}`);
 
-  }, [currentBounds, viewMode, visibleMessages]); // Removed expensive dependencies
+  }, [currentBounds, viewMode, visibleMessages]); 
 
   const handleViewportChange = useCallback((bounds: ViewportBounds) => setCurrentBounds(bounds), []);
   const handleMapClick = useCallback(() => {
@@ -477,7 +486,6 @@ function App() {
   const handleLocateMe = async () => {
       setIsLocating(true);
       triggerHaptic('light');
-      // Clear Virtual Location on GPS locate
       setVirtualLocation(null); 
       try {
           const res = await getPreciseLocation();
@@ -485,7 +493,6 @@ function App() {
           locationCache.current = loc;
           setCurrentUserLocation(loc);
           
-          // Here we DO fetch the name because it's a specific user action
           getCityName(loc.lat, loc.lng).then(d => {
               if (d.city) setCurrentCityName(d.city);
               if (d.countryCode) setCurrentCountry(d.countryCode);
@@ -500,13 +507,11 @@ function App() {
       }
   };
 
-  // NEW: Teleport Handler
   const handleTeleport = (lat: number, lng: number) => {
       triggerHaptic('heavy');
       const newLoc = { lat, lng };
       setVirtualLocation(newLoc);
       
-      // Update Name Context (Specific action = API Call allowed)
       getCityName(lat, lng).then(d => {
           setCurrentCityName(d.city);
           if (d.countryCode) setCurrentCountry(d.countryCode);
@@ -528,12 +533,8 @@ function App() {
       setIsFeedOpen(false);
   };
 
-  // Updated Input Opening logic
   useEffect(() => {
     if (isInputOpen && !targetLocation) {
-        // Explicitly fetch location name ONLY when opening the input modal
-        
-        // 0. VIRTUAL LOCATION (Priority 1)
         if (virtualLocation) {
              getCityName(virtualLocation.lat, virtualLocation.lng).then(nameData => {
                 setTargetLocation({ lat: virtualLocation.lat, lng: virtualLocation.lng, name: nameData.city });
@@ -541,7 +542,6 @@ function App() {
             return;
         }
 
-        // 1. Instant Cache Hit (Fastest)
         if (locationCache.current) {
             const cachedLat = locationCache.current.lat;
             const cachedLng = locationCache.current.lng;
@@ -551,7 +551,6 @@ function App() {
             });
         }
 
-        // 2. Background Refresh (Precision)
         const acquireLocation = async () => {
             try {
                 const res = await getPreciseLocation();
@@ -578,7 +577,6 @@ function App() {
     let finalLat = 0;
     let finalLng = 0;
 
-    // IMMEDIATE SEND LOGIC
     if (targetLocation) {
         finalLat = targetLocation.lat;
         finalLng = targetLocation.lng;
@@ -597,7 +595,6 @@ function App() {
   };
   
   const handleReplyMessage = async (text: string, parentId: string) => {
-      // Use effective location (Virtual or GPS)
       let userLoc = effectiveLocation || { lat: 0, lng: 0 };
       
       await saveMessage(text, userLoc.lat, userLoc.lng, userLoc.lat, userLoc.lng, parentId);
@@ -676,10 +673,8 @@ function App() {
             
             <AgentDossier isOpen={isDossierOpen} onClose={() => setIsDossierOpen(false)} />
 
-            {/* HEADER BAR */}
             <div className="absolute top-0 left-0 right-0 z-[400] p-4 pointer-events-none flex flex-col items-center">
                 
-                {/* DEMO MODE WARNING BANNER */}
                 <AnimatePresence>
                     {isDemoMode && (
                         <motion.div 
@@ -743,7 +738,6 @@ function App() {
                     </div>
                 </div>
 
-                {/* SEARCH THIS AREA BUTTON (Only relevant for Map Mode) */}
                 <AnimatePresence>
                     {viewMode === 'map' && isMapDirty && !isScanningGlobal && !isSearchOpen && !isInputOpen && (
                         <motion.div 
@@ -757,7 +751,6 @@ function App() {
                                 className="px-5 py-2.5 bg-cyan-950/80 backdrop-blur-md border border-cyan-500/50 rounded-full text-cyan-100 text-[10px] font-black tracking-[0.2em] uppercase flex items-center gap-2 shadow-[0_10px_30px_rgba(0,0,0,0.5),0_0_15px_rgba(6,182,212,0.3)] hover:bg-cyan-900 transition-all active:scale-95 border-t-cyan-400"
                             >
                                 <RefreshCw size={12} className="animate-[spin_4s_linear_infinite]" />
-                                {/* Dynamic Text with Animation Key */}
                                 <AnimatePresence mode="wait">
                                     <motion.span
                                         key={scanLocationName || "default"}

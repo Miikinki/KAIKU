@@ -18,7 +18,12 @@
     "show_original": "Show Original",
     "translated_by_ai": "Translated by AI",
     "view_map": "MAP",
-    "view_list": "FEED"
+    "view_list": "FEED",
+    "vote_boost": "BOOST SIGNAL (Important Intel)",
+    "vote_noise": "MARK AS NOISE (Irrelevant)",
+    "signal_strength_high": "🔥 HIGH PRIORITY",
+    "signal_strength_weak": "WEAK SIGNAL",
+    "signal_db": "{{score}}dB"
   },
   "distance": {
     "here": "📍 Here",

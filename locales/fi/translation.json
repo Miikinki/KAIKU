@@ -18,7 +18,12 @@
     "show_original": "Näytä alkuperäinen",
     "translated_by_ai": "Tekoälyn kääntämä",
     "view_map": "KARTTA",
-    "view_list": "SYÖTE"
+    "view_list": "SYÖTE",
+    "vote_boost": "VAHVISTA SIGNAALIA (Tärkeä)",
+    "vote_noise": "MERKITSE KOHINAKSI (Turha)",
+    "signal_strength_high": "🔥 KORKEA PRIORITEETTI",
+    "signal_strength_weak": "HEIKKO SIGNAALI",
+    "signal_db": "{{score}}dB"
   },
   "distance": {
     "here": "📍 Täällä",
