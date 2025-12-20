@@ -565,27 +565,27 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                 <div className="flex flex-col items-center justify-start gap-1 min-w-[30px]">
                     <button 
                         onClick={(e) => handleVoteClick(e, msg.id, 'up')}
-                        className={`p-1 rounded-full transition-colors active:scale-95 ${userVote === 'up' ? 'text-cyan-400 bg-cyan-950/30' : 'text-gray-600 hover:text-cyan-400'}`}
+                        className={`p-1 rounded transition-colors active:scale-95 ${userVote === 'up' ? 'text-cyan-400 bg-cyan-950/30' : 'text-gray-500 hover:text-cyan-400'}`}
                         title={t('feed.vote_boost')}
                     >
-                        <Wifi size={18} strokeWidth={3} className={userVote === 'up' ? 'drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : ''} />
+                        <ChevronUp size={24} strokeWidth={3} className={userVote === 'up' ? 'drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : ''} />
                     </button>
                     
-                    <span className={`text-[10px] font-mono font-bold whitespace-nowrap ${
+                    <span className={`text-[12px] font-mono font-bold whitespace-nowrap ${
                         userVote === 'up' ? 'text-cyan-400' : 
                         userVote === 'down' ? 'text-red-500' : 
                         isHighSignal ? 'text-cyan-200 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' :
                         'text-gray-500'
                     }`}>
-                        {t('feed.signal_db', { score: msg.score })}
+                        {msg.score}
                     </span>
 
                     <button 
                         onClick={(e) => handleVoteClick(e, msg.id, 'down')}
-                        className={`p-1 rounded-full transition-colors active:scale-95 ${userVote === 'down' ? 'text-red-500 bg-red-950/30' : 'text-gray-600 hover:text-red-500'}`}
+                        className={`p-1 rounded transition-colors active:scale-95 ${userVote === 'down' ? 'text-red-500 bg-red-950/30' : 'text-gray-500 hover:text-red-500'}`}
                         title={t('feed.vote_noise')}
                     >
-                        <Activity size={18} strokeWidth={2} />
+                        <ChevronDown size={24} strokeWidth={3} />
                     </button>
                 </div>
 
