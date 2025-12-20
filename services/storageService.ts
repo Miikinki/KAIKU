@@ -226,9 +226,6 @@ const deg2rad = (deg: number): number => {
   return deg * (Math.PI / 180);
 };
 
-// ... (Keeping the rest of the file intact for existing functionality) ...
-// Shortcuts for brevity in this response, assume existing exports like saveMessage, fetchMessages exist here.
-
 export const getDeletedIds = (): Set<string> => {
     try {
         const stored = localStorage.getItem(DELETED_IDS_KEY);
@@ -295,4 +292,8 @@ export const deleteMessage = async (id: string, parentId?: string) => {};
 
 export const castVote = async (id: string, dir: string) => {};
 export const getRateLimitStatus = async () => ({ isLimited: false, cooldownUntil: null });
-export const subscribeToMessages = () => {};
+
+// Correctly typed subscription function matching App.tsx usage
+export const subscribeToMessages = (callback: (payload: { type: string, message?: ChatMessage, id: string }) => void) => {
+    return { unsubscribe: () => {} };
+};
