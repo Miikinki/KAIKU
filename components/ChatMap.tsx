@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, useMapEvents, useMap, Marker, CircleMarker } from 'react-leaflet';
+import { MapContainer, TileLayer, useMapEvents, useMap, Marker } from 'react-leaflet'; // Removed CircleMarker
 import { Crosshair, Zap } from 'lucide-react';
 import { ChatMessage, ViewportBounds, LootDrop } from '../types';
 import { MAP_TILE_URL, MAP_ATTRIBUTION } from '../constants';
@@ -51,10 +51,24 @@ const getLootIcon = () => {
     });
 };
 
+// Custom Icons for Map Items
+const chatIcon = L.divIcon({
+    className: 'bg-transparent border-none',
+    html: `<div class="w-3 h-3 bg-cyan-400 rounded-full border border-white/50 shadow-[0_0_8px_rgba(34,211,238,0.8)]"></div>`,
+    iconSize: [12, 12],
+    iconAnchor: [6, 6]
+});
+
+const newsIcon = L.divIcon({
+    className: 'bg-transparent border-none',
+    html: `<div class="w-10 h-10 bg-red-600 border-2 border-white text-white font-bold rounded-full flex items-center justify-center shadow-lg animate-pulse text-xl"><span>!</span></div>`,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20]
+});
+
 const createClusterIcon = (count: number, isSystem: boolean) => {
   const size = 30 + Math.min(count, 20); 
   const cssClass = isSystem ? 'kaiku-cluster-system' : 'kaiku-cluster-user';
-  // FIX: Added 'kaiku-cluster' base class to ensure flex centering and border-radius works
   return L.divIcon({
     html: `<div class="kaiku-cluster ${cssClass}" style="width: ${size}px; height: ${size}px;">${count}</div>`,
     className: 'bg-transparent border-none', 
@@ -237,19 +251,16 @@ const ChatMap: React.FC<ChatMapProps> = (props) => {
           }
 
           // INDIVIDUAL MESSAGE (The "Leaf")
-          // Use CircleMarker with 0 opacity to act as an invisible touch target
+          const isNews = isSystem; // Based on properties passed to supercluster
+          const markerIcon = isNews ? newsIcon : chatIcon;
+          const zIndex = isNews ? 1000 : 100; // Force news to sit on top of chat
+
           return (
-             <CircleMarker 
+             <Marker 
                key={`msg-${cluster.properties.msgId}`}
-               center={[latitude, longitude]}
-               radius={15} // Large touch target
-               pathOptions={{ 
-                   fillColor: '#ffffff', 
-                   fillOpacity: 0, 
-                   color: 'transparent',
-                   opacity: 0,
-                   weight: 0 
-               }}
+               position={[latitude, longitude]}
+               icon={markerIcon}
+               zIndexOffset={zIndex}
                eventHandlers={{ 
                    click: (e) => {
                        L.DomEvent.stopPropagation(e);

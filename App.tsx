@@ -481,8 +481,6 @@ function App() {
 
   if (isDesktop) return <DesktopLanding />;
 
-  const shouldHideFAB = isInputOpen || selectedMessage || (viewMode === 'map' && (isFeedOpen || visibleMessages.length > 0));
-
   return (
     <>
         <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
@@ -563,8 +561,8 @@ function App() {
                 isGameMasterMode={isGameMasterMode}
             />
 
-            {/* TOP BAR - Adjusted 'top-6' to clear SystemTicker */}
-            <div className="absolute top-6 left-0 right-0 z-[400] p-4 pointer-events-none flex flex-col items-center">
+            {/* TOP BAR - Increased z-index to 500 to overlay full screen FeedPanel */}
+            <div className="absolute top-6 left-0 right-0 z-[500] p-4 pointer-events-none flex flex-col items-center">
                 <div className="w-full flex justify-between items-start">
                     <div className="flex items-center gap-2 pointer-events-auto">
                         {!isSearchOpen && (
@@ -672,13 +670,6 @@ function App() {
                     userLocation={effectiveLocation}
                 />
             </ErrorBoundary>
-
-            <div className={`fixed bottom-24 right-5 z-[500] transition-all duration-300 ${shouldHideFAB ? 'opacity-0 translate-y-10 pointer-events-none' : 'opacity-100 translate-y-0 pointer-events-auto'}`}>
-                <button onClick={handleOpenInput} className="flex items-center gap-2 px-5 py-3 bg-[#0a0a12]/80 backdrop-blur-md border border-cyan-500/40 rounded-lg text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)] hover:bg-cyan-950/80 hover:text-white hover:border-cyan-400 transition-all active:scale-95 group">
-                    <Plus size={18} strokeWidth={3} className="group-hover:rotate-90 transition-transform duration-300" />
-                    <span className="font-mono font-bold tracking-widest text-xs uppercase">SIGNAL</span>
-                </button>
-            </div>
 
             <ChatInputModal 
                 isOpen={isInputOpen}

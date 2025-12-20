@@ -51,6 +51,12 @@ export const restoreSession = (sessionId: string, profile: UserProfile | null) =
     window.location.reload();
 };
 
+const extractTags = (text: string) => {
+    const regex = /#[\p{L}\p{N}_]+/gu;
+    const matches = text.match(regex);
+    return matches ? Array.from(new Set(matches)) : [];
+};
+
 // --- PROFILE MANAGEMENT ---
 
 export const getUserProfile = (): UserProfile => {
@@ -375,6 +381,9 @@ export const saveMessage = async (
         finalLng = lng + (Math.random() - 0.5) * 0.01;
     }
     
+    // Extract tags from text manually
+    const hashtags = extractTags(text);
+
     const row = {
         text: text,
         latitude: finalLat,
@@ -392,14 +401,14 @@ export const saveMessage = async (
         user_avatar: profile.avatar,
         user_color: profile.color,
         user_level: userLevel,
-        user_badges: profile.equippedBadges, // RESTORED
+        user_badges: profile.equippedBadges, 
         hide_level: profile.hideLevel,
         is_prime: profile.isPrime,
         
         // Base props
         score: 0,
         post_type: 'USER',
-        tags: [] // Extracted by backend trigger usually, but we can add extraction here if needed
+        tags: hashtags // Manually save extracted tags
     };
 
     const { data, error } = await supabase

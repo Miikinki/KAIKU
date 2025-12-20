@@ -15,14 +15,25 @@ export const SystemTicker: React.FC<SystemTickerProps> = ({ latestMessage, total
   const [onlineCount, setOnlineCount] = useState<number>(1);
   const [items, setItems] = useState<string[]>([]);
   
-  // 1. WEATHER EFFECT
+  // 1. WEATHER EFFECT (Physical GPS)
   useEffect(() => {
-      if (userLocation) {
-          fetchLocalWeather(userLocation.lat, userLocation.lng).then(data => {
-              if (data) setWeatherString(data);
-          });
+      if ('geolocation' in navigator) {
+          navigator.geolocation.getCurrentPosition(
+              (position) => {
+                  const { latitude, longitude } = position.coords;
+                  fetchLocalWeather(latitude, longitude).then(data => {
+                      if (data) setWeatherString(data);
+                  });
+              },
+              (error) => {
+                  console.warn("Ticker Weather: Location access denied or failed.", error);
+                  // Fail quietly (hide weather section)
+                  setWeatherString(null);
+              },
+              { timeout: 10000, maximumAge: 300000 } // 5 min cache
+          );
       }
-  }, [userLocation?.lat, userLocation?.lng]); // Only re-run if location changes significantly
+  }, []); // Run once on mount
 
   // 2. SUPABASE PRESENCE (Active Agents)
   useEffect(() => {
@@ -76,7 +87,7 @@ export const SystemTicker: React.FC<SystemTickerProps> = ({ latestMessage, total
       // Real User Count
       parts.push(`👥 ACTIVE AGENTS: ${onlineCount}`);
 
-      // Real Weather
+      // Real Weather (Local Physical)
       if (weatherString) {
           parts.push(weatherString);
       }

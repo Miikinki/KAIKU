@@ -158,12 +158,19 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       const counts: Record<string, number> = {};
       
       visibleMessages.forEach(msg => {
-          if (now - msg.timestamp < timeWindow && msg.tags) {
+          // FILTER 1: Skip if message is too old or hidden/deleted
+          if (now - msg.timestamp >= timeWindow) return;
+          if (hiddenIds.has(msg.id)) return;
+
+          if (msg.tags) {
               msg.tags.forEach(tag => {
-                  // FILTER: Only show real hashtags (starting with #)
-                  // Exclude system tags like __loc, __masked, lang: etc.
+                  // FILTER 2: Only show real hashtags (starting with #)
+                  // FILTER 3: STRICT CHECK - Tag MUST appear in the visible text.
+                  // This filters out system tags like #GLOBAL_ALERT or #FI if not explicitly typed in the message body.
                   if (tag.startsWith('#') && tag.length > 1) {
-                      counts[tag] = (counts[tag] || 0) + 1;
+                      if (msg.text.toLowerCase().includes(tag.toLowerCase())) {
+                          counts[tag] = (counts[tag] || 0) + 1;
+                      }
                   }
               });
           }
@@ -173,7 +180,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
           .sort(([, a], [, b]) => b - a)
           .slice(0, 5) 
           .map(([tag, count]) => ({ tag, count }));
-  }, [visibleMessages, activeTag, showMyMessagesOnly, now]);
+  }, [visibleMessages, activeTag, showMyMessagesOnly, now, hiddenIds]);
 
 
   const handleVoteClick = (e: React.MouseEvent, msgId: string, direction: 'up' | 'down') => {
@@ -304,11 +311,12 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
       collapsed: { y: 'calc(100% - 76px)' } 
   };
 
-  // Variants for List Mode (Full Screen, No Animation between "open/closed" because it's always open)
+  // Variants for List Mode (Full Screen)
+  // top: 0 ensures it covers the map completely.
   const listVariants = {
-      open: { y: 0, top: '60px' },
-      peek: { y: 0, top: '60px' },
-      collapsed: { y: 0, top: '60px' } 
+      open: { y: 0, top: 0 },
+      peek: { y: 0, top: 0 },
+      collapsed: { y: 0, top: 0 } 
   };
 
   const currentState = (isOpen || isListMode) 
@@ -317,7 +325,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
 
   const containerClasses = isListMode 
     ? "fixed inset-x-0 bottom-0 bg-[#0a0a12] z-[400] overflow-hidden flex flex-col" // Removed shadow/border for seamless look
-    : "fixed inset-x-0 bottom-0 top-[15vh] bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden";
+    : "fixed inset-x-0 bottom-0 top-0 bg-[#0a0a12]/95 backdrop-blur-xl border-t border-white/10 z-[450] shadow-2xl flex flex-col rounded-t-3xl overflow-hidden";
 
   return (
     <>
@@ -327,9 +335,12 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
         variants={isListMode ? listVariants : mapVariants}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         className={containerClasses}
+        // Force top padding when in "map open" mode to simulate sheet behavior but allow full height
+        // In LIST MODE, we add extra padding (pt-28) to clear the floating App Header buttons
+        style={(!isListMode && isOpen) ? { paddingTop: '60px' } : isListMode ? { paddingTop: '0px' } : {}}
       >
         <div 
-            className={`p-4 border-b border-white/5 flex flex-col items-center cursor-pointer transition-colors shrink-0 ${isListMode ? 'bg-[#0a0a12]' : 'bg-white/5 hover:bg-white/10'}`}
+            className={`p-4 border-b border-white/5 flex flex-col items-center cursor-pointer transition-colors shrink-0 ${isListMode ? 'bg-[#0a0a12] pt-28' : 'bg-white/5 hover:bg-white/10'}`}
             onClick={() => { 
                 if (!isListMode) {
                     triggerHaptic('light'); toggleOpen(); 
@@ -368,16 +379,13 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
             </div>
             
             <div className="flex items-center gap-1">
-                {/* Only show Compose in Map Mode Header. In List Mode, we rely on the main FAB */}
-                {!isListMode && (
-                    <button
-                        onClick={handleComposeClick}
-                        className="p-2 rounded-full bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.1)]"
-                        title="Broadcast Signal"
-                    >
-                        <Plus size={20} />
-                    </button>
-                )}
+                <button
+                    onClick={handleComposeClick}
+                    className="p-2 rounded-full bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all active:scale-95 shadow-[0_0_10px_rgba(34,211,238,0.1)] mr-1"
+                    title="Broadcast Signal"
+                >
+                    <Plus size={20} />
+                </button>
 
                 {(isOpen || isListMode) && (
                     <>
@@ -449,7 +457,7 @@ const FeedPanel: React.FC<FeedPanelProps> = ({
                         animate={{ opacity: 1, y: 0, x: "-50%" }}
                         exit={{ opacity: 0, y: -20, x: "-50%" }}
                         className="fixed left-1/2 z-[500] pointer-events-none"
-                        style={{ top: isListMode ? "100px" : "calc(15vh + 90px)" }}
+                        style={{ top: isListMode ? "140px" : "calc(15vh + 90px)" }}
                     >
                          <button
                             onClick={scrollToTop}

@@ -1,6 +1,6 @@
 import { getEnvVar } from './env';
 
-const API_KEY = getEnvVar('OPENWEATHER_API_KEY') || 'e683f2a363784566378456637845663'; // Fallback or Placeholder
+const API_KEY = getEnvVar('OPENWEATHER_API_KEY');
 
 interface WeatherData {
     name: string;
@@ -11,31 +11,30 @@ interface WeatherData {
         main: string;
         description: string;
     }[];
-    wind: {
-        speed: number;
-    };
 }
 
 export const fetchLocalWeather = async (lat: number, lng: number): Promise<string | null> => {
-    // If no key is configured (and using dummy default), return null to hide widget instead of showing errors
-    if (!API_KEY || API_KEY.length < 10) return null;
+    // Require a valid API Key. If missing, fail silently (hide weather).
+    if (!API_KEY) return null;
 
     try {
         const response = await fetch(
-            `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${API_KEY}`
+            `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&lang=fi&appid=${API_KEY}`
         );
 
         if (!response.ok) return null;
 
         const data: WeatherData = await response.json();
         
-        const city = data.name.toUpperCase();
+        const city = data.name;
         const temp = Math.round(data.main.temp);
-        const desc = data.weather[0]?.main || 'Clear';
-        const wind = Math.round(data.wind.speed);
+        const desc = data.weather[0]?.description || '';
+        
+        // Capitalize description (e.g. "pilvistä" -> "Pilvistä")
+        const formattedDesc = desc.charAt(0).toUpperCase() + desc.slice(1);
 
-        // Format: "📍 PORVOO: -5°C (Snow) 💨 Wind: 4m/s"
-        return `📍 ${city}: ${temp}°C (${desc}) 💨 WIND: ${wind}m/s`;
+        // Format: "📍 Porvoo: -2°C (Lumikuuroja)"
+        return `📍 ${city}: ${temp}°C (${formattedDesc})`;
     } catch (e) {
         console.warn("Weather fetch failed", e);
         return null;
